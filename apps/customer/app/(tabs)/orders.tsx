@@ -30,10 +30,19 @@ const ACTIVE_STATUSES: OrderStatus[] = [
 type Tab = 'active' | 'past';
 
 async function fetchOrders(): Promise<Order[]> {
-  const res = await apiClient.get<{ data: Order[] } | Order[]>('/api/v1/orders/mine');
+  // Backend: GET /orders is auto-scoped to the authenticated role (customer
+  // sees own orders) and returns { success, data: { orders, total, page,...} }
+  const res = await apiClient.get('/api/v1/orders');
   const payload = res.data as unknown;
   if (Array.isArray(payload)) return payload as Order[];
-  return ((payload as { data?: Order[] }).data ?? []) as Order[];
+  if (payload && typeof payload === 'object') {
+    const o = payload as Record<string, unknown>;
+    if (Array.isArray(o.data)) return o.data as Order[];
+    const inner = o.data as Record<string, unknown> | undefined;
+    if (inner && Array.isArray(inner.orders)) return inner.orders as Order[];
+    if (Array.isArray((o as { orders?: unknown }).orders)) return (o as { orders: Order[] }).orders;
+  }
+  return [];
 }
 
 function formatDate(iso: string): string {
@@ -140,6 +149,10 @@ export default function OrdersScreen() {
   const ordersQuery = useQuery({
     queryKey: ['my-orders'],
     queryFn: fetchOrders,
+    // Always refetch when the tab is focused so newly-placed orders show up
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
+    staleTime: 0,
   });
 
   const orders = ordersQuery.data ?? [];

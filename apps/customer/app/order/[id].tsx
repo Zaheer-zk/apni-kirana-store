@@ -83,8 +83,11 @@ async function fetchOrder(id: string): Promise<OrderDetailResponse> {
   };
 }
 
-async function cancelOrderRequest(id: string): Promise<void> {
-  await apiClient.patch(`/api/v1/orders/${id}/cancel`);
+async function cancelOrderRequest(args: { id: string; reason?: string }): Promise<void> {
+  // Backend uses PUT and requires a `reason` (1..500 chars)
+  await apiClient.put(`/api/v1/orders/${args.id}/cancel`, {
+    reason: (args.reason ?? '').trim() || 'Cancelled by customer',
+  });
 }
 
 function StepIndicator({ currentStatus }: { currentStatus: OrderStatus }) {

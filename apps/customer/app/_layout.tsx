@@ -126,7 +126,7 @@ export default function RootLayout() {
             <Stack.Screen name="item/[id]" options={{ title: 'Item details' }} />
             <Stack.Screen name="catalog/index" options={{ title: 'Browse' }} />
             <Stack.Screen name="catalog/[id]" options={{ title: '' }} />
-            <Stack.Screen name="cart" options={{ title: 'Cart', presentation: 'modal' }} />
+            <Stack.Screen name="cart" options={{ title: 'Cart' }} />
             <Stack.Screen name="order/[id]" options={{ title: 'Order tracking' }} />
             <Stack.Screen name="account/profile" options={{ headerShown: false }} />
             <Stack.Screen name="account/addresses" options={{ headerShown: false }} />

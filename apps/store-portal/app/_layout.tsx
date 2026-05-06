@@ -52,7 +52,11 @@ function RootLayoutNav() {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="order/[id]" options={{ headerShown: true, title: 'Order Detail', headerBackTitle: 'Back' }} />
-      <Stack.Screen name="inventory/add" options={{ headerShown: true, title: 'Add Item', headerBackTitle: 'Back' }} />
+      <Stack.Screen name="inventory/add" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="inventory/browse-catalog"
+        options={{ headerShown: true, title: 'Add from Catalog', headerBackTitle: 'Back' }}
+      />
       <Stack.Screen name="inventory/[id]" options={{ headerShown: true, title: 'Edit Item', headerBackTitle: 'Back' }} />
     </Stack>
   );

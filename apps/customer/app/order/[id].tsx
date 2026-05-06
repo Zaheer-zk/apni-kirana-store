@@ -16,6 +16,7 @@ import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
 import { Header } from '@/components/Header';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { apiClient } from '@/lib/api';
@@ -214,6 +215,10 @@ export default function OrderDetailScreen() {
   const canCancel = status === OrderStatus.PENDING;
   const isDelivered = status === OrderStatus.DELIVERED;
 
+  const dropoffOtp = (order as Order & { dropoffOtp?: string | null }).dropoffOtp ?? null;
+  const showDropoffOtp =
+    !!dropoffOtp && status === OrderStatus.PICKED_UP;
+
   const customerLat = order.deliveryAddress?.lat ?? 28.6315;
   const customerLng = order.deliveryAddress?.lng ?? 77.2167;
   const storeLat = storeLocation?.lat ?? 28.6320;
@@ -306,6 +311,24 @@ export default function OrderDetailScreen() {
           ) : null}
           <StepIndicator currentStatus={status} />
         </View>
+
+        {/* Delivery OTP — shown to customer once driver has picked up the order */}
+        {showDropoffOtp ? (
+          <View style={styles.section}>
+            <Card style={styles.otpCard} padding={spacing.xl}>
+              <View style={styles.otpHeader}>
+                <View style={styles.otpIcon}>
+                  <Ionicons name="key" size={20} color={colors.primary} />
+                </View>
+                <Text style={styles.otpTitle}>Show this code to your driver</Text>
+              </View>
+              <Text style={styles.otpCode}>{dropoffOtp}</Text>
+              <Text style={styles.otpSubtitle}>
+                The driver will enter this to confirm delivery
+              </Text>
+            </Card>
+          </View>
+        ) : null}
 
         {/* Driver card */}
         {driver ? (
@@ -789,5 +812,44 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     fontWeight: '800',
     color: colors.primary,
+  },
+  otpCard: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  otpHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  otpIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otpTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '800',
+    color: colors.primaryDark,
+  },
+  otpCode: {
+    marginTop: spacing.lg,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 8,
+    color: colors.textPrimary,
+    fontVariant: ['tabular-nums'],
+  },
+  otpSubtitle: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

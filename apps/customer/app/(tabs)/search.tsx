@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,19 +14,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '@/components/EmptyState';
-import { ItemCard } from '@/components/ItemCard';
 import { Skeleton } from '@/components/Skeleton';
 import { apiClient } from '@/lib/api';
 import { colors, fontSize, fontWeight, radius, shadow, spacing } from '@/constants/theme';
-import {
-  ItemCategory,
-  ItemCategoryLabels,
-  type InventoryItem,
-  type StoreProfile,
-} from '@aks/shared';
-
-const DEFAULT_LAT = 28.6315;
-const DEFAULT_LNG = 77.2167;
+import { ItemCategory, ItemCategoryLabels } from '@aks/shared';
 
 const TRENDING = [
   { label: 'Rice', icon: '🍚' },
@@ -47,6 +39,15 @@ const CATEGORY_ICONS: Record<ItemCategory, keyof typeof Ionicons.glyphMap> = {
   OTHER: 'pricetag-outline',
 };
 
+const CATEGORY_EMOJI: Record<ItemCategory, string> = {
+  GROCERY: '🛒',
+  MEDICINE: '💊',
+  HOUSEHOLD: '🧹',
+  SNACKS: '🍿',
+  BEVERAGES: '🥤',
+  OTHER: '📦',
+};
+
 const CATEGORY_CHIPS: Array<{
   label: string;
   value: ItemCategory | 'ALL';
@@ -59,6 +60,24 @@ const CATEGORY_CHIPS: Array<{
     icon: CATEGORY_ICONS[c],
   })),
 ];
+
+interface CatalogItem {
+  id: string;
+  name: string;
+  category: ItemCategory;
+  imageUrl?: string | null;
+  defaultUnit?: string;
+  description?: string | null;
+  _count?: { storeItems: number };
+}
+
+function unwrapOne<T>(payload: unknown): T {
+  if (payload && typeof payload === 'object') {
+    const o = payload as { data?: unknown };
+    if (o.data !== undefined) return o.data as T;
+  }
+  return payload as T;
+}
 
 function unwrapList<T>(payload: unknown, listKey?: string): T[] {
   if (Array.isArray(payload)) return payload as T[];
@@ -85,23 +104,53 @@ function useDebounced<T>(value: T, delay: number): T {
   return debounced;
 }
 
-async function fetchAllItems(): Promise<InventoryItem[]> {
-  const storesRes = await apiClient.get(
-    `/api/v1/stores/nearby?lat=${DEFAULT_LAT}&lng=${DEFAULT_LNG}`
-  );
-  const stores = unwrapList<StoreProfile>(storesRes.data, 'stores');
+async function fetchCatalogSearch(q: string): Promise<CatalogItem[]> {
+  const res = await apiClient.get(`/api/v1/catalog/search/q?q=${encodeURIComponent(q)}`);
+  return unwrapList<CatalogItem>(res.data, 'items');
+}
 
-  const allItems = await Promise.all(
-    stores.map(async (s) => {
-      try {
-        const r = await apiClient.get(`/api/v1/stores/${s.id}/items`);
-        return unwrapList<InventoryItem>(r.data, 'items');
-      } catch {
-        return [];
-      }
-    })
+async function fetchCatalogByCategory(
+  category: ItemCategory | 'ALL'
+): Promise<CatalogItem[]> {
+  const search = new URLSearchParams();
+  search.set('limit', '50');
+  search.set('page', '1');
+  if (category !== 'ALL') search.set('category', category);
+  const res = await apiClient.get(`/api/v1/catalog?${search.toString()}`);
+  const data = unwrapOne<{ items?: CatalogItem[] } | CatalogItem[]>(res.data);
+  if (Array.isArray(data)) return data;
+  return data.items ?? [];
+}
+
+function CatalogResultRow({ item }: { item: CatalogItem }) {
+  const carriedBy = item._count?.storeItems ?? 0;
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      style={styles.resultRow}
+      onPress={() => router.push(`/catalog/${item.id}`)}
+    >
+      <View style={styles.resultThumb}>
+        {item.imageUrl ? (
+          <Image source={{ uri: item.imageUrl }} style={styles.resultImage} resizeMode="cover" />
+        ) : (
+          <Text style={styles.resultEmoji}>{CATEGORY_EMOJI[item.category]}</Text>
+        )}
+      </View>
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text style={styles.resultName} numberOfLines={2}>
+          {item.name}
+        </Text>
+        <View style={styles.resultBadge}>
+          <Text style={styles.resultBadgeText}>{ItemCategoryLabels[item.category]}</Text>
+        </View>
+        <Text style={styles.resultSubtitle}>
+          Carried by {carriedBy} store{carriedBy === 1 ? '' : 's'}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+    </TouchableOpacity>
   );
-  return allItems.flat();
 }
 
 export default function SearchScreen() {
@@ -117,31 +166,34 @@ export default function SearchScreen() {
   }, [params.category]);
 
   const debouncedQuery = useDebounced(query.trim(), 300);
+  const isSearching = debouncedQuery.length > 0;
 
-  const itemsQuery = useQuery({
-    queryKey: ['all-items'],
-    queryFn: fetchAllItems,
+  const searchQuery = useQuery({
+    queryKey: ['catalog-search', debouncedQuery],
+    queryFn: () => fetchCatalogSearch(debouncedQuery),
+    enabled: isSearching,
   });
 
-  const allItems = itemsQuery.data ?? [];
+  const categoryQuery = useQuery({
+    queryKey: ['catalog-by-category', activeCategory],
+    queryFn: () => fetchCatalogByCategory(activeCategory),
+    enabled: !isSearching && activeCategory !== 'ALL',
+  });
 
-  const filtered = useMemo(() => {
-    let result = allItems.filter((i) => i.isAvailable);
-    if (activeCategory !== 'ALL') {
-      result = result.filter((i) => i.category === activeCategory);
-    }
-    if (params.storeId) {
-      result = result.filter((i) => i.storeId === params.storeId);
-    }
-    if (debouncedQuery) {
-      const q = debouncedQuery.toLowerCase();
-      result = result.filter((i) => i.name.toLowerCase().includes(q));
-    }
-    return result;
-  }, [allItems, activeCategory, debouncedQuery, params.storeId]);
+  // For idle "popular items" preview, fetch a small slice of catalog
+  const popularQuery = useQuery({
+    queryKey: ['catalog-popular-preview'],
+    queryFn: () => fetchCatalogByCategory('ALL'),
+    enabled: !isSearching && activeCategory === 'ALL',
+  });
 
-  const showResults =
-    !!debouncedQuery || activeCategory !== 'ALL' || !!params.storeId;
+  const showResults = isSearching || activeCategory !== 'ALL';
+
+  const results: CatalogItem[] = isSearching
+    ? searchQuery.data ?? []
+    : categoryQuery.data ?? [];
+
+  const isResultsLoading = isSearching ? searchQuery.isLoading : categoryQuery.isLoading;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -179,7 +231,7 @@ export default function SearchScreen() {
         </View>
       </View>
 
-      {/* Category chips with icons */}
+      {/* Category chips */}
       <View style={styles.chipsBg}>
         <ScrollView
           horizontal
@@ -209,7 +261,6 @@ export default function SearchScreen() {
 
       {/* Body */}
       {!showResults ? (
-        // Idle state — trending + browse-all hint
         <ScrollView contentContainerStyle={styles.idleContent} showsVerticalScrollIndicator={false}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Trending searches</Text>
@@ -247,25 +298,23 @@ export default function SearchScreen() {
             </View>
           </View>
 
-          {!itemsQuery.isLoading && allItems.length > 0 && (
+          {!popularQuery.isLoading && (popularQuery.data?.length ?? 0) > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Popular items</Text>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionTitle}>Popular items</Text>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/catalog')}>
+                  <Text style={styles.clearLink}>Browse all</Text>
+                </TouchableOpacity>
+              </View>
               <View style={{ gap: spacing.md }}>
-                {allItems
-                  .filter((i) => i.isAvailable)
-                  .slice(0, 4)
-                  .map((item) => (
-                    <ItemCard
-                      key={item.id}
-                      item={item}
-                      onPress={() => router.push(`/item/${item.id}`)}
-                    />
-                  ))}
+                {(popularQuery.data ?? []).slice(0, 4).map((item) => (
+                  <CatalogResultRow key={item.id} item={item} />
+                ))}
               </View>
             </View>
           )}
         </ScrollView>
-      ) : itemsQuery.isLoading ? (
+      ) : isResultsLoading ? (
         <View style={styles.listContent}>
           {[0, 1, 2, 3].map((i) => (
             <View key={i} style={{ marginBottom: spacing.md }}>
@@ -275,25 +324,24 @@ export default function SearchScreen() {
         </View>
       ) : (
         <FlatList
-          data={filtered}
+          data={results}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
-            filtered.length > 0 ? (
+            results.length > 0 ? (
               <View style={styles.resultHeader}>
                 <Text style={styles.resultCount}>
-                  {filtered.length} result{filtered.length === 1 ? '' : 's'}
+                  {results.length} result{results.length === 1 ? '' : 's'}
                   {debouncedQuery ? ` for "${debouncedQuery}"` : ''}
                 </Text>
-                {(debouncedQuery || activeCategory !== 'ALL' || params.storeId) && (
+                {(debouncedQuery || activeCategory !== 'ALL') && (
                   <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => {
                       setQuery('');
                       setActiveCategory('ALL');
-                      router.setParams({ storeId: undefined as never, category: undefined as never });
                     }}
                   >
                     <Text style={styles.clearLink}>Clear</Text>
@@ -302,9 +350,7 @@ export default function SearchScreen() {
               </View>
             ) : null
           }
-          renderItem={({ item }) => (
-            <ItemCard item={item} onPress={() => router.push(`/item/${item.id}`)} />
-          )}
+          renderItem={({ item }) => <CatalogResultRow item={item} />}
           ListEmptyComponent={
             <View style={{ paddingTop: spacing.xxl }}>
               <EmptyState
@@ -315,8 +361,8 @@ export default function SearchScreen() {
                     ? `Nothing matches "${debouncedQuery}". Try a different keyword.`
                     : 'No items in this category right now.'
                 }
-                ctaLabel="Clear filters"
-                onCta={() => {
+                actionLabel="Clear filters"
+                onAction={() => {
                   setQuery('');
                   setActiveCategory('ALL');
                 }}
@@ -395,7 +441,7 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: fontSize.sm,
     color: colors.textSecondary,
-    fontWeight: fontWeight.semibold as '600',
+    fontWeight: fontWeight.semibold,
   },
   chipTextActive: {
     color: colors.white,
@@ -410,9 +456,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.xl,
   },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
   sectionTitle: {
     fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold as '700',
+    fontWeight: fontWeight.bold,
     color: colors.textPrimary,
     marginBottom: spacing.md,
   },
@@ -434,7 +486,7 @@ const styles = StyleSheet.create({
   trendingText: {
     fontSize: fontSize.sm,
     color: colors.primaryDark,
-    fontWeight: fontWeight.semibold as '600',
+    fontWeight: fontWeight.semibold,
   },
 
   catGrid: {
@@ -462,7 +514,7 @@ const styles = StyleSheet.create({
   },
   catLabel: {
     fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold as '600',
+    fontWeight: fontWeight.semibold,
     color: colors.textPrimary,
     textAlign: 'center',
   },
@@ -481,12 +533,62 @@ const styles = StyleSheet.create({
   resultCount: {
     fontSize: fontSize.sm,
     color: colors.textSecondary,
-    fontWeight: fontWeight.semibold as '600',
+    fontWeight: fontWeight.semibold,
     flex: 1,
   },
   clearLink: {
     fontSize: fontSize.sm,
     color: colors.primary,
-    fontWeight: fontWeight.semibold as '600',
+    fontWeight: fontWeight.semibold,
+  },
+
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.md,
+    ...shadow.small,
+  },
+  resultThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.md,
+    backgroundColor: colors.gray100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  resultImage: {
+    width: '100%',
+    height: '100%',
+  },
+  resultEmoji: {
+    fontSize: 28,
+  },
+  resultName: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  resultBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  resultBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  resultSubtitle: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 });

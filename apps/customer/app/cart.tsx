@@ -34,7 +34,7 @@ async function fetchAddresses(): Promise<Address[]> {
 }
 
 async function placeOrderRequest(payload: {
-  items: Array<{ itemId: string; qty: number }>;
+  items: Array<{ storeItemId: string; qty: number }>;
   deliveryAddressId: string;
   paymentMethod: PaymentMethod;
   promoCode?: string;
@@ -136,7 +136,8 @@ export default function CartScreen() {
       return;
     }
     orderMutation.mutate({
-      items: items.map((i) => ({ itemId: i.itemId, qty: i.qty })),
+      // Cart's `itemId` is the StoreItem id (the customer added it from a specific store).
+      items: items.map((i) => ({ storeItemId: i.itemId, qty: i.qty })),
       deliveryAddressId: defaultAddress.id,
       paymentMethod,
       promoCode: appliedPromo ?? undefined,

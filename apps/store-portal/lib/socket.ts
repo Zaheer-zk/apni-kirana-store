@@ -9,6 +9,21 @@ const SOCKET_URL =
 let socket: Socket | null = null;
 
 /**
+ * Listener invoked whenever an in-flight order is rescinded by the server
+ * (typically because another store accepted it first). UI layers can register
+ * a listener via `onOrderRescinded` to display a transient toast.
+ */
+type RescindListener = (orderId: string) => void;
+const rescindListeners = new Set<RescindListener>();
+
+export function onOrderRescinded(listener: RescindListener): () => void {
+  rescindListeners.add(listener);
+  return () => {
+    rescindListeners.delete(listener);
+  };
+}
+
+/**
  * Initialises the Socket.io connection for the store portal app.
  * Safe to call multiple times — reuses an existing connected socket.
  */
@@ -41,11 +56,36 @@ export function initSocket(token: string): Socket {
   });
 
   // ---------------------------------------------------------------------------
-  // New order arrives for this store
+  // Legacy direct-route event — keep for backwards compatibility
   // ---------------------------------------------------------------------------
   socket.on('order:new', (payload: { orderId: string }) => {
     const { setIncomingOrder } = useStorePortalStore.getState();
     setIncomingOrder(payload.orderId);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Broadcast matching: server offers a new order to all candidate stores
+  // ---------------------------------------------------------------------------
+  socket.on('order:offered', (payload: { orderId: string }) => {
+    const { setIncomingOrder } = useStorePortalStore.getState();
+    setIncomingOrder(payload.orderId);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Broadcast matching: another store accepted the order first
+  // ---------------------------------------------------------------------------
+  socket.on('order:rescinded', (payload: { orderId: string }) => {
+    const { incomingOrderId, setIncomingOrder } = useStorePortalStore.getState();
+    if (incomingOrderId === payload.orderId) {
+      setIncomingOrder(null);
+    }
+    rescindListeners.forEach((listener) => {
+      try {
+        listener(payload.orderId);
+      } catch (err) {
+        console.warn('[Socket] rescind listener threw', err);
+      }
+    });
   });
 
   // ---------------------------------------------------------------------------

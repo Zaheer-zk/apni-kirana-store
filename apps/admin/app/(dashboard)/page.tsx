@@ -10,7 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { ShoppingCart, IndianRupee, Bike, Store } from 'lucide-react';
+import { ShoppingCart, IndianRupee, Bike, Store, BookOpen } from 'lucide-react';
 import { api } from '@/lib/api';
 import StatCard from '@/components/StatCard';
 import StatusBadge from '@/components/StatusBadge';
@@ -58,6 +58,16 @@ export default function DashboardPage() {
     },
   });
 
+  const { data: catalogStats } = useQuery<{ total: number }>({
+    queryKey: ['admin-catalog-count'],
+    queryFn: async () => {
+      const res = await api.get<{ success: boolean; data: { total: number } }>(
+        '/api/v1/catalog?limit=1'
+      );
+      return { total: res.data.data?.total ?? 0 };
+    },
+  });
+
   return (
     <div className="space-y-8">
       {/* Page heading */}
@@ -69,9 +79,9 @@ export default function DashboardPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-5">
         {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
+          Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
           <>
             <StatCard
@@ -93,6 +103,11 @@ export default function DashboardPage() {
               icon={<Store className="h-5 w-5 text-primary" />}
               label="Active Stores"
               value={data?.activeStores ?? 0}
+            />
+            <StatCard
+              icon={<BookOpen className="h-5 w-5 text-primary" />}
+              label="Catalog Items"
+              value={catalogStats?.total ?? 0}
             />
           </>
         )}

@@ -7,16 +7,28 @@ import {
   Animated,
   ActivityIndicator,
   Alert,
+  Platform,
+  ToastAndroid,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
+import { onOrderRescinded } from '@/lib/socket';
 import type { IncomingOrderPreview } from '@aks/shared';
 
 const COUNTDOWN_SECONDS = 180; // 3 minutes
 
 interface Props {
   orderId: string;
+}
+
+function showToast(message: string) {
+  if (Platform.OS === 'android') {
+    ToastAndroid.show(message, ToastAndroid.SHORT);
+  } else {
+    // iOS has no native toast — use a non-blocking Alert dismissed quickly
+    Alert.alert('', message);
+  }
 }
 
 export function IncomingOrderBanner({ orderId }: Props) {
@@ -70,6 +82,17 @@ export function IncomingOrderBanner({ orderId }: Props) {
       useNativeDriver: true,
     }).start(() => setIncomingOrder(null));
   };
+
+  // Listen for rescind events for THIS order — another store took it first
+  useEffect(() => {
+    const unsubscribe = onOrderRescinded((rescindedId) => {
+      if (rescindedId === orderId) {
+        showToast('Order taken by another store');
+        dismiss();
+      }
+    });
+    return unsubscribe;
+  }, [orderId]);
 
   const acceptMutation = useMutation({
     mutationFn: () =>

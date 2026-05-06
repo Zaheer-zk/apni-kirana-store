@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CartFloatingBar } from '@/components/CartFloatingBar';
 import { colors, fontSize } from '@/constants/theme';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
@@ -17,6 +18,7 @@ export default function TabsLayout() {
   const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
 
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -69,5 +71,7 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+    <CartFloatingBar />
+    </View>
   );
 }

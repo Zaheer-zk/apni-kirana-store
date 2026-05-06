@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,113 +8,72 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Image,
+  Switch,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import * as ImagePicker from 'expo-image-picker';
 import { api } from '@/lib/api';
-import type { InventoryItemType, ItemCategory } from '@aks/shared';
+import { useStorePortalStore } from '@/store/store.store';
+import type { StoreInventoryItem } from '@/app/(tabs)/inventory';
 
-const CATEGORIES: { label: string; value: ItemCategory }[] = [
-  { label: 'Grocery', value: 'GROCERY' },
-  { label: 'Dairy', value: 'DAIRY' },
-  { label: 'Beverages', value: 'BEVERAGES' },
-  { label: 'Snacks', value: 'SNACKS' },
-  { label: 'Personal Care', value: 'PERSONAL_CARE' },
-  { label: 'Household', value: 'HOUSEHOLD' },
-];
-
-const UNITS = ['kg', 'g', 'L', 'ml', 'piece', 'pack', 'dozen', 'box', 'bottle'];
+// ---------------------------------------------------------------------------
+// Tolerant unwrap
+// ---------------------------------------------------------------------------
+function unwrapItem(body: any): StoreInventoryItem | null {
+  if (!body) return null;
+  if (body.id && body.catalogItemId !== undefined) return body as StoreInventoryItem;
+  if (body.data?.id) return body.data as StoreInventoryItem;
+  return null;
+}
 
 export default function EditItemScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const queryClient = useQueryClient();
+  const storeId = useStorePortalStore((s) => s.storeProfile?.id);
 
-  const { data: item, isLoading } = useQuery<InventoryItemType>({
+  const { data: item, isLoading } = useQuery<StoreInventoryItem | null>({
     queryKey: ['inventoryItem', id],
-    queryFn: () => api.get<InventoryItemType>(`/api/v1/items/${id}`).then((r) => r.data),
     enabled: !!id,
+    queryFn: async () => {
+      const res = await api.get(`/api/v1/items/${id}`);
+      return unwrapItem(res.data);
+    },
   });
 
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<ItemCategory>('GROCERY');
   const [price, setPrice] = useState('');
-  const [unit, setUnit] = useState('piece');
   const [stockQty, setStockQty] = useState('');
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const [isAvailable, setIsAvailable] = useState(true);
 
   // Pre-fill form when item loads
   useEffect(() => {
     if (item) {
-      setName(item.name);
-      setDescription(item.description ?? '');
-      setCategory(item.category);
       setPrice(String(item.price));
-      setUnit(item.unit);
       setStockQty(String(item.stockQty));
-      setExistingImageUrl(item.imageUrl ?? null);
+      setIsAvailable(item.isAvailable);
     }
   }, [item]);
 
   const updateItemMutation = useMutation({
-    mutationFn: async (payload: Partial<InventoryItemType>) => {
-      let imageUrl = existingImageUrl ?? undefined;
-      if (imageUri) {
-        const formData = new FormData();
-        const filename = imageUri.split('/').pop() ?? 'image.jpg';
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : 'image/jpeg';
-        formData.append('image', { uri: imageUri, name: filename, type } as any);
-        const uploadRes = await api.post<{ url: string }>('/api/v1/upload/image', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        imageUrl = uploadRes.data.url;
-      }
-      return api.put(`/api/v1/items/${id}`, { ...payload, imageUrl }).then((r) => r.data);
-    },
+    mutationFn: (payload: { price: number; stockQty: number; isAvailable: boolean }) =>
+      api.put(`/api/v1/items/${id}`, payload).then((r) => r.data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['storeInventory', storeId] });
       queryClient.invalidateQueries({ queryKey: ['inventoryItem', id] });
       router.back();
     },
     onError: (err: Error) => Alert.alert('Error', err.message),
   });
 
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission required', 'Please allow photo library access to upload images.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
-    }
-  };
-
   const handleSubmit = () => {
-    if (!name.trim()) return Alert.alert('Validation', 'Item name is required');
     const priceNum = parseFloat(price);
-    if (isNaN(priceNum) || priceNum <= 0) return Alert.alert('Validation', 'Enter a valid price');
+    if (isNaN(priceNum) || priceNum <= 0) {
+      return Alert.alert('Validation', 'Enter a valid price');
+    }
     const stockNum = parseInt(stockQty, 10);
-    if (isNaN(stockNum) || stockNum < 0) return Alert.alert('Validation', 'Enter a valid stock quantity');
-
-    updateItemMutation.mutate({
-      name: name.trim(),
-      description: description.trim(),
-      category,
-      price: priceNum,
-      unit,
-      stockQty: stockNum,
-    });
+    if (isNaN(stockNum) || stockNum < 0) {
+      return Alert.alert('Validation', 'Enter a valid stock quantity');
+    }
+    updateItemMutation.mutate({ price: priceNum, stockQty: stockNum, isAvailable });
   };
 
   if (isLoading) {
@@ -125,49 +84,29 @@ export default function EditItemScreen() {
     );
   }
 
-  const displayImageUri = imageUri ?? existingImageUrl;
+  if (!item) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.notFoundText}>Item not found</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Image Picker */}
-      <TouchableOpacity style={styles.imagePicker} onPress={pickImage} activeOpacity={0.8}>
-        {displayImageUri ? (
-          <Image source={{ uri: displayImageUri }} style={styles.imagePreview} />
-        ) : (
-          <View style={styles.imagePlaceholder}>
-            <Text style={styles.imagePlaceholderIcon}>📷</Text>
-            <Text style={styles.imagePlaceholderText}>Tap to change image</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-
-      <Text style={styles.label}>Item Name *</Text>
-      <TextInput style={styles.input} placeholder="e.g. Tata Salt 1kg" value={name} onChangeText={setName} />
-
-      <Text style={styles.label}>Description</Text>
-      <TextInput
-        style={[styles.input, styles.textArea]}
-        placeholder="Optional description..."
-        value={description}
-        onChangeText={setDescription}
-        multiline
-        numberOfLines={2}
-      />
-
-      <Text style={styles.label}>Category *</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-        {CATEGORIES.map((cat) => (
-          <TouchableOpacity
-            key={cat.value}
-            style={[styles.chip, category === cat.value && styles.chipActive]}
-            onPress={() => setCategory(cat.value)}
-          >
-            <Text style={[styles.chipText, category === cat.value && styles.chipTextActive]}>
-              {cat.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {/* Catalog identity (read-only) */}
+      <View style={styles.headerCard}>
+        <View style={styles.headerImage}>
+          <Text style={styles.headerImageEmoji}>🛒</Text>
+        </View>
+        <View style={styles.headerInfo}>
+          <Text style={styles.headerName}>{item.name}</Text>
+          <Text style={styles.headerMeta}>
+            {item.unit} · {item.category}
+          </Text>
+          <Text style={styles.headerHint}>From master catalog</Text>
+        </View>
+      </View>
 
       <View style={styles.row}>
         <View style={styles.rowField}>
@@ -181,7 +120,7 @@ export default function EditItemScreen() {
           />
         </View>
         <View style={styles.rowField}>
-          <Text style={styles.label}>Stock Qty *</Text>
+          <Text style={styles.label}>Stock qty *</Text>
           <TextInput
             style={styles.input}
             placeholder="0"
@@ -192,18 +131,20 @@ export default function EditItemScreen() {
         </View>
       </View>
 
-      <Text style={styles.label}>Unit *</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-        {UNITS.map((u) => (
-          <TouchableOpacity
-            key={u}
-            style={[styles.chip, unit === u && styles.chipActive]}
-            onPress={() => setUnit(u)}
-          >
-            <Text style={[styles.chipText, unit === u && styles.chipTextActive]}>{u}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={styles.toggleRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.label}>Available for orders</Text>
+          <Text style={styles.toggleHint}>
+            Customers can {isAvailable ? '' : 'not '}order this item right now
+          </Text>
+        </View>
+        <Switch
+          value={isAvailable}
+          onValueChange={setIsAvailable}
+          trackColor={{ false: '#D1D5DB', true: '#93C5FD' }}
+          thumbColor={isAvailable ? '#2563EB' : '#9CA3AF'}
+        />
+      </View>
 
       <TouchableOpacity
         style={[styles.submitButton, updateItemMutation.isPending && styles.submitButtonDisabled]}
@@ -224,27 +165,33 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 20, paddingBottom: 48 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  imagePicker: {
-    alignSelf: 'center',
-    marginBottom: 24,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    borderStyle: 'dashed',
-  },
-  imagePreview: { width: 140, height: 140 },
-  imagePlaceholder: {
-    width: 140,
-    height: 140,
+  notFoundText: { fontSize: 15, color: '#6B7280' },
+
+  headerCard: {
+    flexDirection: 'row',
+    gap: 12,
     backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  headerImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
   },
-  imagePlaceholderIcon: { fontSize: 36 },
-  imagePlaceholderText: { fontSize: 12, color: '#9CA3AF', textAlign: 'center' },
-  label: { fontSize: 14, color: '#374151', fontWeight: '500', marginBottom: 6 },
+  headerImageEmoji: { fontSize: 30 },
+  headerInfo: { flex: 1, justifyContent: 'center' },
+  headerName: { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 2 },
+  headerMeta: { fontSize: 13, color: '#6B7280' },
+  headerHint: { fontSize: 11, color: '#9CA3AF', marginTop: 4 },
+
+  label: { fontSize: 14, color: '#374151', fontWeight: '600', marginBottom: 6 },
   input: {
     borderWidth: 1,
     borderColor: '#D1D5DB',
@@ -253,24 +200,23 @@ const styles = StyleSheet.create({
     height: 50,
     fontSize: 15,
     color: '#111827',
-    marginBottom: 16,
   },
-  textArea: { height: 70, paddingTop: 12, textAlignVertical: 'top' },
-  categoryScroll: { marginBottom: 16 },
-  chip: {
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
-    backgroundColor: '#F9FAFB',
-  },
-  chipActive: { borderColor: '#2563EB', backgroundColor: '#EFF6FF' },
-  chipText: { fontSize: 13, color: '#6B7280', fontWeight: '600' },
-  chipTextActive: { color: '#2563EB' },
-  row: { flexDirection: 'row', gap: 12 },
+  row: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   rowField: { flex: 1 },
+
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 24,
+  },
+  toggleHint: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
+
   submitButton: {
     backgroundColor: '#2563EB',
     borderRadius: 12,

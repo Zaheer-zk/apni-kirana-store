@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import {
   FlatList,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -19,7 +20,25 @@ import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useCartStore } from '@/store/cart.store';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
-import { ItemCategoryLabels, type Address, type InventoryItem, type StoreProfile } from '@aks/shared';
+import { ItemCategory, ItemCategoryLabels, type Address, type InventoryItem, type StoreProfile } from '@aks/shared';
+
+interface CatalogItem {
+  id: string;
+  name: string;
+  category: ItemCategory;
+  imageUrl?: string | null;
+  defaultUnit?: string;
+  _count?: { storeItems: number };
+}
+
+const CATEGORY_EMOJI: Record<ItemCategory, string> = {
+  GROCERY: '🛒',
+  MEDICINE: '💊',
+  HOUSEHOLD: '🧹',
+  SNACKS: '🍿',
+  BEVERAGES: '🥤',
+  OTHER: '📦',
+} as const;
 
 const DEFAULT_LAT = 28.6315;
 const DEFAULT_LNG = 77.2167;
@@ -69,6 +88,23 @@ async function fetchNearbyStores(): Promise<StoreProfile[]> {
     `/api/v1/stores/nearby?lat=${DEFAULT_LAT}&lng=${DEFAULT_LNG}`
   );
   return unwrapList<StoreProfile>(res.data, 'stores');
+}
+
+async function fetchCatalogPreview(): Promise<CatalogItem[]> {
+  try {
+    const res = await apiClient.get('/api/v1/catalog?limit=8&page=1');
+    const payload = res.data;
+    if (payload && typeof payload === 'object') {
+      const o = payload as { data?: { items?: CatalogItem[] } | CatalogItem[] };
+      if (Array.isArray(o.data)) return o.data;
+      if (o.data && typeof o.data === 'object' && Array.isArray(o.data.items)) {
+        return o.data.items;
+      }
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 async function fetchPopularItems(stores: StoreProfile[]): Promise<InventoryItem[]> {
@@ -155,6 +191,11 @@ export default function HomeScreen() {
     queryKey: ['popular-items', storesQuery.data?.map((s) => s.id) ?? []],
     queryFn: () => fetchPopularItems(storesQuery.data ?? []),
     enabled: !!storesQuery.data?.length,
+  });
+
+  const catalogPreviewQuery = useQuery({
+    queryKey: ['catalog-preview'],
+    queryFn: fetchCatalogPreview,
   });
 
   const stores = storesQuery.data ?? [];
@@ -292,6 +333,72 @@ export default function HomeScreen() {
                   variant="compact"
                   onPress={() => router.push(`/item/${item.id}`)}
                 />
+              )}
+            />
+          )}
+        </View>
+
+        {/* Browse all items (catalog preview) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHead}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push('/catalog')}
+            >
+              <Text style={styles.sectionTitle}>Browse all items</Text>
+            </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/catalog')}>
+              <Text style={styles.linkText}>See all</Text>
+            </TouchableOpacity>
+          </View>
+          {catalogPreviewQuery.isLoading ? (
+            <View style={styles.popularRow}>
+              {[0, 1, 2].map((i) => (
+                <View key={i} style={styles.popularSkeleton}>
+                  <Skeleton width="100%" height={100} radius={12} />
+                  <Skeleton width="80%" height={14} />
+                  <Skeleton width="40%" height={12} />
+                </View>
+              ))}
+            </View>
+          ) : (catalogPreviewQuery.data ?? []).length === 0 ? (
+            <View style={styles.emptyMini}>
+              <Text style={styles.emptyMiniText}>Catalog is empty right now.</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={catalogPreviewQuery.data ?? []}
+              keyExtractor={(it) => it.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalList}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  style={styles.catalogTile}
+                  onPress={() => router.push(`/catalog/${item.id}`)}
+                >
+                  <View style={styles.catalogThumb}>
+                    {item.imageUrl ? (
+                      <Image
+                        source={{ uri: item.imageUrl }}
+                        style={styles.catalogImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={styles.catalogEmoji}>
+                        {CATEGORY_EMOJI[item.category]}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.catalogName} numberOfLines={2}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.catalogSub} numberOfLines={1}>
+                    {item._count?.storeItems ?? 0} store
+                    {item._count?.storeItems === 1 ? '' : 's'}
+                  </Text>
+                </TouchableOpacity>
               )}
             />
           )}
@@ -561,5 +668,36 @@ const styles = StyleSheet.create({
   emptyMiniText: {
     fontSize: fontSize.sm,
     color: colors.textSecondary,
+  },
+  catalogTile: {
+    width: 130,
+    gap: spacing.xs,
+  },
+  catalogThumb: {
+    width: '100%',
+    height: 100,
+    borderRadius: radius.md,
+    backgroundColor: colors.gray100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  catalogImage: {
+    width: '100%',
+    height: '100%',
+  },
+  catalogEmoji: {
+    fontSize: 36,
+  },
+  catalogName: {
+    marginTop: spacing.xs,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  catalogSub: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 });

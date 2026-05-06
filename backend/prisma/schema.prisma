@@ -1,0 +1,260 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  CUSTOMER
+  STORE_OWNER
+  DRIVER
+  ADMIN
+}
+
+enum StoreCategory {
+  GROCERY
+  PHARMACY
+  GENERAL
+  RESTAURANT
+}
+
+enum StoreStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+}
+
+enum ItemCategory {
+  GROCERY
+  MEDICINE
+  HOUSEHOLD
+  SNACKS
+  BEVERAGES
+  OTHER
+}
+
+enum OrderStatus {
+  PENDING
+  STORE_ACCEPTED
+  DRIVER_ASSIGNED
+  PICKED_UP
+  DELIVERED
+  CANCELLED
+  REJECTED
+}
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+  ONLINE
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum VehicleType {
+  BIKE
+  SCOOTER
+  CAR
+}
+
+enum DriverStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+  OFFLINE
+  ONLINE
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  name         String?
+  phone        String    @unique
+  role         UserRole  @default(CUSTOMER)
+  fcmToken     String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  addresses     Address[]
+  orders        Order[]         @relation("CustomerOrders")
+  refreshTokens RefreshToken[]
+  store         Store?
+  driver        Driver?
+
+  @@index([phone])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String
+  street    String
+  city      String
+  state     String
+  pincode   String
+  lat       Float
+  lng       Float
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+}
+
+model Store {
+  id           String        @id @default(cuid())
+  ownerId      String        @unique
+  name         String
+  description  String?
+  category     StoreCategory
+  lat          Float
+  lng          Float
+  street       String
+  city         String
+  state        String
+  pincode      String
+  status       StoreStatus   @default(PENDING_APPROVAL)
+  openTime     String
+  closeTime    String
+  rating       Float         @default(0)
+  totalRatings Int           @default(0)
+  isOpen       Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  owner  User    @relation(fields: [ownerId], references: [id])
+  items  Item[]
+  orders Order[]
+
+  @@index([lat, lng])
+}
+
+model Item {
+  id          String       @id @default(cuid())
+  storeId     String
+  name        String
+  description String?
+  category    ItemCategory
+  price       Float
+  unit        String
+  stockQty    Int          @default(0)
+  imageUrl    String?
+  isAvailable Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  store store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id                String        @id @default(cuid())
+  customerId        String
+  storeId           String
+  driverId          String?
+  status            OrderStatus   @default(PENDING)
+  subtotal          Float
+  deliveryFee       Float
+  commission        Float
+  total             Float
+  paymentMethod     PaymentMethod
+  paymentStatus     PaymentStatus @default(PENDING)
+  paymentId         String?
+  deliveryAddressId String
+  notes             String?
+  rejectionReason   String?
+  cancelReason      String?
+  storeAcceptedAt   DateTime?
+  driverAssignedAt  DateTime?
+  pickedUpAt        DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  customer        User         @relation("CustomerOrders", fields: [customerId], references: [id])
+  store           Store        @relation(fields: [storeId], references: [id])
+  driver          Driver?      @relation(fields: [driverId], references: [id])
+  items           OrderItem[]
+  deliveryAddress Address      @relation(fields: [deliveryAddressId], references: [id])
+  rating          OrderRating?
+
+  @@index([customerId, status])
+  @@index([storeId, status])
+}
+
+model OrderItem {
+  id       String  @id @default(cuid())
+  orderId  String
+  itemId   String?
+  name     String
+  price    Float
+  unit     String
+  qty      Int
+  imageUrl String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Driver {
+  id            String       @id @default(cuid())
+  userId        String       @unique
+  vehicleType   VehicleType
+  vehicleNumber String
+  licenseNumber String
+  status        DriverStatus @default(PENDING_APPROVAL)
+  currentLat    Float?
+  currentLng    Float?
+  rating        Float        @default(0)
+  totalRatings  Int          @default(0)
+  totalEarnings Float        @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([currentLat, currentLng])
+}
+
+model OrderRating {
+  id            String   @id @default(cuid())
+  orderId       String   @unique
+  customerId    String
+  storeRating   Int
+  driverRating  Int?
+  storeComment  String?
+  driverComment String?
+  createdAt     DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Apni Kirana",
+    "slug": "apni-kirana-customer",
+    "version": "1.0.0",
+    "scheme": "apni-kirana",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"],
+    "backgroundColor": "#FFFFFF",
+    "primaryColor": "#16A34A",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#16A34A"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.apnikirana.customer"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#16A34A"
+      },
+      "package": "com.apnikirana.customer"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Apni Kirana to use your location to find nearby stores.",
+          "locationWhenInUsePermission": "Allow Apni Kirana to use your location to find nearby stores."
+        }
+      ],
+      [
+        "expo-secure-store"
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

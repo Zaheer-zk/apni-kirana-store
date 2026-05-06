@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "AKS Store",
+    "slug": "apni-kirana-store-portal",
+    "version": "1.0.0",
+    "scheme": "apni-kirana-store",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "primaryColor": "#2563EB",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563EB"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.apnikirana.storeportal",
+      "infoPlist": {
+        "NSCameraUsageDescription": "AKS Store uses your camera to capture product images.",
+        "NSPhotoLibraryUsageDescription": "AKS Store needs access to your photo library to select product images."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563EB"
+      },
+      "package": "com.apnikirana.storeportal",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "AKS Store needs access to your photos to upload product images.",
+          "cameraPermission": "AKS Store needs camera access to capture product images."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "AKS Store needs camera access to capture product images."
+        }
+      ],
+      "expo-document-picker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "AKS Driver",
+    "slug": "apni-kirana-driver",
+    "version": "1.0.0",
+    "scheme": "apni-kirana-driver",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "primaryColor": "#DC2626",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#DC2626"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.apnikirana.driver",
+      "infoPlist": {
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "AKS Driver needs your location to track active deliveries in the background.",
+        "NSLocationWhenInUseUsageDescription": "AKS Driver needs your location while you are on a delivery.",
+        "UIBackgroundModes": ["location", "fetch"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#DC2626"
+      },
+      "package": "com.apnikirana.driver",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "AKS Driver needs your location to track active deliveries in the background.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      "expo-task-manager"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

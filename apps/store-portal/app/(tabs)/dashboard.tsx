@@ -19,6 +19,7 @@ import { Badge } from '@/components/Badge';
 import { Skeleton } from '@/components/Skeleton';
 import { initSocket } from '@/lib/socket';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
+import { useUnreadNotificationsCount } from '@/app/notifications/index';
 import type { StoreOrder, StoreDashboardStats } from '@aks/shared';
 
 type StatusInfo = { variant: 'info' | 'purple' | 'warning' | 'success'; label: string };
@@ -96,6 +97,7 @@ export default function DashboardScreen() {
   const { storeProfile, accessToken, incomingOrderId, setStoreOpen } = useStorePortalStore();
   const queryClient = useQueryClient();
   const isOpen = storeProfile?.isOpen ?? false;
+  const unreadCount = useUnreadNotificationsCount();
 
   const { data: stats, isLoading: statsLoading } = useQuery<StoreDashboardStats>({
     queryKey: ['storeDashboardStats'],
@@ -147,6 +149,18 @@ export default function DashboardScreen() {
             {storeProfile?.name ?? 'My Store'}
           </Text>
         </View>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push('/notifications')}
+          style={styles.bellButton}
+        >
+          <Ionicons
+            name="notifications-outline"
+            size={22}
+            color={colors.textPrimary}
+          />
+          {unreadCount > 0 ? <View style={styles.bellDot} /> : null}
+        </TouchableOpacity>
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => toggleOpenMutation.mutate()}
@@ -240,8 +254,31 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.md,
     backgroundColor: colors.background,
+    gap: spacing.sm,
   },
   headerLeft: { flex: 1, marginRight: spacing.md },
+  bellButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.small,
+  },
+  bellDot: {
+    position: 'absolute',
+    top: 8,
+    right: 10,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: colors.error,
+    borderWidth: 2,
+    borderColor: colors.card,
+  },
   greeting: {
     fontSize: fontSize.xs,
     color: colors.textMuted,

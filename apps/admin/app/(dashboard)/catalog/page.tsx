@@ -409,7 +409,7 @@ export default function CatalogPage() {
       {/* Filters */}
       <div className="card p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="relative max-w-sm flex-1 min-w-[220px]">
+          <div className="relative w-full max-w-sm flex-1 sm:min-w-[220px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
@@ -423,7 +423,7 @@ export default function CatalogPage() {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as ItemCategory | '')}
-            className="input w-48"
+            className="input w-full sm:w-48"
           >
             {CATEGORY_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -458,7 +458,7 @@ export default function CatalogPage() {
 
         {/* Pagination */}
         {!isLoading && !isError && total > 0 && (
-          <div className="flex items-center justify-between border-t border-gray-100 px-6 py-3 text-sm text-gray-500">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-3 text-sm text-gray-500 sm:px-6">
             <p>
               Page <span className="font-medium text-gray-900">{page}</span> of{' '}
               <span className="font-medium text-gray-900">{pages}</span> •{' '}
@@ -488,8 +488,8 @@ export default function CatalogPage() {
 
       {/* Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-900/50 p-4 sm:items-center">
-          <div className="card w-full max-w-lg p-6">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-y-auto bg-gray-900/50 sm:items-center sm:p-4">
+          <div className="card flex w-full max-w-lg flex-col rounded-none p-4 sm:rounded-lg sm:p-6">
             <div className="mb-4 flex items-start justify-between">
               <div className="flex items-center gap-2">
                 <Package className="h-5 w-5 text-primary" />

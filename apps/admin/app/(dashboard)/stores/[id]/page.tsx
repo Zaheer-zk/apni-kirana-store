@@ -55,7 +55,7 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
     return (
       <div className="space-y-6 animate-pulse">
         <div className="h-8 w-48 rounded bg-gray-200" />
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-6">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="card h-48 p-6" />
           ))}
@@ -93,9 +93,9 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-6">
         {/* Store info */}
-        <div className="card p-6 space-y-4 lg:col-span-1">
+        <div className="card space-y-4 p-4 sm:p-6 lg:col-span-1">
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Store Info</h2>
           <InfoRow icon={<User className="h-4 w-4" />} label="Owner" value={store.ownerName} />
           <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone" value={store.ownerPhone} />
@@ -151,13 +151,14 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
 
       {/* Recent orders */}
       <div className="card overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100">
+        <div className="px-4 py-4 border-b border-gray-100 sm:px-6">
           <h2 className="text-base font-semibold text-gray-900">Recent Orders</h2>
         </div>
         {recentOrders.length === 0 ? (
-          <p className="px-6 py-10 text-sm text-gray-400 text-center">No orders yet.</p>
+          <p className="px-4 py-10 text-sm text-gray-400 text-center sm:px-6">No orders yet.</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="px-6 py-3 text-left font-medium text-gray-500">Order ID</th>
@@ -187,6 +188,7 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

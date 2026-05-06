@@ -164,9 +164,16 @@ export default function ProfileScreen() {
         {
           icon: 'notifications-outline',
           label: 'Notifications',
-          onPress: () => router.push('/account/notifications'),
+          onPress: () => router.push('/notifications'),
           iconBg: colors.warningLight,
           iconColor: '#B45309',
+        },
+        {
+          icon: 'options-outline',
+          label: 'Notification preferences',
+          onPress: () => router.push('/account/notifications'),
+          iconBg: colors.gray100,
+          iconColor: colors.gray700,
         },
       ],
     },

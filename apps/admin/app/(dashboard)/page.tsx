@@ -89,7 +89,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {isLoading ? (
           Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
@@ -129,7 +129,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Bar chart */}
-      <div className="card p-6">
+      <div className="card p-4 sm:p-6">
         <h2 className="mb-5 text-base font-semibold text-gray-900">
           Orders — Last 7 Days
         </h2>
@@ -172,11 +172,11 @@ export default function DashboardPage() {
 
       {/* Recent orders table */}
       <div className="card overflow-hidden">
-        <div className="border-b border-gray-100 px-6 py-4">
+        <div className="border-b border-gray-100 px-4 py-4 sm:px-6">
           <h2 className="text-base font-semibold text-gray-900">Recent Orders</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="px-6 py-3 text-left font-medium text-gray-500">Order ID</th>

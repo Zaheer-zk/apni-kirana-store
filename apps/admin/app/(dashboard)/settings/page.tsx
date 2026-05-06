@@ -69,7 +69,7 @@ export default function SettingsPage() {
 
       <div className="card max-w-2xl">
         {isLoading ? (
-          <div className="p-8 space-y-6 animate-pulse">
+          <div className="animate-pulse space-y-6 p-4 sm:p-8">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="space-y-2">
                 <div className="h-4 w-40 rounded bg-gray-200" />
@@ -78,7 +78,7 @@ export default function SettingsPage() {
             ))}
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-8 space-y-7">
+          <form onSubmit={handleSubmit} className="space-y-7 p-4 sm:p-8">
             {/* Delivery Radius */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -205,7 +205,7 @@ export default function SettingsPage() {
             )}
 
             {/* Actions */}
-            <div className="flex items-center gap-4 pt-2">
+            <div className="flex flex-wrap items-center gap-4 pt-2">
               <button type="submit" disabled={mutation.isPending} className="btn-primary">
                 {mutation.isPending ? (
                   <>

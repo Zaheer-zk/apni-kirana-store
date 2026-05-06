@@ -314,7 +314,7 @@ export default function OrderDetailPage({
     return (
       <div className="space-y-6 animate-pulse">
         <div className="h-8 w-60 rounded bg-gray-200" />
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="card h-44" />
           ))}
@@ -393,8 +393,8 @@ export default function OrderDetailPage({
       </div>
 
       {/* Status banner */}
-      <div className="card flex flex-wrap items-center justify-between gap-3 p-5">
-        <div className="flex items-center gap-3">
+      <div className="card flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={data.status} />
           <span className="text-sm text-gray-500">
             Last updated{' '}
@@ -440,7 +440,7 @@ export default function OrderDetailPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Customer */}
         <SectionCard title="Customer" icon={<User className="h-4 w-4" />}>
           <div className="space-y-2">
@@ -576,13 +576,14 @@ export default function OrderDetailPage({
 
       {/* Items */}
       <div className="card overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-gray-100 px-6 py-4">
+        <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-4 sm:px-6">
           <Package className="h-4 w-4 text-primary" />
           <h3 className="text-base font-semibold text-gray-900">
             Items ({data.items.length})
           </h3>
         </div>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
               <th className="px-6 py-3 text-left font-medium text-gray-500">Item</th>
@@ -644,6 +645,7 @@ export default function OrderDetailPage({
             </tr>
           </tfoot>
         </table>
+        </div>
       </div>
 
       {/* OTP */}
@@ -667,7 +669,7 @@ export default function OrderDetailPage({
       )}
 
       {/* Timeline */}
-      <div className="card p-6">
+      <div className="card p-4 sm:p-6">
         <div className="mb-5 flex items-center gap-2">
           <Clock className="h-4 w-4 text-primary" />
           <h3 className="text-base font-semibold text-gray-900">Status Timeline</h3>
@@ -707,8 +709,8 @@ export default function OrderDetailPage({
 
       {/* Refund modal */}
       {refundOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-900/50 p-4 sm:items-center">
-          <div className="card w-full max-w-md p-6">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-y-auto bg-gray-900/50 sm:items-center sm:p-4">
+          <div className="card flex w-full max-w-md flex-col rounded-none p-4 sm:rounded-lg sm:p-6">
             <div className="mb-4 flex items-start justify-between">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600">

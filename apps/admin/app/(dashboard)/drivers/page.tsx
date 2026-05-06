@@ -97,9 +97,9 @@ export default function DriversPage() {
       key: 'name',
       header: 'Driver',
       render: (d) => (
-        <div>
-          <p className="font-medium text-gray-900">{d.name}</p>
-          <p className="text-xs text-gray-400">{d.phone}</p>
+        <div className="min-w-0 max-w-[180px] sm:max-w-none">
+          <p className="truncate font-medium text-gray-900" title={d.name}>{d.name}</p>
+          <p className="truncate text-xs text-gray-400" title={d.phone}>{d.phone}</p>
         </div>
       ),
     },
@@ -107,9 +107,9 @@ export default function DriversPage() {
       key: 'vehicleType',
       header: 'Vehicle',
       render: (d) => (
-        <div>
-          <p className="text-gray-900">{d.vehicleType}</p>
-          <p className="text-xs text-gray-400 font-mono">{d.vehicleNumber}</p>
+        <div className="min-w-0 max-w-[160px] sm:max-w-none">
+          <p className="truncate text-gray-900" title={d.vehicleType}>{d.vehicleType}</p>
+          <p className="truncate font-mono text-xs text-gray-400" title={d.vehicleNumber}>{d.vehicleNumber}</p>
         </div>
       ),
     },
@@ -198,12 +198,12 @@ export default function DriversPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="-mx-1 flex gap-1 overflow-x-auto border-b border-gray-200 px-1">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`-mb-px min-h-[44px] whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
               activeTab === tab.key
                 ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -215,7 +215,7 @@ export default function DriversPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-sm">
+      <div className="relative w-full max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         <input
           type="text"

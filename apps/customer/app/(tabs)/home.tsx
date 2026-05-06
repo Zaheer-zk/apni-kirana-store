@@ -16,6 +16,7 @@ import { CategoryGrid } from '@/components/CategoryGrid';
 import { ItemCard } from '@/components/ItemCard';
 import { Skeleton } from '@/components/Skeleton';
 import { Badge } from '@/components/Badge';
+import { useUnreadNotificationsCount } from '@/app/notifications/index';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useCartStore } from '@/store/cart.store';
@@ -178,6 +179,7 @@ function StoreSkeleton() {
 export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
   const cartCount = useCartStore((s) => s.items.reduce((sum, i) => sum + i.qty, 0));
+  const unreadCount = useUnreadNotificationsCount();
 
   const meQuery = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const defaultAddress = meQuery.data?.defaultAddress ?? null;
@@ -244,9 +246,19 @@ export default function HomeScreen() {
           ) : null}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.iconButton} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.iconButton}
+          activeOpacity={0.7}
+          onPress={() => router.push('/notifications')}
+        >
           <Ionicons name="notifications-outline" size={22} color={colors.textPrimary} />
-          <View style={[styles.iconDot, { backgroundColor: colors.error }]} />
+          {unreadCount > 0 ? (
+            <View style={[styles.iconBadge, { backgroundColor: colors.error }]}>
+              <Text style={styles.iconBadgeText}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </Text>
+            </View>
+          ) : null}
         </TouchableOpacity>
       </View>
 

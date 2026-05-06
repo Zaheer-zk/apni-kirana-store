@@ -100,9 +100,9 @@ export default function StoresPage() {
       key: 'name',
       header: 'Store Name',
       render: (s) => (
-        <div>
-          <p className="font-medium text-gray-900">{s.name}</p>
-          <p className="text-xs text-gray-400">{s.category}</p>
+        <div className="min-w-0 max-w-[180px] sm:max-w-none">
+          <p className="truncate font-medium text-gray-900" title={s.name}>{s.name}</p>
+          <p className="truncate text-xs text-gray-400" title={s.category}>{s.category}</p>
         </div>
       ),
     },
@@ -110,9 +110,9 @@ export default function StoresPage() {
       key: 'ownerName',
       header: 'Owner',
       render: (s) => (
-        <div>
-          <p className="text-gray-900">{s.ownerName}</p>
-          <p className="text-xs text-gray-400">{s.ownerPhone}</p>
+        <div className="min-w-0 max-w-[180px] sm:max-w-none">
+          <p className="truncate text-gray-900" title={s.ownerName}>{s.ownerName}</p>
+          <p className="truncate text-xs text-gray-400" title={s.ownerPhone}>{s.ownerPhone}</p>
         </div>
       ),
     },
@@ -185,12 +185,12 @@ export default function StoresPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="-mx-1 flex gap-1 overflow-x-auto border-b border-gray-200 px-1">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`-mb-px min-h-[44px] whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
               activeTab === tab.key
                 ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -202,7 +202,7 @@ export default function StoresPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-sm">
+      <div className="relative w-full max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
         <input
           type="text"

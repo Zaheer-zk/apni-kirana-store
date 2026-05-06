@@ -8,9 +8,11 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useDriverStore } from '@/store/driver.store';
@@ -23,6 +25,7 @@ import { Badge } from '@/components/Badge';
 import { initSocket } from '@/lib/socket';
 import { startLocationTracking, stopLocationTracking } from '@/lib/location';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
+import { useUnreadNotificationsCount } from '@/app/notifications/index';
 import type { DailyDriverStats } from '@aks/shared';
 
 // ─── Types (driver-side projection of GET /orders/:id) ───────────────────────
@@ -113,6 +116,7 @@ export default function DashboardScreen() {
 
   const [otpSheetVisible, setOtpSheetVisible] = useState(false);
   const [deliveredFlash, setDeliveredFlash] = useState(false);
+  const unreadCount = useUnreadNotificationsCount();
 
   // ─── Active order fetch ────────────────────────────────────────────────────
   const { data: activeOrder, isLoading: loadingActive } = useQuery<DriverOrder>({
@@ -227,6 +231,18 @@ export default function DashboardScreen() {
               Driver Dashboard
             </Text>
           </View>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push('/notifications')}
+            style={styles.bellButton}
+          >
+            <Ionicons
+              name="notifications-outline"
+              size={22}
+              color={colors.textPrimary}
+            />
+            {unreadCount > 0 ? <View style={styles.bellDot} /> : null}
+          </TouchableOpacity>
           <Badge
             variant={isOnline ? 'success' : 'default'}
             text={isOnline ? 'Online' : 'Offline'}
@@ -496,6 +512,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.sm,
+  },
+  bellButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.small,
+  },
+  bellDot: {
+    position: 'absolute',
+    top: 8,
+    right: 10,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: colors.error,
+    borderWidth: 2,
+    borderColor: colors.card,
   },
   greet: { fontSize: fontSize.sm, color: colors.textSecondary, fontWeight: '600' },
   headerName: {

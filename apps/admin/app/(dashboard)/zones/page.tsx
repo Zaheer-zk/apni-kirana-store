@@ -390,8 +390,8 @@ export default function ZonesPage() {
 
       {/* Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-900/50 p-4 sm:items-center">
-          <div className="card w-full max-w-2xl p-6">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-y-auto bg-gray-900/50 sm:items-center sm:p-4">
+          <div className="card flex w-full max-w-2xl flex-col rounded-none p-4 sm:rounded-lg sm:p-6">
             <div className="mb-4 flex items-start justify-between">
               <div className="flex items-center gap-2">
                 <MapIcon className="h-5 w-5 text-primary" />

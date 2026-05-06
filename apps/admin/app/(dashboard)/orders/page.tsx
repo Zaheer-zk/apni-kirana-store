@@ -97,18 +97,37 @@ export default function OrdersPage() {
     {
       key: 'customerName',
       header: 'Customer',
-      render: (o) => <span className="text-gray-900">{o.customerName}</span>,
+      render: (o) => (
+        <span
+          className="block max-w-[160px] truncate text-gray-900 sm:max-w-none"
+          title={o.customerName}
+        >
+          {o.customerName}
+        </span>
+      ),
     },
     {
       key: 'storeName',
       header: 'Store',
-      render: (o) => <span className="text-gray-700">{o.storeName}</span>,
+      render: (o) => (
+        <span
+          className="block max-w-[160px] truncate text-gray-700 sm:max-w-none"
+          title={o.storeName}
+        >
+          {o.storeName}
+        </span>
+      ),
     },
     {
       key: 'driverName',
       header: 'Driver',
       render: (o) => (
-        <span className="text-gray-500">{o.driverName ?? '—'}</span>
+        <span
+          className="block max-w-[160px] truncate text-gray-500 sm:max-w-none"
+          title={o.driverName ?? ''}
+        >
+          {o.driverName ?? '—'}
+        </span>
       ),
     },
     {
@@ -163,7 +182,7 @@ export default function OrdersPage() {
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            className="input w-48"
+            className="input w-full sm:w-48"
           >
             {STATUS_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -173,12 +192,12 @@ export default function OrdersPage() {
           </select>
 
           {/* Date range */}
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <input
               type="date"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
-              className="input w-40"
+              className="input w-full sm:w-40"
               placeholder="From"
             />
             <span className="text-gray-400 text-sm">to</span>
@@ -186,7 +205,7 @@ export default function OrdersPage() {
               type="date"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              className="input w-40"
+              className="input w-full sm:w-40"
               placeholder="To"
             />
           </div>

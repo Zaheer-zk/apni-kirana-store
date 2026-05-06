@@ -238,15 +238,15 @@ export default function AuditLogsPage() {
 
       {/* Filters */}
       <div className="card p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div>
+        <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:items-center">
+          <div className="w-full sm:w-auto">
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">
               Action
             </label>
             <select
               value={action}
               onChange={(e) => setAction(e.target.value)}
-              className="input min-w-[200px]"
+              className="input w-full sm:min-w-[200px]"
             >
               {ACTION_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -255,14 +255,14 @@ export default function AuditLogsPage() {
               ))}
             </select>
           </div>
-          <div>
+          <div className="w-full sm:w-auto">
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">
               Target type
             </label>
             <select
               value={targetType}
               onChange={(e) => setTargetType(e.target.value)}
-              className="input min-w-[160px]"
+              className="input w-full sm:min-w-[160px]"
             >
               {TARGET_TYPE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -286,7 +286,7 @@ export default function AuditLogsPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 px-6 py-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50 px-4 py-3 text-sm sm:px-6">
             <span className="text-gray-500">
               Page {page} of {totalPages}
             </span>
@@ -312,8 +312,8 @@ export default function AuditLogsPage() {
 
       {/* Diff modal */}
       {diffOpen && diffLog && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-900/50 p-4 sm:items-center">
-          <div className="card w-full max-w-4xl p-6">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-y-auto bg-gray-900/50 sm:items-center sm:p-4">
+          <div className="card flex w-full max-w-4xl flex-col rounded-none p-4 sm:rounded-lg sm:p-6">
             <div className="mb-4 flex items-start justify-between">
               <div className="flex items-center gap-2">
                 <History className="h-5 w-5 text-primary" />

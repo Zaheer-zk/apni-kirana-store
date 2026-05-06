@@ -119,23 +119,23 @@ export default function UsersPage() {
       {/* Table */}
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-6 py-3 text-left font-medium text-gray-500">Name</th>
-                <th className="px-6 py-3 text-left font-medium text-gray-500">Phone</th>
-                <th className="px-6 py-3 text-left font-medium text-gray-500">Role</th>
-                <th className="px-6 py-3 text-left font-medium text-gray-500">Joined</th>
-                <th className="px-6 py-3 text-left font-medium text-gray-500">Status</th>
-                <th className="px-6 py-3 text-left font-medium text-gray-500">Actions</th>
+                <th className="sticky left-0 z-10 whitespace-nowrap bg-gray-50 px-4 py-3 text-left font-medium text-gray-500 sm:static sm:px-6">Name</th>
+                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-gray-500 sm:px-6">Phone</th>
+                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-gray-500 sm:px-6">Role</th>
+                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-gray-500 sm:px-6">Joined</th>
+                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-gray-500 sm:px-6">Status</th>
+                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-gray-500 sm:px-6">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={i}>
+                  <tr key={i} className="bg-white">
                     {Array.from({ length: 6 }).map((__, j) => (
-                      <td key={j} className="px-6 py-3">
+                      <td key={j} className={`px-4 py-3 sm:px-6 ${j === 0 ? 'sticky left-0 z-[1] bg-white sm:static' : ''}`}>
                         <div className="h-4 rounded bg-gray-100 animate-pulse" />
                       </td>
                     ))}
@@ -143,30 +143,40 @@ export default function UsersPage() {
                 ))
               ) : isError ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-red-500">
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-red-500 sm:px-6">
                     Failed to load users.
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-400">
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400 sm:px-6">
                     No users found.
                   </td>
                 </tr>
               ) : (
                 users.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-3 font-medium text-gray-900">{user.name}</td>
-                    <td className="px-6 py-3 font-mono text-sm text-gray-600">{user.phone}</td>
-                    <td className="px-6 py-3">
+                  <tr key={user.id} className="bg-white transition-colors hover:bg-gray-50/50">
+                    <td
+                      className="sticky left-0 z-[1] max-w-[180px] truncate bg-white px-4 py-3 font-medium text-gray-900 sm:static sm:max-w-none sm:px-6"
+                      title={user.name ?? ''}
+                    >
+                      {user.name}
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-4 py-3 font-mono text-sm text-gray-600 sm:px-6"
+                      title={user.phone}
+                    >
+                      {user.phone}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 sm:px-6">
                       <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE[user.role]}`}>
                         {user.role.replace('_', ' ')}
                       </span>
                     </td>
-                    <td className="px-6 py-3 text-xs text-gray-400">
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-400 sm:px-6">
                       {new Date(user.createdAt).toLocaleDateString('en-IN')}
                     </td>
-                    <td className="px-6 py-3">
+                    <td className="whitespace-nowrap px-4 py-3 sm:px-6">
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                         user.isSuspended
                           ? 'bg-red-50 text-red-600'
@@ -175,11 +185,11 @@ export default function UsersPage() {
                         {user.isSuspended ? 'Suspended' : 'Active'}
                       </span>
                     </td>
-                    <td className="px-6 py-3">
+                    <td className="whitespace-nowrap px-4 py-3 sm:px-6">
                       <button
                         onClick={() => mutation.mutate({ userId: user.id, suspend: !user.isSuspended })}
                         disabled={mutation.isPending}
-                        className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                        className={`inline-flex min-h-[36px] items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
                           user.isSuspended
                             ? 'bg-green-50 text-green-700 hover:bg-green-100 border-green-200'
                             : 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200'
@@ -204,7 +214,7 @@ export default function UsersPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-4 sm:px-6">
             <p className="text-sm text-gray-500">
               Page {page} of {totalPages}
             </p>

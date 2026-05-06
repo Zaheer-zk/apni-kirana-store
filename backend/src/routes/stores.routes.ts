@@ -124,6 +124,60 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 // ─── GET /:id/items ───────────────────────────────────────────────────────────
 
+// ─── GET /orders/active — store owner's active orders (used by dashboard) ───
+router.get(
+  '/orders/active',
+  authenticate,
+  authorize('STORE_OWNER'),
+  async (req: Request, res: Response) => {
+    try {
+      const myStore = await prisma.store.findUnique({ where: { ownerId: req.user!.id } });
+      if (!myStore) return sendError(res, 'No store found', 404);
+      const orders = await prisma.order.findMany({
+        where: {
+          storeId: myStore.id,
+          status: { in: ['PENDING', 'STORE_ACCEPTED', 'DRIVER_ASSIGNED', 'PICKED_UP'] },
+        },
+        include: { items: true, deliveryAddress: { select: { city: true, pincode: true, label: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+      return sendSuccess(res, orders);
+    } catch (err) {
+      console.error('[Stores] active orders error:', err);
+      return sendError(res, 'Failed to fetch active orders', 500);
+    }
+  },
+);
+
+// ─── GET /orders — store owner's orders (filterable by ?statuses=A,B,C) ─────
+router.get(
+  '/orders',
+  authenticate,
+  authorize('STORE_OWNER'),
+  async (req: Request, res: Response) => {
+    try {
+      const myStore = await prisma.store.findUnique({ where: { ownerId: req.user!.id } });
+      if (!myStore) return sendError(res, 'No store found', 404);
+      const statusesParam = req.query['statuses'] as string | undefined;
+      const statuses = statusesParam ? statusesParam.split(',').map((s) => s.trim()) : undefined;
+      const orders = await prisma.order.findMany({
+        where: {
+          storeId: myStore.id,
+          ...(statuses ? { status: { in: statuses as never } } : {}),
+        },
+        include: { items: true, deliveryAddress: { select: { city: true, pincode: true, label: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+      return sendSuccess(res, orders);
+    } catch (err) {
+      console.error('[Stores] orders error:', err);
+      return sendError(res, 'Failed to fetch orders', 500);
+    }
+  },
+);
+
 router.get('/:id/items', async (req: Request, res: Response) => {
   try {
     const { category, search } = req.query;

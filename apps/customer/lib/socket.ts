@@ -47,24 +47,23 @@ export function subscribeToOrder(
   onStatusUpdate: (status: OrderStatus) => void,
   onLocationUpdate: (location: LatLng) => void
 ): () => void {
-  const statusEvent = `order:${orderId}:status`;
-  const locationEvent = `order:${orderId}:location`;
+  // Backend joins the user to room `order:<id>` when we send 'order:subscribe'
+  socket.emit('order:subscribe', orderId);
 
-  // Join the room for this order
-  socket.emit('order:join', { orderId });
+  const statusHandler = (data: { orderId: string; status: OrderStatus }) => {
+    if (data.orderId === orderId) onStatusUpdate(data.status);
+  };
+  const locationHandler = (data: { orderId?: string; lat: number; lng: number }) => {
+    if (!data.orderId || data.orderId === orderId) {
+      onLocationUpdate({ lat: data.lat, lng: data.lng });
+    }
+  };
 
-  socket.on(statusEvent, (data: { status: OrderStatus }) => {
-    onStatusUpdate(data.status);
-  });
+  socket.on('order:status', statusHandler);
+  socket.on('driver:location', locationHandler);
 
-  socket.on(locationEvent, (data: { lat: number; lng: number }) => {
-    onLocationUpdate({ lat: data.lat, lng: data.lng });
-  });
-
-  // Cleanup function
   return () => {
-    socket.off(statusEvent);
-    socket.off(locationEvent);
-    socket.emit('order:leave', { orderId });
+    socket.off('order:status', statusHandler);
+    socket.off('driver:location', locationHandler);
   };
 }

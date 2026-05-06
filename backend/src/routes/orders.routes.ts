@@ -8,6 +8,7 @@ import { sendSuccess, sendError } from '../utils/response';
 import { matchingQueue } from '../queues';
 import { assignDriverForOrder } from '../services/driver.service';
 import { sendNotification } from '../services/notification.service';
+import { broadcastOrderStatus } from '../services/order-events.service';
 
 const router = Router();
 
@@ -388,6 +389,7 @@ router.put(
         data: { status: 'STORE_ACCEPTED', storeAcceptedAt: new Date() },
       });
 
+      await broadcastOrderStatus(order.id, 'STORE_ACCEPTED');
       await sendNotification(order.customerId, 'Order Accepted', 'Your order has been accepted by the store!', { orderId: order.id });
 
       // Trigger driver assignment
@@ -426,6 +428,8 @@ router.put(
         where: { id: order.id },
         data: { status: 'REJECTED', rejectionReason: req.body.reason },
       });
+
+      await broadcastOrderStatus(order.id, 'REJECTED', { reason: req.body.reason });
 
       // Re-trigger matching for next best store
       await matchingQueue.add('match-store', {
@@ -520,6 +524,8 @@ router.put(
         where: { id: order.id },
         data: { status: 'CANCELLED', cancelReason: req.body.reason },
       });
+
+      await broadcastOrderStatus(order.id, 'CANCELLED', { reason: req.body.reason });
 
       return sendSuccess(res, updated, 'Order cancelled successfully');
     } catch (err) {

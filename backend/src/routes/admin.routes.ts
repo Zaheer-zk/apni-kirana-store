@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
+import { broadcastOrderStatus } from '../services/order-events.service';
 
 const router = Router();
 
@@ -336,6 +337,8 @@ router.put('/orders/:id/assign-store', async (req: Request, res: Response) => {
       include: { store: { select: { name: true, ownerId: true } } },
     });
 
+    await broadcastOrderStatus(orderId, 'STORE_ACCEPTED', { byAdmin: true });
+
     // Notify store owner
     await prisma.notification.create({
       data: {
@@ -384,6 +387,9 @@ router.put('/orders/:id/assign-driver', async (req: Request, res: Response) => {
       where: { id: orderId },
       data: { driverId, status: 'DRIVER_ASSIGNED', driverAssignedAt: new Date() },
     });
+
+    await broadcastOrderStatus(orderId, 'DRIVER_ASSIGNED', { byAdmin: true, driverId });
+
     await prisma.notification.create({
       data: {
         userId: driver.user.id,
@@ -521,6 +527,8 @@ router.put('/orders/:id/refund', async (req: Request, res: Response) => {
         ...(order.status !== 'DELIVERED' ? { status: 'CANCELLED' as const } : {}),
       },
     });
+
+    await broadcastOrderStatus(orderId, updated.status, { paymentStatus: 'REFUNDED', reason });
 
     await prisma.auditLog.create({
       data: {

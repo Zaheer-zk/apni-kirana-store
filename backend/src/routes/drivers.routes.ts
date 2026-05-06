@@ -7,6 +7,7 @@ import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { assignDriverForOrder } from '../services/driver.service';
 import { sendNotification } from '../services/notification.service';
+import { broadcastOrderStatus } from '../services/order-events.service';
 
 const router = Router();
 
@@ -244,6 +245,7 @@ router.put(
         data: { status: 'DRIVER_ASSIGNED' }, // status stays but driverAssignedAt is confirmed
       });
 
+      await broadcastOrderStatus(order.id, 'DRIVER_ASSIGNED', { driverId: driver.id });
       await sendNotification(
         order.customerId,
         'Driver On the Way',
@@ -317,6 +319,7 @@ router.put(
         data: { status: 'PICKED_UP', pickedUpAt: new Date() },
       });
 
+      await broadcastOrderStatus(order.id, 'PICKED_UP', { dropoffOtp: order.dropoffOtp });
       await sendNotification(
         order.customerId,
         'Order Picked Up',
@@ -381,6 +384,7 @@ router.put(
         return deliveredOrder;
       });
 
+      await broadcastOrderStatus(order.id, 'DELIVERED');
       await sendNotification(
         order.customerId,
         'Order Delivered',

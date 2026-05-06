@@ -34,32 +34,38 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError } = useQuery<PaginatedResponse<UserRow>>({
+  const { data, isLoading, isError } = useQuery<{ users: UserRow[]; total: number; pages: number }>({
     queryKey: ['admin-users', search, role, page],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: page.toString(),
         limit: PAGE_SIZE.toString(),
       });
-      if (search) params.set('q', search);
+      if (search) params.set('search', search);
       if (role) params.set('role', role);
 
-      const res = await api.get<{ success: boolean; data: PaginatedResponse<UserRow> }>(
-        `/api/v1/admin/users?${params.toString()}`
-      );
-      return res.data.data!;
+      const res = await api.get<{
+        success: boolean;
+        data: { users: Array<UserProfile & { isActive: boolean }>; total: number; page: number; pages: number };
+      }>(`/api/v1/admin/users?${params.toString()}`);
+      const payload = res.data?.data ?? { users: [], total: 0, page: 1, pages: 0 };
+      return {
+        users: payload.users.map((u) => ({ ...u, isSuspended: !u.isActive } as UserRow)),
+        total: payload.total,
+        pages: payload.pages,
+      };
     },
   });
 
   const mutation = useMutation({
-    mutationFn: ({ userId, suspend }: { userId: string; suspend: boolean }) =>
-      api.patch(`/api/v1/admin/users/${userId}/status`, { suspend }),
+    mutationFn: ({ userId }: { userId: string; suspend: boolean }) =>
+      api.put(`/api/v1/admin/users/${userId}/suspend`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
     },
   });
 
-  const users = data?.items ?? [];
+  const users = data?.users ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 

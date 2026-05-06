@@ -7,13 +7,34 @@ import { Filter } from 'lucide-react';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
-import type { Order } from '@aks/shared';
 import { OrderStatus } from '@aks/shared';
 
-interface OrderRow extends Order {
+interface OrderRow {
+  id: string;
+  status: string;
+  total: number;
+  paymentMethod: string;
+  paymentStatus: string;
+  createdAt: string;
   customerName: string;
   storeName: string;
   driverName: string | null;
+}
+
+interface OrdersResponse {
+  orders: Array<{
+    id: string;
+    status: string;
+    total: number;
+    paymentMethod: string;
+    paymentStatus: string;
+    createdAt: string;
+    customer?: { name: string | null; phone: string };
+    store?: { name: string };
+    driver?: { user?: { name: string | null } } | null;
+  }>;
+  total: number;
+  page: number;
 }
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
@@ -41,10 +62,21 @@ export default function OrdersPage() {
   const { data, isLoading, isError } = useQuery<OrderRow[]>({
     queryKey: ['admin-orders', status, from, to],
     queryFn: async () => {
-      const res = await api.get<{ success: boolean; data: OrderRow[] }>(
+      const res = await api.get<{ success: boolean; data: OrdersResponse }>(
         `/api/v1/admin/orders?${params.toString()}`
       );
-      return res.data.data ?? [];
+      const list = res.data?.data?.orders ?? [];
+      return list.map((o) => ({
+        id: o.id,
+        status: o.status,
+        total: o.total,
+        paymentMethod: o.paymentMethod,
+        paymentStatus: o.paymentStatus,
+        createdAt: o.createdAt,
+        customerName: o.customer?.name ?? o.customer?.phone ?? '—',
+        storeName: o.store?.name ?? '—',
+        driverName: o.driver?.user?.name ?? null,
+      }));
     },
   });
 

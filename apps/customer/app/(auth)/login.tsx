@@ -90,7 +90,7 @@ export default function LoginScreen() {
     setLoading(true);
     setError(null);
     try {
-      await apiClient.post('/api/v1/auth/send-otp', { phone: `+91${phone}` });
+      await apiClient.post('/api/v1/auth/send-otp', { phone });
       setStep('otp');
     } catch (err: unknown) {
       const message =
@@ -110,7 +110,7 @@ export default function LoginScreen() {
     setError(null);
     try {
       const res = await apiClient.post<VerifyOtpResponse>('/api/v1/auth/verify-otp', {
-        phone: `+91${phone}`,
+        phone,
         otp: otpString,
       });
       const { user, accessToken, refreshToken } = res.data;
@@ -173,7 +173,7 @@ export default function LoginScreen() {
                 </View>
                 <TextInput
                   style={styles.phoneInput}
-                  placeholder="9999966666"
+                  placeholder="9999966661"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="number-pad"
                   maxLength={10}
@@ -196,7 +196,7 @@ export default function LoginScreen() {
               <View style={styles.hintBox}>
                 <Ionicons name="information-circle" size={16} color={colors.info} />
                 <Text style={styles.hintText}>
-                  Use 9999966666 to test as customer
+                  Use 9999966661 to test as customer
                 </Text>
               </View>
             </>

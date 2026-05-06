@@ -6,7 +6,6 @@ import { Search, CheckCircle, XCircle, PauseCircle, Loader2 } from 'lucide-react
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
-import type { StoreProfile } from '@aks/shared';
 import { StoreStatus } from '@aks/shared';
 
 type TabKey = 'PENDING_APPROVAL' | 'ACTIVE' | 'SUSPENDED';
@@ -17,11 +16,36 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'SUSPENDED', label: 'Suspended' },
 ];
 
-interface StoreRow extends StoreProfile {
+interface StoreRow {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+  city: string;
+  rating: number;
   ownerName: string;
   ownerPhone: string;
-  city: string;
+  itemCount: number;
+  orderCount: number;
   createdAt: string;
+}
+
+interface BackendStore {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+  city: string;
+  rating: number;
+  createdAt: string;
+  owner: { id: string; name: string | null; phone: string };
+  _count?: { items: number; orders: number };
+}
+
+interface StoresResponse {
+  stores: BackendStore[];
+  total: number;
+  page: number;
 }
 
 export default function StoresPage() {
@@ -32,16 +56,34 @@ export default function StoresPage() {
   const { data, isLoading, isError } = useQuery<StoreRow[]>({
     queryKey: ['admin-stores', activeTab],
     queryFn: async () => {
-      const res = await api.get<{ success: boolean; data: StoreRow[] }>(
+      const res = await api.get<{ success: boolean; data: StoresResponse }>(
         `/api/v1/admin/stores?status=${activeTab}`
       );
-      return res.data.data ?? [];
+      const list = res.data?.data?.stores ?? [];
+      return list.map((s) => ({
+        id: s.id,
+        name: s.name,
+        category: s.category,
+        status: s.status,
+        city: s.city,
+        rating: s.rating ?? 0,
+        ownerName: s.owner?.name ?? 'Unnamed',
+        ownerPhone: s.owner?.phone ?? '',
+        itemCount: s._count?.items ?? 0,
+        orderCount: s._count?.orders ?? 0,
+        createdAt: s.createdAt,
+      }));
     },
   });
 
   const mutation = useMutation({
-    mutationFn: ({ storeId, action }: { storeId: string; action: string }) =>
-      api.patch(`/api/v1/admin/stores/${storeId}/status`, { action }),
+    mutationFn: ({ storeId, action }: { storeId: string; action: string }) => {
+      const path =
+        action === 'approve' || action === 'reinstate'
+          ? `/api/v1/admin/stores/${storeId}/approve`
+          : `/api/v1/admin/stores/${storeId}/suspend`;
+      return api.put(path);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-stores'] });
     },

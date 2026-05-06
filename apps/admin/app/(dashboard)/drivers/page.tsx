@@ -6,7 +6,6 @@ import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Star } from 'lucide
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
-import type { DriverProfile } from '@aks/shared';
 import { DriverStatus } from '@aks/shared';
 
 type TabKey = 'PENDING_APPROVAL' | 'ACTIVE' | 'SUSPENDED';
@@ -17,9 +16,33 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'SUSPENDED', label: 'Suspended' },
 ];
 
-interface DriverRow extends DriverProfile {
+interface DriverRow {
+  id: string;
+  name: string;
+  phone: string;
+  vehicleType: string;
+  vehicleNumber: string;
+  status: string;
+  rating: number;
   totalDeliveries: number;
   createdAt: string;
+}
+
+interface BackendDriver {
+  id: string;
+  vehicleType: string;
+  vehicleNumber: string;
+  status: string;
+  rating: number;
+  createdAt: string;
+  user: { id: string; name: string | null; phone: string };
+  _count?: { orders: number };
+}
+
+interface DriversResponse {
+  drivers: BackendDriver[];
+  total: number;
+  page: number;
 }
 
 export default function DriversPage() {
@@ -30,16 +53,33 @@ export default function DriversPage() {
   const { data, isLoading, isError } = useQuery<DriverRow[]>({
     queryKey: ['admin-drivers', activeTab],
     queryFn: async () => {
-      const res = await api.get<{ success: boolean; data: DriverRow[] }>(
+      const res = await api.get<{ success: boolean; data: DriversResponse }>(
         `/api/v1/admin/drivers?status=${activeTab}`
       );
-      return res.data.data ?? [];
+      const list = res.data?.data?.drivers ?? [];
+      return list.map((d) => ({
+        id: d.id,
+        name: d.user?.name ?? 'Unnamed',
+        phone: d.user?.phone ?? '',
+        vehicleType: d.vehicleType,
+        vehicleNumber: d.vehicleNumber,
+        status: d.status,
+        rating: d.rating ?? 0,
+        totalDeliveries: d._count?.orders ?? 0,
+        createdAt: d.createdAt,
+      }));
     },
   });
 
   const mutation = useMutation({
-    mutationFn: ({ driverId, action }: { driverId: string; action: string }) =>
-      api.patch(`/api/v1/admin/drivers/${driverId}/status`, { action }),
+    mutationFn: ({ driverId, action }: { driverId: string; action: string }) => {
+      // Backend uses PUT to dedicated endpoints, not PATCH /status
+      const path =
+        action === 'approve' || action === 'reinstate'
+          ? `/api/v1/admin/drivers/${driverId}/approve`
+          : `/api/v1/admin/drivers/${driverId}/suspend`;
+      return api.put(path);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-drivers'] });
     },

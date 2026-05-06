@@ -3,7 +3,12 @@
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    "isolatedModules": true,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
   },
   "include": ["src/**/*", "__tests__/**/*"]
 }

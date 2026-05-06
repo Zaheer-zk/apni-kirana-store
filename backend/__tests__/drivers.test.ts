@@ -56,7 +56,7 @@ describe('POST /api/v1/drivers/register', () => {
     const res = await request(app)
       .post('/api/v1/drivers/register')
       .set('Authorization', `Bearer ${token}`)
-      .send({ vehicleType: 'BIKE', vehicleNumber: 'X', licenseNumber: 'LIC' });
+      .send({ vehicleType: 'BIKE', vehicleNumber: 'DL02XX9999', licenseNumber: 'LIC-NEW-1' });
     expect(res.status).toBe(409);
   });
 });

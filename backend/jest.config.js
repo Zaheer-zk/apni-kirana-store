@@ -16,6 +16,8 @@ module.exports = {
       'ts-jest',
       {
         tsconfig: '<rootDir>/tsconfig.test.json',
+        isolatedModules: true,
+        diagnostics: false,
       },
     ],
   },

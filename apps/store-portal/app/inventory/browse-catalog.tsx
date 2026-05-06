@@ -1,12 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
-  TextInput,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
   Modal,
   KeyboardAvoidingView,
@@ -14,10 +12,18 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
 import { useMyInventory } from '@/app/(tabs)/inventory';
+import { Card } from '@/components/Card';
+import { Badge } from '@/components/Badge';
+import { Skeleton } from '@/components/Skeleton';
+import { EmptyState } from '@/components/EmptyState';
+import { Input } from '@/components/Input';
+import { Button } from '@/components/Button';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,23 +91,24 @@ interface AddModalProps {
 function AddToStoreModal({ visible, catalogItem, onClose, onSubmit, isSubmitting }: AddModalProps) {
   const [price, setPrice] = useState('');
   const [stockQty, setStockQty] = useState('');
+  const [errors, setErrors] = useState<{ price?: string; stockQty?: string }>({});
 
   useEffect(() => {
     if (visible) {
       setPrice('');
       setStockQty('');
+      setErrors({});
     }
   }, [visible, catalogItem?.id]);
 
   const handleSubmit = () => {
+    const next: { price?: string; stockQty?: string } = {};
     const priceNum = parseFloat(price);
-    if (isNaN(priceNum) || priceNum <= 0) {
-      return Alert.alert('Validation', 'Enter a valid price');
-    }
+    if (isNaN(priceNum) || priceNum <= 0) next.price = 'Enter a valid price';
     const stockNum = parseInt(stockQty, 10);
-    if (isNaN(stockNum) || stockNum < 0) {
-      return Alert.alert('Validation', 'Enter a valid stock quantity');
-    }
+    if (isNaN(stockNum) || stockNum < 0) next.stockQty = 'Enter a valid stock quantity';
+    setErrors(next);
+    if (Object.keys(next).length > 0) return;
     onSubmit(priceNum, stockNum);
   };
 
@@ -112,58 +119,77 @@ function AddToStoreModal({ visible, catalogItem, onClose, onSubmit, isSubmitting
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={modalStyles.kavWrap}
         >
-          <Pressable style={modalStyles.sheet} onPress={() => {}}>
-            <Text style={modalStyles.title}>Add to my store</Text>
-            {catalogItem && (
-              <View style={modalStyles.itemRow}>
-                <Text style={modalStyles.itemName} numberOfLines={2}>
-                  {catalogItem.name}
-                </Text>
-                <Text style={modalStyles.itemMeta}>
-                  {catalogItem.unit} · {catalogItem.category}
-                </Text>
+          <Pressable onPress={() => {}}>
+            <Card padding={spacing.xl} style={modalStyles.sheet}>
+              <View style={modalStyles.sheetHeader}>
+                <Text style={modalStyles.title}>Add to my store</Text>
+                <TouchableOpacity onPress={onClose} activeOpacity={0.7} hitSlop={8}>
+                  <Ionicons name="close" size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
               </View>
-            )}
 
-            <Text style={modalStyles.label}>Price (₹) *</Text>
-            <TextInput
-              style={modalStyles.input}
-              placeholder="0.00"
-              keyboardType="decimal-pad"
-              value={price}
-              onChangeText={setPrice}
-              autoFocus
-            />
+              {catalogItem && (
+                <View style={modalStyles.itemRow}>
+                  <View style={modalStyles.itemThumb}>
+                    <Ionicons name="cube" size={22} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={modalStyles.itemName} numberOfLines={2}>
+                      {catalogItem.name}
+                    </Text>
+                    <Text style={modalStyles.itemMeta}>
+                      {catalogItem.unit} · {catalogItem.category}
+                    </Text>
+                  </View>
+                </View>
+              )}
 
-            <Text style={modalStyles.label}>Stock quantity *</Text>
-            <TextInput
-              style={modalStyles.input}
-              placeholder="0"
-              keyboardType="number-pad"
-              value={stockQty}
-              onChangeText={setStockQty}
-            />
+              <View style={{ gap: spacing.md, marginTop: spacing.md }}>
+                <Input
+                  label="Price (₹) *"
+                  placeholder="0.00"
+                  keyboardType="decimal-pad"
+                  value={price}
+                  onChangeText={(v) => {
+                    setPrice(v);
+                    if (errors.price) setErrors({ ...errors, price: undefined });
+                  }}
+                  autoFocus
+                  error={errors.price}
+                />
+                <Input
+                  label="Stock quantity *"
+                  placeholder="0"
+                  keyboardType="number-pad"
+                  value={stockQty}
+                  onChangeText={(v) => {
+                    setStockQty(v);
+                    if (errors.stockQty) setErrors({ ...errors, stockQty: undefined });
+                  }}
+                  error={errors.stockQty}
+                />
+              </View>
 
-            <View style={modalStyles.actions}>
-              <TouchableOpacity
-                style={[modalStyles.btn, modalStyles.cancelBtn]}
-                onPress={onClose}
-                disabled={isSubmitting}
-              >
-                <Text style={modalStyles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[modalStyles.btn, modalStyles.submitBtn, isSubmitting && { opacity: 0.6 }]}
-                onPress={handleSubmit}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={modalStyles.submitBtnText}>Add to my store</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+              <View style={modalStyles.actions}>
+                <Button
+                  variant="ghost"
+                  title="Cancel"
+                  onPress={onClose}
+                  disabled={isSubmitting}
+                  fullWidth
+                  style={modalStyles.actionBtn}
+                />
+                <Button
+                  variant="primary"
+                  title="Add to my store"
+                  onPress={handleSubmit}
+                  loading={isSubmitting}
+                  disabled={isSubmitting}
+                  fullWidth
+                  style={modalStyles.actionBtn}
+                />
+              </View>
+            </Card>
           </Pressable>
         </KeyboardAvoidingView>
       </Pressable>
@@ -183,31 +209,52 @@ interface RowProps {
 function CatalogRow({ item, alreadyAdded, onAdd }: RowProps) {
   const carryCount = item._count?.storeItems ?? 0;
   return (
-    <View style={styles.row}>
-      <View style={styles.rowImage}>
-        <Text style={styles.rowImageEmoji}>🛒</Text>
-      </View>
-      <View style={styles.rowInfo}>
-        <Text style={styles.rowName} numberOfLines={1}>
-          {item.name}
-        </Text>
-        <Text style={styles.rowMeta}>
-          {item.unit} · {item.category}
-        </Text>
-        {carryCount > 0 && (
-          <Text style={styles.rowHint}>Carried by {carryCount} store{carryCount !== 1 ? 's' : ''}</Text>
+    <Card padding={spacing.md}>
+      <View style={styles.row}>
+        <View style={styles.rowImage}>
+          <Ionicons name="cube" size={24} color={colors.primary} />
+        </View>
+        <View style={styles.rowInfo}>
+          <Text style={styles.rowName} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text style={styles.rowMeta}>
+            {item.unit} · {item.category}
+          </Text>
+          {carryCount > 0 ? (
+            <Text style={styles.rowHint}>
+              Carried by {carryCount} store{carryCount !== 1 ? 's' : ''}
+            </Text>
+          ) : null}
+        </View>
+        {alreadyAdded ? (
+          <Badge variant="success" text="Added" dot />
+        ) : (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={onAdd}
+            style={styles.addBtn}
+          >
+            <Ionicons name="add" size={18} color={colors.white} />
+            <Text style={styles.addBtnText}>Add</Text>
+          </TouchableOpacity>
         )}
       </View>
-      {alreadyAdded ? (
-        <View style={styles.addedPill}>
-          <Text style={styles.addedPillText}>✓ Added</Text>
+    </Card>
+  );
+}
+
+function RowSkeleton() {
+  return (
+    <Card padding={spacing.md}>
+      <View style={styles.row}>
+        <Skeleton width={52} height={52} radius={radius.md} />
+        <View style={{ flex: 1, gap: 6 }}>
+          <Skeleton width="70%" height={14} />
+          <Skeleton width="40%" height={12} />
         </View>
-      ) : (
-        <TouchableOpacity style={styles.addBtn} onPress={onAdd} activeOpacity={0.85}>
-          <Text style={styles.addBtnText}>+ Add</Text>
-        </TouchableOpacity>
-      )}
-    </View>
+      </View>
+    </Card>
   );
 }
 
@@ -294,16 +341,18 @@ export default function BrowseCatalogScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
       {/* Sticky search */}
-      <View style={styles.searchContainer}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput
-          style={styles.searchInput}
+      <View style={styles.searchWrap}>
+        <Input
           placeholder="Search catalog..."
           value={search}
           onChangeText={setSearch}
-          clearButtonMode="while-editing"
+          leftIcon="search"
+          rightIcon={search ? 'close-circle' : undefined}
+          onRightIconPress={() => setSearch('')}
+          autoCorrect={false}
+          autoCapitalize="none"
         />
       </View>
 
@@ -311,29 +360,30 @@ export default function BrowseCatalogScreen() {
         horizontal
         data={CATEGORY_FILTERS}
         keyExtractor={(i) => i.value}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[styles.filterChip, category === item.value && styles.filterChipActive]}
-            onPress={() => setCategory(item.value)}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                category === item.value && styles.filterChipTextActive,
-              ]}
+        renderItem={({ item }) => {
+          const isActive = category === item.value;
+          return (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.filterChip, isActive && styles.filterChipActive]}
+              onPress={() => setCategory(item.value)}
             >
-              {item.label}
-            </Text>
-          </TouchableOpacity>
-        )}
+              <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                {item.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        }}
         contentContainerStyle={styles.filterList}
         showsHorizontalScrollIndicator={false}
         style={styles.filterBar}
       />
 
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2563EB" />
+        <View style={styles.list}>
+          <RowSkeleton />
+          <RowSkeleton />
+          <RowSkeleton />
         </View>
       ) : (
         <FlatList
@@ -346,15 +396,19 @@ export default function BrowseCatalogScreen() {
               onAdd={() => setModalItem(item)}
             />
           )}
+          ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>🔎</Text>
-              <Text style={styles.emptyText}>
-                {debouncedSearch ? 'No catalog items match your search' : 'No items in this category'}
-              </Text>
-            </View>
+            <EmptyState
+              icon="search-outline"
+              title={debouncedSearch ? 'No results' : 'No items in this category'}
+              subtitle={
+                debouncedSearch
+                  ? 'Try a different search term.'
+                  : 'Try a different category.'
+              }
+            />
           }
         />
       )}
@@ -374,123 +428,99 @@ export default function BrowseCatalogScreen() {
 // Styles
 // ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    height: 44,
+  safe: { flex: 1, backgroundColor: colors.background },
+  searchWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: 100,
+    paddingBottom: spacing.sm,
   },
-  searchIcon: { fontSize: 16, marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14, color: '#111827' },
-  filterBar: { maxHeight: 56 },
-  filterList: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
+  filterBar: { maxHeight: 56, flexGrow: 0 },
+  filterList: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, gap: spacing.sm },
   filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.gray100,
     borderWidth: 1.5,
     borderColor: 'transparent',
   },
-  filterChipActive: { backgroundColor: '#EFF6FF', borderColor: '#2563EB' },
-  filterChipText: { fontSize: 13, color: '#6B7280', fontWeight: '600' },
-  filterChipTextActive: { color: '#2563EB' },
-  list: { padding: 16, gap: 10, paddingBottom: 32 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyContainer: { alignItems: 'center', paddingTop: 64 },
-  emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyText: { fontSize: 15, color: '#374151', fontWeight: '600', textAlign: 'center', paddingHorizontal: 32 },
+  filterChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
+  filterChipText: { fontSize: fontSize.sm, color: colors.textSecondary, fontWeight: '600' },
+  filterChipTextActive: { color: colors.primaryDark, fontWeight: '700' },
+  list: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxxl,
+    gap: spacing.md,
+    flexGrow: 1,
+  },
 
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    gap: spacing.md,
   },
   rowImage: {
     width: 52,
     height: 52,
-    borderRadius: 10,
-    backgroundColor: '#F3F4F6',
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  rowImageEmoji: { fontSize: 24 },
   rowInfo: { flex: 1 },
-  rowName: { fontSize: 14, fontWeight: '700', color: '#111827', marginBottom: 2 },
-  rowMeta: { fontSize: 12, color: '#9CA3AF' },
-  rowHint: { fontSize: 11, color: '#6B7280', marginTop: 2 },
+  rowName: { fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
+  rowMeta: { fontSize: fontSize.xs, color: colors.textMuted },
+  rowHint: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2 },
 
   addBtn: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    ...shadow.small,
   },
-  addBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-
-  addedPill: {
-    backgroundColor: '#DCFCE7',
-    borderWidth: 1,
-    borderColor: '#16A34A',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  addedPillText: { color: '#15803D', fontSize: 12, fontWeight: '700' },
+  addBtnText: { color: colors.white, fontSize: fontSize.sm, fontWeight: '700' },
 });
 
 const modalStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: colors.overlay,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.xxl,
   },
   kavWrap: { width: '100%' },
   sheet: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    gap: 4,
+    gap: spacing.sm,
   },
-  title: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 8 },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  title: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary },
   itemRow: {
-    backgroundColor: '#F9FAFB',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.gray100,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    marginTop: spacing.md,
   },
-  itemName: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  itemMeta: { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  label: { fontSize: 13, color: '#374151', fontWeight: '600', marginTop: 8, marginBottom: 6 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    height: 48,
-    fontSize: 15,
-    color: '#111827',
+  itemThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  actions: { flexDirection: 'row', gap: 10, marginTop: 18 },
-  btn: { flex: 1, height: 48, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  cancelBtn: { backgroundColor: '#F3F4F6' },
-  cancelBtnText: { color: '#374151', fontSize: 14, fontWeight: '700' },
-  submitBtn: { backgroundColor: '#2563EB' },
-  submitBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  itemName: { fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary },
+  itemMeta: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
+  actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  actionBtn: { flex: 1 },
 });

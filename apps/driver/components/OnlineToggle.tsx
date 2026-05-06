@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,11 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useDriverStore } from '@/store/driver.store';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 
 interface ToggleStatusResponse {
   isOnline: boolean;
@@ -21,6 +23,24 @@ export function OnlineToggle() {
 
   // Animated value: 0 = offline, 1 = online
   const anim = useRef(new Animated.Value(isOnline ? 1 : 0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  // Subtle pulse on the status indicator when online.
+  useEffect(() => {
+    if (!isOnline) {
+      pulse.stopAnimation();
+      pulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 900, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isOnline, pulse]);
 
   const toggleMutation = useMutation<ToggleStatusResponse, Error, boolean>({
     mutationFn: (online: boolean) =>
@@ -30,7 +50,6 @@ export function OnlineToggle() {
         })
         .then((r) => r.data),
     onMutate: (online) => {
-      // Optimistic update
       setOnline(online);
       Animated.spring(anim, {
         toValue: online ? 1 : 0,
@@ -39,7 +58,6 @@ export function OnlineToggle() {
       }).start();
     },
     onError: (err, online) => {
-      // Revert
       setOnline(!online);
       Animated.spring(anim, {
         toValue: online ? 0 : 1,
@@ -50,43 +68,56 @@ export function OnlineToggle() {
     },
   });
 
-  const backgroundColor = anim.interpolate({
+  const trackBackground = anim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['#DC2626', '#16A34A'],
+    outputRange: [colors.gray300, colors.accent],
   });
 
   const thumbTranslate = anim.interpolate({
     inputRange: [0, 1],
-    outputRange: [4, 56],
+    outputRange: [4, TRACK_WIDTH - THUMB_SIZE - 4],
+  });
+
+  const pulseScale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.6],
+  });
+
+  const pulseOpacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.4, 0],
   });
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => toggleMutation.mutate(!isOnline)}
-        disabled={toggleMutation.isPending}
-        style={styles.touchable}
-      >
-        <Animated.View style={[styles.track, { backgroundColor }]}>
-          {toggleMutation.isPending ? (
-            <ActivityIndicator
-              color="#fff"
-              size="small"
-              style={styles.loadingIndicator}
-            />
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => toggleMutation.mutate(!isOnline)}
+      disabled={toggleMutation.isPending}
+      style={[styles.container, isOnline ? styles.containerOnline : null]}
+    >
+      <View style={styles.left}>
+        <View style={styles.iconWrap}>
+          {isOnline ? (
+            <View style={styles.dotWrap}>
+              <Animated.View
+                style={[
+                  styles.dotPulse,
+                  { transform: [{ scale: pulseScale }], opacity: pulseOpacity },
+                ]}
+              />
+              <View style={styles.dot} />
+            </View>
           ) : (
-            <Animated.View
-              style={[
-                styles.thumb,
-                { transform: [{ translateX: thumbTranslate }] },
-              ]}
-            />
+            <Ionicons name="moon-outline" size={20} color={colors.gray500} />
           )}
-        </Animated.View>
-
-        <View style={styles.labelContainer}>
-          <Text style={[styles.statusLabel, isOnline ? styles.labelOnline : styles.labelOffline]}>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={[
+              styles.statusLabel,
+              isOnline ? styles.labelOnline : styles.labelOffline,
+            ]}
+          >
             {isOnline ? 'You are ONLINE' : 'You are OFFLINE'}
           </Text>
           <Text style={styles.statusHint}>
@@ -95,29 +126,74 @@ export function OnlineToggle() {
               : 'Tap to go online and start receiving orders'}
           </Text>
         </View>
-      </TouchableOpacity>
-    </View>
+      </View>
+
+      <Animated.View style={[styles.track, { backgroundColor: trackBackground }]}>
+        {toggleMutation.isPending ? (
+          <ActivityIndicator
+            color={colors.white}
+            size="small"
+            style={styles.loadingIndicator}
+          />
+        ) : (
+          <Animated.View
+            style={[
+              styles.thumb,
+              { transform: [{ translateX: thumbTranslate }] },
+            ]}
+          />
+        )}
+      </Animated.View>
+    </TouchableOpacity>
   );
 }
 
-const TRACK_WIDTH = 96;
-const THUMB_SIZE = 36;
+const TRACK_WIDTH = 64;
+const THUMB_SIZE = 28;
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  touchable: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: spacing.lg,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    ...shadow.medium,
+  },
+  containerOnline: {
+    borderColor: colors.accentLight,
+    backgroundColor: '#F0FDF4',
+  },
+  left: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.gray100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dotWrap: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.accent,
+  },
+  dotPulse: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.accent,
   },
   track: {
     width: TRACK_WIDTH,
@@ -131,19 +207,12 @@ const styles = StyleSheet.create({
     width: THUMB_SIZE,
     height: THUMB_SIZE,
     borderRadius: THUMB_SIZE / 2,
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    backgroundColor: colors.white,
+    ...shadow.small,
   },
-  loadingIndicator: {
-    alignSelf: 'center',
-  },
-  labelContainer: { flex: 1 },
-  statusLabel: { fontSize: 16, fontWeight: '800', marginBottom: 2 },
-  labelOnline: { color: '#16A34A' },
-  labelOffline: { color: '#DC2626' },
-  statusHint: { fontSize: 12, color: '#9CA3AF' },
+  loadingIndicator: { alignSelf: 'center' },
+  statusLabel: { fontSize: fontSize.md, fontWeight: '800', marginBottom: 2 },
+  labelOnline: { color: colors.accentDark },
+  labelOffline: { color: colors.gray700 },
+  statusHint: { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 16 },
 });

@@ -6,13 +6,14 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { Button } from '@/components/Button';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 
 interface Props {
   orderId: string;
@@ -36,13 +37,13 @@ export function DropoffOtpSheet({ orderId, visible, onClose, onSuccess }: Props)
     if (visible) {
       setDigits(Array(OTP_LENGTH).fill(''));
       setError(null);
-      // Focus the first input after a frame so the modal has mounted.
       const t = setTimeout(() => inputs.current[0]?.focus(), 200);
       return () => clearTimeout(t);
     }
     return undefined;
   }, [visible]);
 
+  // Backend contract: PUT /drivers/orders/:id/deliver with { dropoffOtp }
   const verifyMutation = useMutation({
     mutationFn: (dropoffOtp: string) =>
       api
@@ -59,14 +60,12 @@ export function DropoffOtpSheet({ orderId, visible, onClose, onSuccess }: Props)
       } else {
         setError(msg);
       }
-      // Clear digits so driver can re-enter cleanly.
       setDigits(Array(OTP_LENGTH).fill(''));
       setTimeout(() => inputs.current[0]?.focus(), 50);
     },
   });
 
   const handleChange = (text: string, idx: number) => {
-    // Allow only digits. If user pasted multiple, distribute them.
     const cleaned = text.replace(/[^0-9]/g, '');
     if (!cleaned) {
       const next = [...digits];
@@ -80,7 +79,6 @@ export function DropoffOtpSheet({ orderId, visible, onClose, onSuccess }: Props)
       setDigits(next);
       if (idx < OTP_LENGTH - 1) inputs.current[idx + 1]?.focus();
     } else {
-      // Pasted full code
       const next = [...digits];
       const chars = cleaned.slice(0, OTP_LENGTH).split('');
       for (let i = 0; i < OTP_LENGTH; i++) {
@@ -118,28 +116,34 @@ export function DropoffOtpSheet({ orderId, visible, onClose, onSuccess }: Props)
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.backdrop} />
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.backdrop}
+          onPress={onClose}
+        />
         <View style={styles.sheet}>
           <View style={styles.handle} />
 
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={styles.iconWrap}>
-                <Ionicons name="lock-closed" size={20} color="#DC2626" />
+                <Ionicons name="lock-closed" size={20} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.title}>Confirm Delivery</Text>
+                <Text style={styles.title}>Confirm delivery</Text>
                 <Text style={styles.subtitle}>
                   Ask the customer for their 4-digit OTP
                 </Text>
               </View>
             </View>
             <TouchableOpacity
+              activeOpacity={0.7}
               onPress={onClose}
               hitSlop={12}
               disabled={verifyMutation.isPending}
+              style={styles.closeBtn}
             >
-              <Ionicons name="close" size={26} color="#6B7280" />
+              <Ionicons name="close" size={26} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -152,8 +156,8 @@ export function DropoffOtpSheet({ orderId, visible, onClose, onSuccess }: Props)
                 }}
                 style={[
                   styles.otpInput,
-                  error ? styles.otpInputError : null,
                   d ? styles.otpInputFilled : null,
+                  error ? styles.otpInputError : null,
                 ]}
                 value={d}
                 onChangeText={(t) => handleChange(t, idx)}
@@ -169,22 +173,24 @@ export function DropoffOtpSheet({ orderId, visible, onClose, onSuccess }: Props)
             ))}
           </View>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {error ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle" size={16} color={colors.error} />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
 
-          <TouchableOpacity
-            style={[
-              styles.submitButton,
-              (!otpComplete || verifyMutation.isPending) && styles.submitButtonDisabled,
-            ]}
-            disabled={!otpComplete || verifyMutation.isPending}
+          <Button
+            variant="primary"
+            size="lg"
+            title="Verify & complete"
+            icon="checkmark-circle"
+            fullWidth
             onPress={handleSubmit}
-          >
-            {verifyMutation.isPending ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.submitButtonText}>Verify & complete</Text>
-            )}
-          </TouchableOpacity>
+            disabled={!otpComplete}
+            loading={verifyMutation.isPending}
+            style={styles.submitButton}
+          />
 
           <Text style={styles.helperText}>
             Without the customer's OTP, you can't mark this order as delivered.
@@ -202,88 +208,93 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   sheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 12,
-    paddingHorizontal: 20,
-    paddingBottom: 32,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 14,
+    backgroundColor: colors.card,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xxxl,
+    ...shadow.large,
   },
   handle: {
     alignSelf: 'center',
     width: 44,
     height: 5,
     borderRadius: 3,
-    backgroundColor: '#E5E7EB',
-    marginBottom: 18,
+    backgroundColor: colors.gray200,
+    marginBottom: spacing.lg,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 22,
+    marginBottom: spacing.xxl,
   },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 },
   iconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FEE2E2',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: { fontSize: 18, fontWeight: '700', color: '#111827' },
-  subtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  title: { fontSize: fontSize.lg, fontWeight: '700', color: colors.textPrimary },
+  subtitle: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   otpRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 12,
-    marginBottom: 12,
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
   otpInput: {
     flex: 1,
     height: 64,
     borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     textAlign: 'center',
     fontSize: 26,
     fontWeight: '700',
-    color: '#111827',
-    backgroundColor: '#F9FAFB',
+    color: colors.textPrimary,
+    backgroundColor: colors.background,
   },
   otpInputFilled: {
-    borderColor: '#DC2626',
-    backgroundColor: '#FEF2F2',
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryTint,
   },
-  otpInputError: { borderColor: '#DC2626', backgroundColor: '#FEE2E2' },
-  errorText: {
-    color: '#DC2626',
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 4,
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  submitButton: {
-    marginTop: 18,
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: '#DC2626',
+  otpInputError: { borderColor: colors.error, backgroundColor: colors.errorLight },
+  errorBox: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.errorLight,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
   },
-  submitButtonDisabled: { backgroundColor: '#FCA5A5' },
-  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  errorText: {
+    flex: 1,
+    color: colors.error,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+  },
+  submitButton: { marginTop: spacing.lg },
   helperText: {
-    marginTop: 12,
-    fontSize: 12,
-    color: '#9CA3AF',
+    marginTop: spacing.md,
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
     textAlign: 'center',
     lineHeight: 17,
   },

@@ -4,19 +4,17 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  TextInput,
   Alert,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
+import { Input } from '@/components/Input';
+import { Button } from '@/components/Button';
+import { colors, fontSize, spacing } from '@/constants/theme';
 
 export default function EditStoreProfileScreen() {
   const { storeProfile, setStoreProfile } = useStorePortalStore();
@@ -94,181 +92,102 @@ export default function EditStoreProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Store Profile</Text>
-        <View style={styles.headerBtn} />
-      </View>
-
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView
-          style={styles.container}
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Store details</Text>
+        <Text style={styles.sectionTitle}>Store details</Text>
+        <View style={styles.formGroup}>
+          <Input
+            label="Store name *"
+            value={name}
+            onChangeText={(v) => {
+              setName(v);
+              if (errors.name) setErrors({ ...errors, name: undefined });
+            }}
+            placeholder="e.g. Sharma General Store"
+            error={errors.name}
+            leftIcon="storefront-outline"
+          />
+          <Input
+            label="Description"
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Tell customers about your store"
+            multiline
+            numberOfLines={4}
+          />
+        </View>
 
-            <Text style={styles.label}>Store name *</Text>
-            <TextInput
-              style={[styles.input, errors.name && styles.inputError]}
-              value={name}
-              onChangeText={setName}
-              placeholder="e.g. Sharma General Store"
-              placeholderTextColor="#9CA3AF"
-            />
-            {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
+        <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>Address</Text>
+        <View style={styles.formGroup}>
+          <Input
+            label="Street"
+            value={street}
+            onChangeText={setStreet}
+            placeholder="House no., street, area"
+            leftIcon="home-outline"
+          />
+          <Input
+            label="City"
+            value={city}
+            onChangeText={setCity}
+            placeholder="City"
+          />
+          <Input
+            label="State"
+            value={stateName}
+            onChangeText={setStateName}
+            placeholder="State"
+          />
+          <Input
+            label="Pincode"
+            value={pincode}
+            onChangeText={(v) => {
+              setPincode(v);
+              if (errors.pincode) setErrors({ ...errors, pincode: undefined });
+            }}
+            placeholder="6-digit pincode"
+            keyboardType="number-pad"
+            maxLength={6}
+            error={errors.pincode}
+            leftIcon="map-outline"
+          />
+        </View>
 
-            <Text style={[styles.label, { marginTop: 14 }]}>Description</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Tell customers about your store"
-              placeholderTextColor="#9CA3AF"
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Address</Text>
-
-            <Text style={styles.label}>Street</Text>
-            <TextInput
-              style={styles.input}
-              value={street}
-              onChangeText={setStreet}
-              placeholder="House no., street, area"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            <Text style={[styles.label, { marginTop: 14 }]}>City</Text>
-            <TextInput
-              style={styles.input}
-              value={city}
-              onChangeText={setCity}
-              placeholder="City"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            <Text style={[styles.label, { marginTop: 14 }]}>State</Text>
-            <TextInput
-              style={styles.input}
-              value={stateName}
-              onChangeText={setStateName}
-              placeholder="State"
-              placeholderTextColor="#9CA3AF"
-            />
-
-            <Text style={[styles.label, { marginTop: 14 }]}>Pincode</Text>
-            <TextInput
-              style={[styles.input, errors.pincode && styles.inputError]}
-              value={pincode}
-              onChangeText={setPincode}
-              placeholder="6-digit pincode"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="number-pad"
-              maxLength={6}
-            />
-            {errors.pincode && (
-              <Text style={styles.errorText}>{errors.pincode}</Text>
-            )}
-          </View>
-
-          <TouchableOpacity
-            style={[
-              styles.saveBtn,
-              updateMutation.isPending && styles.saveBtnDisabled,
-            ]}
-            onPress={onSave}
-            disabled={updateMutation.isPending}
-          >
-            {updateMutation.isPending ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.saveBtnText}>Save changes</Text>
-            )}
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        <Button
+          title="Save changes"
+          icon="save-outline"
+          onPress={onSave}
+          loading={updateMutation.isPending}
+          disabled={updateMutation.isPending}
+          fullWidth
+          size="lg"
+          style={{ marginTop: spacing.lg }}
+        />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  headerBtn: { width: 40, alignItems: 'flex-start' },
-  headerTitle: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.xl, paddingTop: 100, paddingBottom: spacing.xxxl },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: fontSize.xs,
     fontWeight: '700',
-    color: '#6B7280',
+    color: colors.textMuted,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 12,
+    letterSpacing: 0.6,
+    marginBottom: spacing.md,
   },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 6,
+  formGroup: {
+    gap: spacing.lg,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 44,
-    fontSize: 15,
-    color: '#111827',
-    backgroundColor: '#fff',
-  },
-  textArea: { height: 96, paddingTop: 10 },
-  inputError: { borderColor: '#DC2626' },
-  errorText: { color: '#DC2626', fontSize: 12, marginTop: 4 },
-  saveBtn: {
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    paddingVertical: 15,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

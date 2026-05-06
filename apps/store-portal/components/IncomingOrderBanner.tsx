@@ -11,16 +11,19 @@ import {
   ToastAndroid,
   Vibration,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
 import { onOrderRescinded } from '@/lib/socket';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 
 // Order preview shape from GET /api/v1/orders/:id (we extract the bits we need)
 interface IncomingOrderPreview {
   id: string;
   itemsCount: number;
   orderTotal: number;
+  deliveryArea?: string;
 }
 
 function unwrap<T>(payload: unknown): T {
@@ -62,11 +65,13 @@ export function IncomingOrderBanner({ orderId }: Props) {
         id: string;
         items?: Array<unknown>;
         total?: number;
+        deliveryArea?: string;
       }>(r.data);
       return {
         id: o.id,
         itemsCount: o.items?.length ?? 0,
         orderTotal: o.total ?? 0,
+        deliveryArea: o.deliveryArea,
       };
     },
     enabled: !!orderId,
@@ -157,7 +162,8 @@ export function IncomingOrderBanner({ orderId }: Props) {
   const minutes = Math.floor(secondsLeft / 60);
   const secs = secondsLeft % 60;
   const timerStr = `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  const timerColor = secondsLeft <= 30 ? '#DC2626' : secondsLeft <= 60 ? '#F59E0B' : '#16A34A';
+  const timerColor =
+    secondsLeft <= 30 ? colors.error : secondsLeft <= 60 ? colors.warning : colors.success;
 
   return (
     <Animated.View
@@ -165,44 +171,48 @@ export function IncomingOrderBanner({ orderId }: Props) {
     >
       <View style={styles.bannerHeader}>
         <View style={styles.alertIndicator}>
-          <Text style={styles.alertDot}>●</Text>
-          <Text style={styles.bannerTitle}>New Order!</Text>
+          <Ionicons name="notifications" size={16} color="#FCD34D" />
+          <Text style={styles.bannerTitle}>New order!</Text>
         </View>
         <Text style={[styles.timer, { color: timerColor }]}>{timerStr}</Text>
       </View>
 
       {isLoading ? (
-        <ActivityIndicator color="#fff" size="small" style={{ marginVertical: 8 }} />
+        <ActivityIndicator color={colors.white} size="small" style={{ marginVertical: 8 }} />
       ) : order ? (
         <View style={styles.bannerBody}>
           <Text style={styles.bannerDetails}>
             {order.itemsCount} item{order.itemsCount !== 1 ? 's' : ''} ·{' '}
             <Text style={styles.bannerTotal}>₹{order.orderTotal.toFixed(2)}</Text>
           </Text>
-          <Text style={styles.bannerArea}>Delivery: {order.deliveryArea}</Text>
+          {order.deliveryArea ? (
+            <Text style={styles.bannerArea}>Delivery: {order.deliveryArea}</Text>
+          ) : null}
         </View>
       ) : null}
 
       <View style={styles.bannerActions}>
         <TouchableOpacity
+          activeOpacity={0.7}
           style={[styles.bannerBtn, styles.rejectBtn]}
           onPress={() => rejectMutation.mutate()}
           disabled={isBusy}
         >
           {rejectMutation.isPending ? (
-            <ActivityIndicator color="#DC2626" size="small" />
+            <ActivityIndicator color={colors.error} size="small" />
           ) : (
             <Text style={styles.rejectBtnText}>Reject</Text>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity
+          activeOpacity={0.7}
           style={[styles.bannerBtn, styles.acceptBtn]}
           onPress={() => acceptMutation.mutate()}
           disabled={isBusy}
         >
           {acceptMutation.isPending ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color={colors.white} size="small" />
           ) : (
             <Text style={styles.acceptBtnText}>Accept Order</Text>
           )}
@@ -214,31 +224,41 @@ export function IncomingOrderBanner({ orderId }: Props) {
 
 const styles = StyleSheet.create({
   banner: {
-    backgroundColor: '#1E3A5F',
-    marginHorizontal: 12,
-    marginTop: 8,
-    borderRadius: 16,
-    padding: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
+    backgroundColor: '#0F172A',
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
     zIndex: 999,
+    ...shadow.large,
   },
-  bannerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  alertIndicator: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  alertDot: { color: '#FCD34D', fontSize: 10 },
-  bannerTitle: { fontSize: 16, fontWeight: '800', color: '#fff' },
-  timer: { fontSize: 18, fontWeight: '800' },
-  bannerBody: { marginBottom: 10 },
-  bannerDetails: { fontSize: 15, color: '#E2E8F0', marginBottom: 2 },
-  bannerTotal: { fontWeight: '800', color: '#fff' },
-  bannerArea: { fontSize: 13, color: '#94A3B8' },
-  bannerActions: { flexDirection: 'row', gap: 10 },
-  bannerBtn: { flex: 1, height: 42, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  rejectBtn: { backgroundColor: 'rgba(220,38,38,0.15)', borderWidth: 1.5, borderColor: '#DC2626' },
-  rejectBtnText: { color: '#DC2626', fontSize: 14, fontWeight: '700' },
-  acceptBtn: { backgroundColor: '#2563EB' },
-  acceptBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  bannerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  alertIndicator: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  bannerTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.white },
+  timer: { fontSize: fontSize.lg, fontWeight: '800' },
+  bannerBody: { marginBottom: spacing.md },
+  bannerDetails: { fontSize: fontSize.md, color: '#E2E8F0', marginBottom: 2 },
+  bannerTotal: { fontWeight: '800', color: colors.white },
+  bannerArea: { fontSize: fontSize.sm, color: '#94A3B8' },
+  bannerActions: { flexDirection: 'row', gap: spacing.sm },
+  bannerBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: radius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rejectBtn: {
+    backgroundColor: 'rgba(239,68,68,0.18)',
+    borderWidth: 1.5,
+    borderColor: colors.error,
+  },
+  rejectBtnText: { color: colors.error, fontSize: fontSize.sm, fontWeight: '700' },
+  acceptBtn: { backgroundColor: colors.primary },
+  acceptBtnText: { color: colors.white, fontSize: fontSize.sm, fontWeight: '700' },
 });

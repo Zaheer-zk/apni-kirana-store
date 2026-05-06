@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link, Stack } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
 
 export default function NotFoundScreen() {
   return (
@@ -10,7 +11,7 @@ export default function NotFoundScreen() {
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.content}>
           <View style={styles.iconBox}>
-            <Ionicons name="bicycle-outline" size={48} color="#DC2626" />
+            <Ionicons name="bicycle-outline" size={48} color={colors.primary} />
           </View>
           <Text style={styles.label}>404</Text>
           <Text style={styles.title}>Page not found</Text>
@@ -27,14 +28,45 @@ export default function NotFoundScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  content: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  iconBox: {
-    width: 96, height: 96, borderRadius: 24, backgroundColor: '#FEE2E2',
-    alignItems: 'center', justifyContent: 'center', marginBottom: 24,
+  container: { flex: 1, backgroundColor: colors.background },
+  content: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xxl,
   },
-  label: { fontSize: 14, fontWeight: '600', color: '#DC2626', letterSpacing: 1 },
-  title: { marginTop: 8, fontSize: 24, fontWeight: '700', color: '#111827', textAlign: 'center' },
-  subtitle: { marginTop: 12, fontSize: 16, color: '#6B7280', textAlign: 'center' },
-  cta: { marginTop: 32, fontSize: 16, fontWeight: '600', color: '#DC2626' },
+  iconBox: {
+    width: 96,
+    height: 96,
+    borderRadius: radius.xl,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xxl,
+  },
+  label: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 1,
+  },
+  title: {
+    marginTop: spacing.sm,
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  subtitle: {
+    marginTop: spacing.md,
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  cta: {
+    marginTop: spacing.xxxl,
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.primary,
+  },
 });

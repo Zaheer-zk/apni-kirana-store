@@ -4,18 +4,20 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  TextInput,
   Switch,
   Alert,
-  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
+import { Card } from '@/components/Card';
+import { Input } from '@/components/Input';
+import { Button } from '@/components/Button';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
 
 const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -88,162 +90,109 @@ export default function OperatingHoursScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Operating Hours</Text>
-        <View style={styles.headerBtn} />
-      </View>
-
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.card}>
+        <Card padding={spacing.lg}>
           <View style={styles.row}>
+            <View style={styles.rowIconWrap}>
+              <Ionicons name="moon-outline" size={18} color={colors.primary} />
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.rowTitle}>24/7 store</Text>
-              <Text style={styles.rowSubtitle}>
-                Open all day, every day
-              </Text>
+              <Text style={styles.rowSubtitle}>Open all day, every day</Text>
             </View>
             <Switch
               value={isAlwaysOpen}
               onValueChange={handleAlwaysOpenToggle}
-              trackColor={{ true: '#2563EB', false: '#D1D5DB' }}
-              thumbColor="#fff"
+              trackColor={{ false: colors.gray300, true: colors.primaryLight }}
+              thumbColor={isAlwaysOpen ? colors.primary : colors.gray400}
             />
           </View>
-        </View>
+        </Card>
 
-        <View style={[styles.card, isAlwaysOpen && styles.cardDisabled]}>
-          <Text style={styles.label}>Opening time</Text>
-          <TextInput
-            style={[styles.input, errors.open && styles.inputError]}
+        <View style={[styles.formGroup, isAlwaysOpen && { opacity: 0.55 }]}>
+          <Input
+            label="Opening time"
             value={openTime}
             onChangeText={(v) => {
               setOpenTime(v);
               if (isAlwaysOpen) setIsAlwaysOpen(false);
+              if (errors.open) setErrors({ ...errors, open: undefined });
             }}
             placeholder="HH:MM (e.g. 09:00)"
             keyboardType="numbers-and-punctuation"
             editable={!isAlwaysOpen}
-            placeholderTextColor="#9CA3AF"
+            error={errors.open}
+            leftIcon="sunny-outline"
           />
-          {errors.open && <Text style={styles.errorText}>{errors.open}</Text>}
-
-          <Text style={[styles.label, { marginTop: 16 }]}>Closing time</Text>
-          <TextInput
-            style={[styles.input, errors.close && styles.inputError]}
+          <Input
+            label="Closing time"
             value={closeTime}
             onChangeText={(v) => {
               setCloseTime(v);
               if (isAlwaysOpen) setIsAlwaysOpen(false);
+              if (errors.close) setErrors({ ...errors, close: undefined });
             }}
             placeholder="HH:MM (e.g. 21:00)"
             keyboardType="numbers-and-punctuation"
             editable={!isAlwaysOpen}
-            placeholderTextColor="#9CA3AF"
+            error={errors.close}
+            leftIcon="moon-outline"
           />
-          {errors.close && <Text style={styles.errorText}>{errors.close}</Text>}
         </View>
 
         <View style={styles.helpBox}>
-          <Ionicons name="information-circle-outline" size={18} color="#2563EB" />
+          <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
           <Text style={styles.helpText}>
             Times are in 24-hour format. Customers will see your store as
             "closed" outside these hours.
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={[styles.saveBtn, updateMutation.isPending && styles.saveBtnDisabled]}
+        <Button
+          title="Save changes"
+          icon="save-outline"
           onPress={onSave}
+          loading={updateMutation.isPending}
           disabled={updateMutation.isPending}
-        >
-          {updateMutation.isPending ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.saveBtnText}>Save changes</Text>
-          )}
-        </TouchableOpacity>
+          fullWidth
+          size="lg"
+        />
       </ScrollView>
-    </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
-  container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
-  header: {
-    flexDirection: 'row',
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.xl, paddingTop: 100, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  rowIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    justifyContent: 'center',
   },
-  headerBtn: { width: 40, alignItems: 'flex-start' },
-  headerTitle: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  cardDisabled: { opacity: 0.55 },
-  row: { flexDirection: 'row', alignItems: 'center' },
-  rowTitle: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  rowSubtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 44,
-    fontSize: 15,
-    color: '#111827',
-    backgroundColor: '#fff',
-  },
-  inputError: { borderColor: '#DC2626' },
-  errorText: { color: '#DC2626', fontSize: 12, marginTop: 4 },
+  rowTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary },
+  rowSubtitle: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
+  formGroup: { gap: spacing.lg },
   helpBox: {
     flexDirection: 'row',
-    gap: 8,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 24,
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.md,
+    padding: spacing.md,
   },
-  helpText: { flex: 1, fontSize: 13, color: '#1E40AF', lineHeight: 18 },
-  saveBtn: {
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    paddingVertical: 15,
-    alignItems: 'center',
-  },
-  saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  helpText: { flex: 1, fontSize: fontSize.sm, color: colors.primaryDark, lineHeight: 18 },
 });

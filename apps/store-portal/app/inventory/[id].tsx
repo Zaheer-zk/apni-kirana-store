@@ -2,18 +2,24 @@ import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
   Alert,
   Switch,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
+import { Card } from '@/components/Card';
+import { Input } from '@/components/Input';
+import { Button } from '@/components/Button';
+import { Skeleton } from '@/components/Skeleton';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import type { StoreInventoryItem } from '@/app/(tabs)/inventory';
 
 // ---------------------------------------------------------------------------
@@ -43,6 +49,7 @@ export default function EditItemScreen() {
   const [price, setPrice] = useState('');
   const [stockQty, setStockQty] = useState('');
   const [isAvailable, setIsAvailable] = useState(true);
+  const [errors, setErrors] = useState<{ price?: string; stockQty?: string }>({});
 
   // Pre-fill form when item loads
   useEffect(() => {
@@ -65,21 +72,25 @@ export default function EditItemScreen() {
   });
 
   const handleSubmit = () => {
+    const next: { price?: string; stockQty?: string } = {};
     const priceNum = parseFloat(price);
-    if (isNaN(priceNum) || priceNum <= 0) {
-      return Alert.alert('Validation', 'Enter a valid price');
-    }
+    if (isNaN(priceNum) || priceNum <= 0) next.price = 'Enter a valid price';
     const stockNum = parseInt(stockQty, 10);
-    if (isNaN(stockNum) || stockNum < 0) {
-      return Alert.alert('Validation', 'Enter a valid stock quantity');
-    }
+    if (isNaN(stockNum) || stockNum < 0) next.stockQty = 'Enter a valid stock quantity';
+    setErrors(next);
+    if (Object.keys(next).length > 0) return;
     updateItemMutation.mutate({ price: priceNum, stockQty: stockNum, isAvailable });
   };
 
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2563EB" />
+        <View style={{ padding: spacing.xl, gap: spacing.md, width: '100%' }}>
+          <Skeleton height={88} radius={radius.lg} />
+          <Skeleton height={50} radius={radius.md} />
+          <Skeleton height={50} radius={radius.md} />
+          <Skeleton height={64} radius={radius.lg} />
+        </View>
       </View>
     );
   }
@@ -87,144 +98,139 @@ export default function EditItemScreen() {
   if (!item) {
     return (
       <View style={styles.loadingContainer}>
+        <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
         <Text style={styles.notFoundText}>Item not found</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Catalog identity (read-only) */}
-      <View style={styles.headerCard}>
-        <View style={styles.headerImage}>
-          <Text style={styles.headerImageEmoji}>🛒</Text>
-        </View>
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerName}>{item.name}</Text>
-          <Text style={styles.headerMeta}>
-            {item.unit} · {item.category}
-          </Text>
-          <Text style={styles.headerHint}>From master catalog</Text>
-        </View>
-      </View>
-
-      <View style={styles.row}>
-        <View style={styles.rowField}>
-          <Text style={styles.label}>Price (₹) *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="0.00"
-            keyboardType="decimal-pad"
-            value={price}
-            onChangeText={setPrice}
-          />
-        </View>
-        <View style={styles.rowField}>
-          <Text style={styles.label}>Stock qty *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="0"
-            keyboardType="number-pad"
-            value={stockQty}
-            onChangeText={setStockQty}
-          />
-        </View>
-      </View>
-
-      <View style={styles.toggleRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.label}>Available for orders</Text>
-          <Text style={styles.toggleHint}>
-            Customers can {isAvailable ? '' : 'not '}order this item right now
-          </Text>
-        </View>
-        <Switch
-          value={isAvailable}
-          onValueChange={setIsAvailable}
-          trackColor={{ false: '#D1D5DB', true: '#93C5FD' }}
-          thumbColor={isAvailable ? '#2563EB' : '#9CA3AF'}
-        />
-      </View>
-
-      <TouchableOpacity
-        style={[styles.submitButton, updateItemMutation.isPending && styles.submitButtonDisabled]}
-        onPress={handleSubmit}
-        disabled={updateItemMutation.isPending}
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {updateItemMutation.isPending ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.submitButtonText}>Save Changes</Text>
-        )}
-      </TouchableOpacity>
-    </ScrollView>
+        {/* Catalog identity (read-only) */}
+        <Card padding={spacing.lg} style={styles.headerCard}>
+          <View style={styles.headerImage}>
+            <Ionicons name="cube" size={28} color={colors.primary} />
+          </View>
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerName}>{item.name}</Text>
+            <Text style={styles.headerMeta}>
+              {item.unit} · {item.category}
+            </Text>
+            <Text style={styles.headerHint}>From master catalog</Text>
+          </View>
+        </Card>
+
+        <View style={styles.formRow}>
+          <View style={{ flex: 1 }}>
+            <Input
+              label="Price (₹) *"
+              placeholder="0.00"
+              keyboardType="decimal-pad"
+              value={price}
+              onChangeText={(v) => {
+                setPrice(v);
+                if (errors.price) setErrors({ ...errors, price: undefined });
+              }}
+              error={errors.price}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Input
+              label="Stock qty *"
+              placeholder="0"
+              keyboardType="number-pad"
+              value={stockQty}
+              onChangeText={(v) => {
+                setStockQty(v);
+                if (errors.stockQty) setErrors({ ...errors, stockQty: undefined });
+              }}
+              error={errors.stockQty}
+            />
+          </View>
+        </View>
+
+        <Card padding={spacing.lg} style={styles.toggleRow}>
+          <View style={{ flex: 1, paddingRight: spacing.md }}>
+            <Text style={styles.toggleTitle}>Available for orders</Text>
+            <Text style={styles.toggleHint}>
+              Customers can {isAvailable ? '' : 'not '}order this item right now
+            </Text>
+          </View>
+          <Switch
+            value={isAvailable}
+            onValueChange={setIsAvailable}
+            trackColor={{ false: colors.gray300, true: colors.primaryLight }}
+            thumbColor={isAvailable ? colors.primary : colors.gray400}
+          />
+        </Card>
+
+        <Button
+          title="Save changes"
+          icon="save-outline"
+          onPress={handleSubmit}
+          loading={updateItemMutation.isPending}
+          disabled={updateItemMutation.isPending}
+          fullWidth
+          size="lg"
+          style={{ marginTop: spacing.md }}
+        />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 20, paddingBottom: 48 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  notFoundText: { fontSize: 15, color: '#6B7280' },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.xl, paddingTop: 100, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  notFoundText: { fontSize: fontSize.md, color: colors.textSecondary, marginTop: spacing.md },
 
   headerCard: {
     flexDirection: 'row',
-    gap: 12,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    gap: spacing.md,
+    alignItems: 'center',
   },
   headerImage: {
     width: 64,
     height: 64,
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerImageEmoji: { fontSize: 30 },
-  headerInfo: { flex: 1, justifyContent: 'center' },
-  headerName: { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 2 },
-  headerMeta: { fontSize: 13, color: '#6B7280' },
-  headerHint: { fontSize: 11, color: '#9CA3AF', marginTop: 4 },
-
-  label: { fontSize: 14, color: '#374151', fontWeight: '600', marginBottom: 6 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    height: 50,
-    fontSize: 15,
-    color: '#111827',
+  headerInfo: { flex: 1 },
+  headerName: {
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 2,
   },
-  row: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  rowField: { flex: 1 },
+  headerMeta: { fontSize: fontSize.sm, color: colors.textSecondary },
+  headerHint: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4 },
 
+  formRow: { flexDirection: 'row', gap: spacing.md },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 24,
   },
-  toggleHint: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-
-  submitButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    height: 54,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 12,
+  toggleTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
-  submitButtonDisabled: { opacity: 0.6 },
-  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  toggleHint: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
 });

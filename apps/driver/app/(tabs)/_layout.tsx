@@ -1,10 +1,20 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { Platform } from 'react-native';
+import { colors, fontSize } from '@/constants/theme';
 
-function TabIcon({ icon, focused }: { icon: string; focused: boolean }) {
-  return (
-    <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{icon}</Text>
-  );
+type IoniconName = keyof typeof Ionicons.glyphMap;
+
+function makeIcon(focusedName: IoniconName, unfocusedName: IoniconName) {
+  return function TabIcon({ color, focused }: { color: string; focused: boolean }) {
+    return (
+      <Ionicons
+        name={focused ? focusedName : unfocusedName}
+        size={24}
+        color={color}
+      />
+    );
+  };
 }
 
 export default function TabsLayout() {
@@ -12,44 +22,49 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#DC2626',
-        tabBarInactiveTintColor: '#9CA3AF',
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
           borderTopWidth: 1,
-          borderTopColor: '#F3F4F6',
-          paddingBottom: 6,
-          paddingTop: 4,
-          height: 62,
+          borderTopColor: colors.divider,
+          backgroundColor: colors.card,
+          height: Platform.OS === 'ios' ? 84 : 64,
+          paddingBottom: Platform.OS === 'ios' ? 24 : 8,
+          paddingTop: 6,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarLabelStyle: {
+          fontSize: fontSize.xs - 1,
+          fontWeight: '600',
+          marginTop: -2,
+        },
       }}
     >
       <Tabs.Screen
         name="dashboard"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ focused }) => <TabIcon icon="🏠" focused={focused} />,
+          tabBarIcon: makeIcon('home', 'home-outline'),
         }}
       />
       <Tabs.Screen
         name="deliveries"
         options={{
           title: 'Deliveries',
-          tabBarIcon: ({ focused }) => <TabIcon icon="📦" focused={focused} />,
+          tabBarIcon: makeIcon('cube', 'cube-outline'),
         }}
       />
       <Tabs.Screen
         name="earnings"
         options={{
           title: 'Earnings',
-          tabBarIcon: ({ focused }) => <TabIcon icon="💰" focused={focused} />,
+          tabBarIcon: makeIcon('wallet', 'wallet-outline'),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ focused }) => <TabIcon icon="👤" focused={focused} />,
+          tabBarIcon: makeIcon('person', 'person-outline'),
         }}
       />
     </Tabs>

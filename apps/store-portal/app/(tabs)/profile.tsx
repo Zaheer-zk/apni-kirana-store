@@ -12,34 +12,52 @@ import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useStorePortalStore } from '@/store/store.store';
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
-    </View>
-  );
-}
+import { Avatar } from '@/components/Avatar';
+import { Badge } from '@/components/Badge';
+import { Card } from '@/components/Card';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
 
 interface MenuRowProps {
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   title: string;
+  subtitle?: string;
   onPress: () => void;
+  destructive?: boolean;
+  showDivider?: boolean;
 }
 
-function MenuRow({ icon, title, onPress }: MenuRowProps) {
+function MenuRow({ icon, title, subtitle, onPress, destructive, showDivider }: MenuRowProps) {
   return (
-    <TouchableOpacity style={styles.menuRow} onPress={onPress} activeOpacity={0.7}>
-      <Text style={styles.menuIcon}>{icon}</Text>
-      <Text style={styles.menuTitle}>{title}</Text>
-      <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-    </TouchableOpacity>
+    <>
+      <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={styles.menuRow}>
+        <View
+          style={[
+            styles.menuIconWrap,
+            destructive && { backgroundColor: colors.errorLight },
+          ]}
+        >
+          <Ionicons
+            name={icon}
+            size={18}
+            color={destructive ? colors.error : colors.primary}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.menuTitle, destructive && { color: colors.error }]}>
+            {title}
+          </Text>
+          {subtitle ? <Text style={styles.menuSubtitle}>{subtitle}</Text> : null}
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      </TouchableOpacity>
+      {showDivider ? <View style={styles.divider} /> : null}
+    </>
   );
 }
 
 export default function StoreProfileScreen() {
   const { user, storeProfile, clearAuth } = useStorePortalStore();
+  const isOpen = storeProfile?.isOpen ?? false;
 
   const openTime =
     (storeProfile as any)?.openTime ??
@@ -57,6 +75,13 @@ export default function StoreProfileScreen() {
     typeof addr === 'object' && addr !== null
       ? addr
       : { street: '—', city: '—', state: '—', pincode: '—' };
+
+  const memberSince = user?.createdAt
+    ? new Date(user.createdAt).toLocaleDateString('en-IN', {
+        month: 'short',
+        year: 'numeric',
+      })
+    : '—';
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to log out?', [
@@ -76,98 +101,131 @@ export default function StoreProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Text style={styles.pageTitle}>Store Profile</Text>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.pageTitle}>Profile</Text>
 
-        {/* Store Avatar */}
-        <View style={styles.avatarContainer}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {storeProfile?.name?.charAt(0).toUpperCase() ?? '?'}
+        {/* Identity */}
+        <View style={styles.identity}>
+          <Avatar name={storeProfile?.name ?? 'My Store'} size={88} />
+          <Text style={styles.storeName} numberOfLines={1}>
+            {storeProfile?.name ?? 'My Store'}
+          </Text>
+          {storeProfile?.category ? (
+            <Text style={styles.storeCategory}>{storeProfile.category}</Text>
+          ) : null}
+          <View style={{ marginTop: spacing.sm }}>
+            <Badge
+              variant={isOpen ? 'success' : 'error'}
+              text={isOpen ? 'Open now' : 'Closed'}
+              dot
+            />
+          </View>
+        </View>
+
+        {/* Quick stats */}
+        <View style={styles.statRow}>
+          <Card style={styles.statCard} padding={spacing.lg}>
+            <Ionicons name="time-outline" size={18} color={colors.primary} />
+            <Text style={styles.statLabel}>Hours</Text>
+            <Text style={styles.statValue}>
+              {openTime} – {closeTime}
             </Text>
-          </View>
-          <Text style={styles.storeName}>{storeProfile?.name ?? 'My Store'}</Text>
-          <Text style={styles.storeCategory}>{storeProfile?.category ?? ''}</Text>
-        </View>
-
-        {/* Store Details */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Store Information</Text>
-          <View style={styles.card}>
-            <InfoRow label="Store Name" value={storeProfile?.name ?? '—'} />
-            <View style={styles.divider} />
-            <InfoRow label="Category" value={storeProfile?.category ?? '—'} />
-            <View style={styles.divider} />
-            <InfoRow label="Status" value={storeProfile?.status ?? '—'} />
-            <View style={styles.divider} />
-            <InfoRow label="Hours" value={`${openTime} – ${closeTime}`} />
-          </View>
-        </View>
-
-        {/* Address */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Address</Text>
-          <View style={styles.card}>
-            <InfoRow label="Street" value={addressObj.street ?? '—'} />
-            <View style={styles.divider} />
-            <InfoRow label="City" value={addressObj.city ?? '—'} />
-            <View style={styles.divider} />
-            <InfoRow label="State" value={addressObj.state ?? '—'} />
-            <View style={styles.divider} />
-            <InfoRow label="Pincode" value={addressObj.pincode ?? '—'} />
-          </View>
+          </Card>
+          <Card style={styles.statCard} padding={spacing.lg}>
+            <Ionicons name="location-outline" size={18} color={colors.primary} />
+            <Text style={styles.statLabel}>Pincode</Text>
+            <Text style={styles.statValue}>{addressObj.pincode ?? '—'}</Text>
+          </Card>
+          <Card style={styles.statCard} padding={spacing.lg}>
+            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+            <Text style={styles.statLabel}>Member</Text>
+            <Text style={styles.statValue}>{memberSince}</Text>
+          </Card>
         </View>
 
         {/* Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Settings</Text>
-          <View style={styles.card}>
-            <MenuRow
-              icon="🕐"
-              title="Operating hours"
-              onPress={() => router.push('/profile/operating-hours')}
-            />
-            <View style={styles.divider} />
-            <MenuRow
-              icon="✏️"
-              title="Edit store profile"
-              onPress={() => router.push('/profile/edit')}
-            />
-            <View style={styles.divider} />
-            <MenuRow
-              icon="🔔"
-              title="Notifications"
-              onPress={() => router.push('/profile/notifications')}
-            />
-          </View>
-        </View>
+        <Text style={styles.sectionTitle}>Settings</Text>
+        <Card style={styles.menuCard} padding={0}>
+          <MenuRow
+            icon="time-outline"
+            title="Operating hours"
+            subtitle="Set when your store is open"
+            onPress={() => router.push('/profile/operating-hours')}
+            showDivider
+          />
+          <MenuRow
+            icon="storefront-outline"
+            title="Edit store profile"
+            subtitle="Name, address, description"
+            onPress={() => router.push('/profile/edit')}
+            showDivider
+          />
+          <MenuRow
+            icon="notifications-outline"
+            title="Notifications"
+            subtitle="Order alerts and reminders"
+            onPress={() => router.push('/profile/notifications')}
+          />
+        </Card>
 
         {/* Account */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <View style={styles.card}>
-            <InfoRow label="Owner" value={user?.name ?? '—'} />
-            <View style={styles.divider} />
-            <InfoRow label="Phone" value={user?.phone ?? '—'} />
-            <View style={styles.divider} />
-            <InfoRow
-              label="Member Since"
-              value={
-                user?.createdAt
-                  ? new Date(user.createdAt).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric',
-                    })
-                  : '—'
-              }
-            />
+        <Text style={styles.sectionTitle}>Account</Text>
+        <Card style={styles.menuCard} padding={spacing.lg}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Owner</Text>
+            <Text style={styles.infoValue}>{user?.name ?? '—'}</Text>
           </View>
-        </View>
+          <View style={styles.divider} />
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Phone</Text>
+            <Text style={styles.infoValue}>{user?.phone ?? '—'}</Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Address</Text>
+            <Text style={styles.infoValue} numberOfLines={2}>
+              {[addressObj.street, addressObj.city, addressObj.state]
+                .filter((v) => v && v !== '—')
+                .join(', ') || '—'}
+            </Text>
+          </View>
+        </Card>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>Logout</Text>
+        {/* Help / About */}
+        <Text style={styles.sectionTitle}>Help</Text>
+        <Card style={styles.menuCard} padding={0}>
+          <MenuRow
+            icon="help-circle-outline"
+            title="Help & support"
+            onPress={() =>
+              Alert.alert(
+                'Help & support',
+                'Reach our support team at support@apnikirana.app'
+              )
+            }
+            showDivider
+          />
+          <MenuRow
+            icon="information-circle-outline"
+            title="About Apni Kirana"
+            onPress={() =>
+              Alert.alert('Apni Kirana — Store Portal', 'Version 1.0.0')
+            }
+          />
+        </Card>
+
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={handleLogout}
+          style={styles.logoutButton}
+        >
+          <Ionicons name="log-out-outline" size={18} color={colors.error} />
+          <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -175,72 +233,115 @@ export default function StoreProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
-  pageTitle: { fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 24 },
-  avatarContainer: { alignItems: 'center', marginBottom: 32 },
-  avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: '#2563EB',
-    justifyContent: 'center',
+  content: { padding: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.md },
+  pageTitle: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+
+  identity: {
     alignItems: 'center',
-    marginBottom: 12,
+    gap: spacing.xs,
+    paddingVertical: spacing.lg,
   },
-  avatarText: { fontSize: 36, color: '#fff', fontWeight: '800' },
-  storeName: { fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 4 },
-  storeCategory: { fontSize: 14, color: '#6B7280' },
-  section: { marginBottom: 24 },
-  sectionTitle: {
-    fontSize: 13,
+  storeName: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginTop: spacing.md,
+  },
+  storeCategory: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+  },
+
+  statRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  statCard: {
+    flex: 1,
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+  },
+  statLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
     fontWeight: '700',
-    color: '#6B7280',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 10,
+    letterSpacing: 0.4,
   },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+  statValue: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
+
+  sectionTitle: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginTop: spacing.lg,
+    marginBottom: spacing.xs,
+  },
+  menuCard: {
+    overflow: 'hidden',
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  menuIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuTitle: { fontSize: fontSize.md, fontWeight: '600', color: colors.textPrimary },
+  menuSubtitle: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
+  divider: { height: 1, backgroundColor: colors.divider, marginLeft: spacing.lg + 36 + spacing.md },
+
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: spacing.sm,
+    gap: spacing.lg,
   },
-  infoLabel: { fontSize: 14, color: '#6B7280' },
+  infoLabel: { fontSize: fontSize.sm, color: colors.textSecondary },
   infoValue: {
-    fontSize: 14,
-    color: '#111827',
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
     fontWeight: '600',
-    maxWidth: '55%',
+    maxWidth: '60%',
     textAlign: 'right',
   },
-  divider: { height: 1, backgroundColor: '#F3F4F6' },
-  menuRow: {
+
+  logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-  },
-  menuIcon: { fontSize: 18, marginRight: 12 },
-  menuTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
-  logoutButton: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
     borderWidth: 1.5,
-    borderColor: '#BFDBFE',
+    borderColor: colors.error,
+    backgroundColor: 'transparent',
+    marginTop: spacing.xl,
   },
-  logoutButtonText: { color: '#DC2626', fontSize: 16, fontWeight: '700' },
+  logoutText: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.error,
+  },
 });

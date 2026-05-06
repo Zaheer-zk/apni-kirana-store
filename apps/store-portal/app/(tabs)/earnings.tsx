@@ -5,19 +5,23 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { Card } from '@/components/Card';
+import { Skeleton } from '@/components/Skeleton';
+import { EmptyState } from '@/components/EmptyState';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 import type { StoreEarningsSummary, StoreEarningsEntry } from '@aks/shared';
 
 type Period = 'today' | 'week' | 'month';
 
 const PERIOD_LABELS: Record<Period, string> = {
   today: 'Today',
-  week: 'This Week',
-  month: 'This Month',
+  week: 'Week',
+  month: 'Month',
 };
 
 export default function StoreEarningsScreen() {
@@ -37,72 +41,121 @@ export default function StoreEarningsScreen() {
         .then((r) => r.data),
   });
 
+  const heroValue =
+    period === 'today'
+      ? summary?.today
+      : period === 'week'
+      ? summary?.week
+      : summary?.month;
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.pageTitle}>Earnings</Text>
 
-        {summaryLoading ? (
-          <ActivityIndicator color="#2563EB" style={{ marginVertical: 20 }} />
-        ) : (
-          <View style={styles.summaryGrid}>
-            <View style={[styles.summaryCard, styles.summaryCardFull]}>
-              <Text style={styles.summaryLabel}>Today's Revenue</Text>
-              <Text style={styles.summaryValueLarge}>₹{summary?.today?.toFixed(2) ?? '0.00'}</Text>
-              <Text style={styles.summarySubtext}>
-                {summary?.todayOrders ?? 0} orders
-              </Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>This Week</Text>
-              <Text style={styles.summaryValue}>₹{summary?.week?.toFixed(2) ?? '0.00'}</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>This Month</Text>
-              <Text style={styles.summaryValue}>₹{summary?.month?.toFixed(2) ?? '0.00'}</Text>
-            </View>
-          </View>
-        )}
+        {/* Hero Card */}
+        <View style={styles.hero}>
+          <Text style={styles.heroLabel}>{PERIOD_LABELS[period]} revenue</Text>
+          {summaryLoading ? (
+            <Skeleton width={180} height={42} style={{ marginTop: spacing.xs }} />
+          ) : (
+            <Text style={styles.heroValue}>₹{Number(heroValue ?? 0).toFixed(2)}</Text>
+          )}
+          {!summaryLoading ? (
+            <Text style={styles.heroSubtext}>
+              {summary?.todayOrders ?? 0} order{summary?.todayOrders === 1 ? '' : 's'} today
+            </Text>
+          ) : null}
 
-        {/* Period Selector */}
-        <View style={styles.periodSelector}>
-          {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
-            <TouchableOpacity
-              key={p}
-              style={[styles.periodTab, period === p && styles.periodTabActive]}
-              onPress={() => setPeriod(p)}
-            >
-              <Text style={[styles.periodTabText, period === p && styles.periodTabTextActive]}>
-                {PERIOD_LABELS[p]}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {/* Period Selector */}
+          <View style={styles.periodSelector}>
+            {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
+              const isActive = period === p;
+              return (
+                <TouchableOpacity
+                  key={p}
+                  activeOpacity={0.7}
+                  style={[styles.periodTab, isActive && styles.periodTabActive]}
+                  onPress={() => setPeriod(p)}
+                >
+                  <Text style={[styles.periodTabText, isActive && styles.periodTabTextActive]}>
+                    {PERIOD_LABELS[p]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Mini summary */}
+        <View style={styles.miniRow}>
+          <Card style={styles.miniCard} padding={spacing.lg}>
+            <Text style={styles.miniLabel}>This Week</Text>
+            {summaryLoading ? (
+              <Skeleton width={80} height={20} />
+            ) : (
+              <Text style={styles.miniValue}>₹{Number(summary?.week ?? 0).toFixed(2)}</Text>
+            )}
+          </Card>
+          <Card style={styles.miniCard} padding={spacing.lg}>
+            <Text style={styles.miniLabel}>This Month</Text>
+            {summaryLoading ? (
+              <Skeleton width={80} height={20} />
+            ) : (
+              <Text style={styles.miniValue}>₹{Number(summary?.month ?? 0).toFixed(2)}</Text>
+            )}
+          </Card>
         </View>
 
         {/* Order Breakdown */}
-        <Text style={styles.sectionTitle}>Order Breakdown</Text>
+        <Text style={styles.sectionTitle}>Orders</Text>
 
         {breakdownLoading ? (
-          <ActivityIndicator color="#2563EB" style={{ marginTop: 16 }} />
-        ) : breakdown && breakdown.length === 0 ? (
-          <Text style={styles.emptyText}>No orders in this period</Text>
+          <View style={{ gap: spacing.sm }}>
+            <Skeleton height={64} radius={radius.lg} />
+            <Skeleton height={64} radius={radius.lg} />
+            <Skeleton height={64} radius={radius.lg} />
+          </View>
+        ) : !breakdown || breakdown.length === 0 ? (
+          <Card style={styles.emptyCard} padding={spacing.xxl}>
+            <EmptyState
+              icon="cash-outline"
+              title="No orders in this period"
+              subtitle="Once orders are completed, they show up here."
+            />
+          </Card>
         ) : (
-          breakdown?.map((entry) => (
-            <View key={entry.orderId} style={styles.breakdownRow}>
-              <View>
-                <Text style={styles.breakdownOrderId}>#{entry.orderId.slice(-8).toUpperCase()}</Text>
-                <Text style={styles.breakdownDate}>
-                  {new Date(entry.completedAt).toLocaleDateString('en-IN', {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
-                <Text style={styles.breakdownItems}>{entry.itemsCount} items</Text>
+          breakdown.map((entry) => (
+            <Card key={entry.orderId} padding={spacing.lg} style={styles.breakdownRow}>
+              <View style={styles.breakdownLeft}>
+                <View style={styles.breakdownIcon}>
+                  <Ionicons name="receipt-outline" size={18} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={styles.breakdownOrderId}>
+                    #{entry.orderId.slice(-8).toUpperCase()}
+                  </Text>
+                  <Text style={styles.breakdownDate}>
+                    {new Date(entry.completedAt).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                  <Text style={styles.breakdownItems}>
+                    {entry.itemsCount} item{entry.itemsCount === 1 ? '' : 's'}
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.breakdownAmount}>₹{entry.storeRevenue.toFixed(2)}</Text>
-            </View>
+              <Text style={styles.breakdownAmount}>
+                ₹{entry.storeRevenue.toFixed(2)}
+              </Text>
+            </Card>
           ))
         )}
       </ScrollView>
@@ -111,58 +164,107 @@ export default function StoreEarningsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 32 },
-  pageTitle: { fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 20 },
-  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 24 },
-  summaryCard: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 18,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+  content: { padding: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.md },
+  pageTitle: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
   },
-  summaryCardFull: { flexBasis: '100%', backgroundColor: '#EFF6FF' },
-  summaryLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '600', marginBottom: 6 },
-  summaryValue: { fontSize: 22, fontWeight: '800', color: '#111827' },
-  summaryValueLarge: { fontSize: 36, fontWeight: '800', color: '#2563EB' },
-  summarySubtext: { fontSize: 13, color: '#6B7280', marginTop: 4 },
+
+  hero: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.xl,
+    padding: spacing.xxl,
+    ...shadow.medium,
+  },
+  heroLabel: {
+    fontSize: fontSize.xs,
+    color: colors.primaryLight,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  heroValue: {
+    fontSize: fontSize.display + 4,
+    fontWeight: '800',
+    color: colors.white,
+    marginTop: spacing.xs,
+  },
+  heroSubtext: {
+    fontSize: fontSize.sm,
+    color: colors.primaryLight,
+    marginTop: spacing.xs,
+  },
   periodSelector: {
     flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: radius.full,
     padding: 4,
-    marginBottom: 20,
+    marginTop: spacing.lg,
   },
-  periodTab: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+  periodTab: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    alignItems: 'center',
+  },
   periodTabActive: {
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: colors.white,
   },
-  periodTabText: { fontSize: 13, color: '#6B7280', fontWeight: '600' },
-  periodTabTextActive: { color: '#2563EB' },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 12 },
+  periodTabText: {
+    fontSize: fontSize.sm,
+    color: colors.white,
+    fontWeight: '700',
+  },
+  periodTabTextActive: {
+    color: colors.primary,
+  },
+
+  miniRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  miniCard: { flex: 1 },
+  miniLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: spacing.xs,
+  },
+  miniValue: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+
+  sectionTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: spacing.md,
+  },
   breakdownRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 8,
   },
-  breakdownOrderId: { fontSize: 14, fontWeight: '700', color: '#111827' },
-  breakdownDate: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  breakdownItems: { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  breakdownAmount: { fontSize: 18, fontWeight: '800', color: '#2563EB' },
-  emptyText: { color: '#9CA3AF', fontSize: 14, textAlign: 'center', marginTop: 8 },
+  breakdownLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 },
+  breakdownIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  breakdownOrderId: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary },
+  breakdownDate: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
+  breakdownItems: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2 },
+  breakdownAmount: { fontSize: fontSize.lg, fontWeight: '800', color: colors.primary },
+  emptyCard: { paddingVertical: spacing.md },
 });

@@ -8,51 +8,103 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
 import { useDriverStore } from '@/store/driver.store';
 import { stopLocationTracking } from '@/lib/location';
+import { Avatar } from '@/components/Avatar';
+import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
 
-function StarRating({ rating }: { rating: number }) {
+interface StarRatingProps {
+  rating: number;
+}
+
+function StarRating({ rating }: Readonly<StarRatingProps>) {
   const stars = Array.from({ length: 5 }, (_, i) => i + 1);
   return (
     <View style={styles.starsRow}>
       {stars.map((star) => (
-        <Text key={star} style={[styles.star, star <= Math.round(rating) && styles.starFilled]}>
-          ★
-        </Text>
+        <Ionicons
+          key={star}
+          name={star <= Math.round(rating) ? 'star' : 'star-outline'}
+          size={16}
+          color={star <= Math.round(rating) ? colors.warning : colors.gray300}
+          style={{ marginRight: 2 }}
+        />
       ))}
       <Text style={styles.ratingNumber}>{rating.toFixed(1)}</Text>
     </View>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
-    </View>
-  );
+interface MenuRowProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor?: string;
+  iconBg?: string;
+  label: string;
+  subtitle?: string;
+  onPress: () => void;
+  isLast?: boolean;
 }
 
 function MenuRow({
   icon,
+  iconColor = colors.primary,
+  iconBg = colors.primaryLight,
   label,
+  subtitle,
   onPress,
-}: {
-  icon: string;
-  label: string;
-  onPress: () => void;
-}) {
+  isLast,
+}: Readonly<MenuRowProps>) {
   return (
-    <TouchableOpacity style={styles.menuRow} onPress={onPress} activeOpacity={0.7}>
-      <Text style={styles.menuIcon}>{icon}</Text>
-      <Text style={styles.menuLabel}>{label}</Text>
-      <Text style={styles.menuChevron}>›</Text>
+    <TouchableOpacity
+      style={[styles.menuRow, !isLast && styles.menuRowDivider]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[styles.menuIconWrap, { backgroundColor: iconBg }]}>
+        <Ionicons name={icon} size={20} color={iconColor} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.menuLabel}>{label}</Text>
+        {subtitle ? <Text style={styles.menuSubtitle}>{subtitle}</Text> : null}
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
     </TouchableOpacity>
   );
 }
+
+interface InfoRowProps {
+  label: string;
+  value: string;
+  isLast?: boolean;
+}
+
+function InfoRow({ label, value, isLast }: Readonly<InfoRowProps>) {
+  return (
+    <View style={[styles.infoRow, !isLast && styles.menuRowDivider]}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue} numberOfLines={1}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+const VEHICLE_LABEL: Record<string, string> = {
+  BIKE: 'Bike',
+  SCOOTER: 'Scooter',
+  CAR: 'Car',
+};
+
+const VEHICLE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  BIKE: 'bicycle',
+  SCOOTER: 'bicycle',
+  CAR: 'car',
+};
 
 export default function ProfileScreen() {
   const { user, driverProfile, clearAuth } = useDriverStore();
@@ -75,156 +127,264 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const vehicleLabel: Record<string, string> = {
-    BIKE: '🚲 Bike',
-    SCOOTER: '🛵 Scooter',
-    CAR: '🚗 Car',
-  };
+  const vehicleType = driverProfile?.vehicleType ?? '';
+  const vehicleTypeLabel = VEHICLE_LABEL[vehicleType] ?? vehicleType ?? '—';
+  const vehicleIcon = VEHICLE_ICON[vehicleType] ?? 'bicycle';
+
+  const totalRatings = driverProfile?.totalRatings ?? 0;
+  const rating = driverProfile?.rating ?? 0;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.pageTitle}>My Profile</Text>
 
-        {/* Avatar */}
-        <View style={styles.avatarContainer}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user?.name?.charAt(0).toUpperCase() ?? '?'}
-            </Text>
-          </View>
-          <Text style={styles.userName}>{user?.name ?? 'Driver'}</Text>
+        {/* Hero card with avatar */}
+        <Card style={styles.heroCard} padding={spacing.xxl}>
+          <Avatar name={user?.name} size={80} />
+          <Text style={styles.userName} numberOfLines={1}>
+            {user?.name ?? 'Driver'}
+          </Text>
           <Text style={styles.userPhone}>{user?.phone ?? ''}</Text>
-          {driverProfile?.rating !== undefined && (
-            <StarRating rating={driverProfile.rating} />
-          )}
-        </View>
+          {driverProfile?.rating !== undefined && rating > 0 ? (
+            <StarRating rating={rating} />
+          ) : null}
 
-        {/* Driver Details */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Vehicle Information</Text>
-          <View style={styles.card}>
-            <InfoRow
-              label="Vehicle Type"
-              value={vehicleLabel[driverProfile?.vehicleType ?? ''] ?? driverProfile?.vehicleType ?? '—'}
-            />
-            <View style={styles.divider} />
-            <InfoRow label="Vehicle Number" value={driverProfile?.vehicleNumber ?? '—'} />
-            <View style={styles.divider} />
-            <InfoRow label="License Number" value={driverProfile?.licenseNumber ?? '—'} />
+          <View style={styles.heroStatsRow}>
+            <View style={styles.heroStatBlock}>
+              <Text style={styles.heroStatValue}>{totalRatings}</Text>
+              <Text style={styles.heroStatLabel}>Ratings</Text>
+            </View>
+            <View style={styles.heroStatDivider} />
+            <View style={styles.heroStatBlock}>
+              <View style={styles.heroVehicleRow}>
+                <Ionicons name={vehicleIcon} size={18} color={colors.primary} />
+                <Text style={styles.heroStatValue}>{vehicleTypeLabel}</Text>
+              </View>
+              <Text style={styles.heroStatLabel}>Vehicle</Text>
+            </View>
+            <View style={styles.heroStatDivider} />
+            <View style={styles.heroStatBlock}>
+              <Text style={[styles.heroStatValue, { fontSize: fontSize.md }]}>
+                {driverProfile?.status === 'APPROVED' ? 'Active' : driverProfile?.status ?? '—'}
+              </Text>
+              <Text style={styles.heroStatLabel}>Status</Text>
+            </View>
           </View>
-        </View>
+        </Card>
 
-        {/* Account Details */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <View style={styles.card}>
-            <InfoRow label="Role" value="Driver" />
-            <View style={styles.divider} />
-            <InfoRow
-              label="Status"
-              value={driverProfile?.status ?? '—'}
-            />
-            <View style={styles.divider} />
-            <InfoRow
-              label="Member Since"
-              value={
-                user?.createdAt
-                  ? new Date(user.createdAt).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric',
-                    })
-                  : '—'
-              }
-            />
-          </View>
-        </View>
+        {/* Vehicle Info */}
+        <Text style={styles.sectionTitle}>Vehicle Information</Text>
+        <Card padding={0}>
+          <InfoRow label="Vehicle type" value={vehicleTypeLabel} />
+          <InfoRow
+            label="Vehicle number"
+            value={driverProfile?.vehicleNumber ?? '—'}
+          />
+          <InfoRow
+            label="License number"
+            value={driverProfile?.licenseNumber ?? '—'}
+            isLast
+          />
+        </Card>
+
+        {/* Account */}
+        <Text style={styles.sectionTitle}>Account</Text>
+        <Card padding={0}>
+          <InfoRow label="Role" value="Driver" />
+          <InfoRow
+            label="Member since"
+            value={
+              user?.createdAt
+                ? new Date(user.createdAt).toLocaleDateString('en-IN', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                  })
+                : '—'
+            }
+            isLast
+          />
+        </Card>
 
         {/* Menu */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>More</Text>
-          <View style={styles.card}>
-            <MenuRow
-              icon="⭐"
-              label="My Ratings"
-              onPress={() => router.push('/profile/ratings')}
-            />
-            <View style={styles.divider} />
-            <MenuRow
-              icon="💬"
-              label="Help & Support"
-              onPress={() => router.push('/profile/help')}
-            />
-          </View>
-        </View>
+        <Text style={styles.sectionTitle}>More</Text>
+        <Card padding={0}>
+          <MenuRow
+            icon="star"
+            iconColor={colors.warning}
+            iconBg={colors.warningLight}
+            label="My Ratings"
+            subtitle="See customer reviews"
+            onPress={() => router.push('/profile/ratings')}
+          />
+          <MenuRow
+            icon="help-circle"
+            iconColor={colors.info}
+            iconBg={colors.infoLight}
+            label="Help & Support"
+            subtitle="FAQs, contact support"
+            onPress={() => router.push('/profile/help')}
+          />
+          <MenuRow
+            icon="information-circle"
+            iconColor={colors.gray500}
+            iconBg={colors.gray100}
+            label="About"
+            subtitle="App version & legal"
+            onPress={() =>
+              Alert.alert('AKS Driver', 'Version 1.0.0\n© Apni Kirana Store')
+            }
+            isLast
+          />
+        </Card>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
+        <Button
+          variant="outline"
+          size="lg"
+          icon="log-out-outline"
+          title="Logout"
+          fullWidth
+          onPress={handleLogout}
+          style={styles.logoutButton}
+        />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
-  pageTitle: { fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 24 },
-  avatarContainer: { alignItems: 'center', marginBottom: 32 },
-  avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: '#DC2626',
-    justifyContent: 'center',
+  content: {
+    padding: spacing.xl,
+    paddingBottom: spacing.xxxl + spacing.lg,
+    gap: spacing.lg,
+  },
+  pageTitle: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+
+  heroCard: {
     alignItems: 'center',
-    marginBottom: 12,
   },
-  avatarText: { fontSize: 36, color: '#fff', fontWeight: '800' },
-  userName: { fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 4 },
-  userPhone: { fontSize: 15, color: '#6B7280', marginBottom: 10 },
-  starsRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  star: { fontSize: 22, color: '#D1D5DB' },
-  starFilled: { color: '#F59E0B' },
-  ratingNumber: { fontSize: 15, color: '#6B7280', fontWeight: '600', marginLeft: 6 },
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#6B7280', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+  userName: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginTop: spacing.md,
   },
+  userPhone: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  ratingNumber: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: '700',
+    marginLeft: spacing.xs,
+  },
+
+  heroStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    marginTop: spacing.xl,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    alignSelf: 'stretch',
+  },
+  heroStatBlock: { alignItems: 'center', flex: 1, gap: 4 },
+  heroVehicleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  heroStatValue: {
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  heroStatLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+  heroStatDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.divider,
+  },
+
+  sectionTitle: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: spacing.sm,
+  },
+
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
-  infoLabel: { fontSize: 14, color: '#6B7280' },
-  infoValue: { fontSize: 14, color: '#111827', fontWeight: '600', maxWidth: '55%', textAlign: 'right' },
-  divider: { height: 1, backgroundColor: '#F3F4F6' },
-  logoutButton: {
-    backgroundColor: '#FEE2E2',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
+  infoLabel: { fontSize: fontSize.sm, color: colors.textSecondary },
+  infoValue: {
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
+    fontWeight: '600',
+    maxWidth: '55%',
+    textAlign: 'right',
   },
-  logoutButtonText: { color: '#DC2626', fontSize: 16, fontWeight: '700' },
+
   menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    gap: 12,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
   },
-  menuIcon: { fontSize: 20 },
-  menuLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
-  menuChevron: { fontSize: 22, color: '#9CA3AF', fontWeight: '600' },
+  menuRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.divider,
+  },
+  menuIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuLabel: {
+    fontSize: fontSize.md,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  menuSubtitle: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+
+  logoutButton: {
+    marginTop: spacing.md,
+    borderColor: colors.error,
+  },
 });

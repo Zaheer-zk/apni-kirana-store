@@ -4,15 +4,16 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useDriverStore } from '@/store/driver.store';
+import { Card } from '@/components/Card';
+import { EmptyState } from '@/components/EmptyState';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 
 interface OrderRating {
   driverRating?: number | null;
@@ -52,20 +53,23 @@ function formatRelativeTime(iso: string): string {
   return `${years} year${years === 1 ? '' : 's'} ago`;
 }
 
-function StarsDisplay({ value, size = 16 }: { value: number; size?: number }) {
+interface StarsDisplayProps {
+  value: number;
+  size?: number;
+}
+
+function StarsDisplay({ value, size = 16 }: Readonly<StarsDisplayProps>) {
   const stars = Array.from({ length: 5 }, (_, i) => i + 1);
   return (
     <View style={styles.starsRow}>
       {stars.map((s) => (
-        <Text
+        <Ionicons
           key={s}
-          style={[
-            { fontSize: size, color: '#D1D5DB', marginRight: 2 },
-            s <= Math.round(value) && { color: '#F59E0B' },
-          ]}
-        >
-          ★
-        </Text>
+          name={s <= Math.round(value) ? 'star' : 'star-outline'}
+          size={size}
+          color={s <= Math.round(value) ? colors.warning : colors.gray300}
+          style={{ marginRight: 2 }}
+        />
       ))}
     </View>
   );
@@ -76,7 +80,8 @@ export default function DriverRatingsScreen() {
 
   const { data: orders, isLoading } = useQuery<OrderListItem[]>({
     queryKey: ['driverOrdersForRatings'],
-    queryFn: () => api.get<OrderListItem[]>('/api/v1/orders').then((r) => r.data),
+    queryFn: () =>
+      api.get<OrderListItem[]>('/api/v1/orders').then((r) => r.data),
   });
 
   const reviews: ReviewItem[] = useMemo(() => {
@@ -87,11 +92,13 @@ export default function DriverRatingsScreen() {
         orderId: o.id,
         rating: o.rating!.driverRating as number,
         comment: o.rating?.driverComment ?? null,
-        createdAt: o.rating?.createdAt ?? o.createdAt ?? new Date().toISOString(),
+        createdAt:
+          o.rating?.createdAt ?? o.createdAt ?? new Date().toISOString(),
         customerName: o.customer?.name ?? 'Anonymous customer',
       }))
       .sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
   }, [orders]);
 
@@ -99,10 +106,20 @@ export default function DriverRatingsScreen() {
     const aggRating = driverProfile?.rating ?? 0;
     const aggTotal = driverProfile?.totalRatings ?? reviews.length;
 
-    // Distribution from local reviews list
-    const counts: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    const counts: Record<1 | 2 | 3 | 4 | 5, number> = {
+      1: 0,
+      2: 0,
+      3: 0,
+      4: 0,
+      5: 0,
+    };
     reviews.forEach((r) => {
-      const k = Math.max(1, Math.min(5, Math.round(r.rating))) as 1 | 2 | 3 | 4 | 5;
+      const k = Math.max(1, Math.min(5, Math.round(r.rating))) as
+        | 1
+        | 2
+        | 3
+        | 4
+        | 5;
       counts[k] += 1;
     });
     const total = reviews.length || 1;
@@ -116,20 +133,7 @@ export default function DriverRatingsScreen() {
   }, [driverProfile, reviews]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backBtn}
-          hitSlop={10}
-        >
-          <Ionicons name="chevron-back" size={26} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Ratings</Text>
-        <View style={styles.backBtn} />
-      </View>
-
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
@@ -141,7 +145,7 @@ export default function DriverRatingsScreen() {
             <Text style={styles.heroRating}>
               {aggregate.aggRating.toFixed(1)}
             </Text>
-            <Text style={styles.heroStar}> ★</Text>
+            <Ionicons name="star" size={32} color={colors.white} />
           </View>
           <Text style={styles.heroSubtitle}>
             Based on {aggregate.aggTotal}{' '}
@@ -151,63 +155,58 @@ export default function DriverRatingsScreen() {
         </View>
 
         {/* Distribution */}
-        <Text style={styles.sectionTitle}>Rating Breakdown</Text>
-        <View style={styles.card}>
-          {aggregate.distribution.map((row, idx) => (
-            <View
-              key={row.star}
-              style={[
-                styles.distRow,
-                idx < aggregate.distribution.length - 1 && styles.distRowBorder,
-              ]}
-            >
-              <Text style={styles.distLabel}>
-                {row.star} {row.star === 1 ? 'star' : 'stars'}
-              </Text>
+        <Text style={styles.sectionTitle}>Rating breakdown</Text>
+        <Card padding={spacing.md} style={{ gap: spacing.sm }}>
+          {aggregate.distribution.map((row) => (
+            <View key={row.star} style={styles.distRow}>
+              <View style={styles.distLabelWrap}>
+                <Text style={styles.distLabel}>{row.star}</Text>
+                <Ionicons name="star" size={12} color={colors.warning} />
+              </View>
               <View style={styles.distBarBg}>
                 <View
-                  style={[
-                    styles.distBarFill,
-                    { width: `${row.percent}%` },
-                  ]}
+                  style={[styles.distBarFill, { width: `${row.percent}%` }]}
                 />
               </View>
               <Text style={styles.distPercent}>{row.percent}%</Text>
             </View>
           ))}
-        </View>
+        </Card>
 
         {/* Reviews */}
-        <Text style={styles.sectionTitle}>Recent Reviews</Text>
+        <Text style={styles.sectionTitle}>Recent reviews</Text>
         {isLoading ? (
-          <ActivityIndicator color="#DC2626" style={{ marginVertical: 24 }} />
+          <ActivityIndicator
+            color={colors.primary}
+            style={{ marginVertical: spacing.xxl }}
+          />
         ) : reviews.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIconBox}>
-              <Ionicons name="bicycle-outline" size={42} color="#DC2626" />
-            </View>
-            <Text style={styles.emptyTitle}>No reviews yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Complete deliveries and customers may rate your service.
-            </Text>
-          </View>
+          <EmptyState
+            icon="bicycle-outline"
+            title="No reviews yet"
+            subtitle="Complete deliveries and customers may rate your service."
+          />
         ) : (
-          reviews.map((r) => (
-            <View key={r.orderId} style={styles.reviewCard}>
-              <View style={styles.reviewHeader}>
-                <StarsDisplay value={r.rating} size={16} />
-                <Text style={styles.reviewTime}>
-                  {formatRelativeTime(r.createdAt)}
-                </Text>
-              </View>
-              <Text style={styles.reviewCustomer}>{r.customerName}</Text>
-              {r.comment ? (
-                <Text style={styles.reviewComment}>{r.comment}</Text>
-              ) : (
-                <Text style={styles.reviewCommentMuted}>No comment provided</Text>
-              )}
-            </View>
-          ))
+          <View style={{ gap: spacing.md }}>
+            {reviews.map((r) => (
+              <Card key={r.orderId}>
+                <View style={styles.reviewHeader}>
+                  <StarsDisplay value={r.rating} size={16} />
+                  <Text style={styles.reviewTime}>
+                    {formatRelativeTime(r.createdAt)}
+                  </Text>
+                </View>
+                <Text style={styles.reviewCustomer}>{r.customerName}</Text>
+                {r.comment ? (
+                  <Text style={styles.reviewComment}>{r.comment}</Text>
+                ) : (
+                  <Text style={styles.reviewCommentMuted}>
+                    No comment provided
+                  </Text>
+                )}
+              </Card>
+            ))}
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -215,118 +214,109 @@ export default function DriverRatingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+  content: {
+    padding: spacing.xl,
+    paddingTop: spacing.xxxl + spacing.lg,
+    paddingBottom: spacing.xxl,
+    gap: spacing.lg,
   },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
 
   heroCard: {
-    backgroundColor: '#FEE2E2',
-    borderRadius: 16,
-    padding: 24,
+    backgroundColor: colors.primary,
+    borderRadius: radius.xl,
+    padding: spacing.xxl,
     alignItems: 'center',
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#FECACA',
+    ...shadow.medium,
   },
-  heroRow: { flexDirection: 'row', alignItems: 'flex-end' },
-  heroRating: { fontSize: 56, fontWeight: '800', color: '#DC2626', lineHeight: 60 },
-  heroStar: { fontSize: 36, color: '#DC2626', fontWeight: '800' },
-  heroSubtitle: { fontSize: 14, color: '#7F1D1D', marginTop: 4, marginBottom: 12 },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  heroRating: {
+    fontSize: 56,
+    fontWeight: '800',
+    color: colors.white,
+    lineHeight: 60,
+  },
+  heroSubtitle: {
+    fontSize: fontSize.sm,
+    color: colors.primaryLight,
+    marginTop: 4,
+    marginBottom: spacing.sm,
+  },
 
   starsRow: { flexDirection: 'row', alignItems: 'center' },
 
   sectionTitle: {
-    fontSize: 14,
+    fontSize: fontSize.xs,
     fontWeight: '700',
-    color: '#6B7280',
-    marginBottom: 10,
+    color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginTop: spacing.sm,
   },
 
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
   distRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    gap: 12,
+    paddingVertical: 6,
+    gap: spacing.md,
   },
-  distRowBorder: { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  distLabel: { width: 64, fontSize: 13, color: '#374151', fontWeight: '600' },
+  distLabelWrap: {
+    width: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  distLabel: {
+    fontSize: fontSize.sm,
+    color: colors.gray700,
+    fontWeight: '700',
+  },
   distBarBg: {
     flex: 1,
     height: 8,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray100,
     borderRadius: 4,
     overflow: 'hidden',
   },
-  distBarFill: { height: '100%', backgroundColor: '#DC2626', borderRadius: 4 },
+  distBarFill: {
+    height: '100%',
+    backgroundColor: colors.warning,
+    borderRadius: 4,
+  },
   distPercent: {
     width: 44,
-    fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '600',
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    fontWeight: '700',
     textAlign: 'right',
   },
 
-  reviewCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
   reviewHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
   },
-  reviewTime: { fontSize: 12, color: '#9CA3AF' },
-  reviewCustomer: { fontSize: 14, fontWeight: '600', color: '#111827', marginBottom: 4 },
-  reviewComment: { fontSize: 14, color: '#374151', lineHeight: 20 },
-  reviewCommentMuted: { fontSize: 13, color: '#9CA3AF', fontStyle: 'italic' },
-
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 24,
+  reviewTime: { fontSize: fontSize.xs, color: colors.textMuted },
+  reviewCustomer: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 4,
   },
-  emptyIconBox: {
-    width: 88,
-    height: 88,
-    borderRadius: 24,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+  reviewComment: {
+    fontSize: fontSize.sm,
+    color: colors.gray700,
+    lineHeight: 20,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 6 },
-  emptySubtitle: { fontSize: 14, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
+  reviewCommentMuted: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
 });

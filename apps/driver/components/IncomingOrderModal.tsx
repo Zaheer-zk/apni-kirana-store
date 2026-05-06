@@ -3,16 +3,18 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Modal,
   ActivityIndicator,
   Animated,
   Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useDriverStore } from '@/store/driver.store';
 import { onOrderRescinded } from '@/lib/socket';
+import { Button } from '@/components/Button';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 import type { IncomingOrderPreview } from '@aks/shared';
 
 const COUNTDOWN_SECONDS = 60;
@@ -47,8 +49,6 @@ export function IncomingOrderModal({ orderId }: Props) {
       queryClient.invalidateQueries({ queryKey: ['driverTodayStats'] });
     },
     onError: (err: Error) => {
-      // 409/400 means another driver already accepted — drop the modal
-      // gracefully; the rescinded socket event normally handles this too.
       const msg = err.message || '';
       if (/already|taken|not available|status/i.test(msg)) {
         setIncomingOrder(null);
@@ -64,14 +64,11 @@ export function IncomingOrderModal({ orderId }: Props) {
       api.put(`/api/v1/drivers/orders/${orderId}/reject`).then((r) => r.data),
     onSuccess: () => setIncomingOrder(null),
     onError: (err: Error) => {
-      // Rejecting a rescinded offer can fail — just close the modal anyway.
       console.warn('[IncomingOrderModal] reject failed:', err.message);
       setIncomingOrder(null);
     },
   });
 
-  // Subscribe to rescinded events — if this offer is taken by another driver
-  // we dismiss the modal with a friendly toast.
   useEffect(() => {
     const unsubscribe = onOrderRescinded((rescindedId) => {
       if (rescindedId !== orderId) return;
@@ -89,10 +86,10 @@ export function IncomingOrderModal({ orderId }: Props) {
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
-      duration: 300,
+      duration: 250,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [fadeAnim]);
 
   // Shake animation to draw attention
   useEffect(() => {
@@ -107,16 +104,15 @@ export function IncomingOrderModal({ orderId }: Props) {
     shake();
     const interval = setInterval(shake, 4000);
     return () => clearInterval(interval);
-  }, []);
+  }, [shakeAnim]);
 
-  // Countdown timer
+  // Countdown timer (DO NOT change — auto-reject on timeout drives offer flow)
   useEffect(() => {
     setSecondsLeft(COUNTDOWN_SECONDS);
     timerRef.current = setInterval(() => {
       setSecondsLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(timerRef.current!);
-          // Auto-reject on timeout
+          if (timerRef.current) clearInterval(timerRef.current);
           rejectMutation.mutate();
           return 0;
         }
@@ -126,9 +122,11 @@ export function IncomingOrderModal({ orderId }: Props) {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
-  const timerColor = secondsLeft <= 15 ? '#DC2626' : secondsLeft <= 30 ? '#F59E0B' : '#16A34A';
+  const timerColor =
+    secondsLeft <= 15 ? colors.error : secondsLeft <= 30 ? colors.warning : colors.accent;
   const timerPercent = (secondsLeft / COUNTDOWN_SECONDS) * 100;
 
   return (
@@ -139,8 +137,14 @@ export function IncomingOrderModal({ orderId }: Props) {
         >
           {/* Header */}
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>New Delivery Request!</Text>
+            <View style={styles.headerLeft}>
+              <View style={styles.bellWrap}>
+                <Ionicons name="notifications" size={20} color={colors.primary} />
+              </View>
+              <Text style={styles.cardTitle}>New Delivery Request</Text>
+            </View>
             <View style={styles.timerContainer}>
+              <Ionicons name="time-outline" size={14} color={timerColor} />
               <Text style={[styles.timerText, { color: timerColor }]}>{secondsLeft}s</Text>
             </View>
           </View>
@@ -150,22 +154,30 @@ export function IncomingOrderModal({ orderId }: Props) {
             <View
               style={[
                 styles.timerBarFill,
-                { width: `${timerPercent}%` as any, backgroundColor: timerColor },
+                { width: `${timerPercent}%`, backgroundColor: timerColor },
               ]}
             />
           </View>
 
           {isLoading ? (
-            <ActivityIndicator size="large" color="#DC2626" style={{ marginVertical: 24 }} />
+            <View style={{ paddingVertical: spacing.xxxl }}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
           ) : order ? (
             <View style={styles.body}>
               {/* Pickup */}
               <View style={styles.locationBlock}>
-                <View style={styles.locationDot} />
+                <View style={styles.locationDot}>
+                  <Ionicons name="storefront" size={14} color={colors.white} />
+                </View>
                 <View style={styles.locationInfo}>
                   <Text style={styles.locationLabel}>PICKUP — Store</Text>
-                  <Text style={styles.locationAddress}>{order.pickupAddress}</Text>
-                  <Text style={styles.locationDistance}>{order.pickupDistanceKm.toFixed(1)} km away</Text>
+                  <Text style={styles.locationAddress} numberOfLines={2}>
+                    {order.pickupAddress}
+                  </Text>
+                  <Text style={styles.locationDistance}>
+                    {order.pickupDistanceKm.toFixed(1)} km away
+                  </Text>
                 </View>
               </View>
 
@@ -173,47 +185,53 @@ export function IncomingOrderModal({ orderId }: Props) {
 
               {/* Delivery */}
               <View style={styles.locationBlock}>
-                <View style={[styles.locationDot, styles.locationDotDelivery]} />
+                <View style={[styles.locationDot, styles.locationDotDelivery]}>
+                  <Ionicons name="home" size={14} color={colors.white} />
+                </View>
                 <View style={styles.locationInfo}>
                   <Text style={styles.locationLabel}>DELIVERY — Customer</Text>
-                  <Text style={styles.locationAddress}>{order.deliveryArea}</Text>
-                  <Text style={styles.locationDistance}>{order.deliveryDistanceKm.toFixed(1)} km total</Text>
+                  <Text style={styles.locationAddress} numberOfLines={2}>
+                    {order.deliveryArea}
+                  </Text>
+                  <Text style={styles.locationDistance}>
+                    {order.deliveryDistanceKm.toFixed(1)} km total
+                  </Text>
                 </View>
               </View>
 
               {/* Earnings */}
               <View style={styles.earningsRow}>
-                <Text style={styles.earningsLabel}>Your Earnings</Text>
-                <Text style={styles.earningsValue}>₹{order.driverEarnings.toFixed(2)}</Text>
+                <Text style={styles.earningsLabel}>Your earnings</Text>
+                <Text style={styles.earningsValue}>
+                  ₹{order.driverEarnings.toFixed(2)}
+                </Text>
               </View>
             </View>
           ) : null}
 
           {/* Actions */}
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.rejectButton]}
+            <Button
+              variant="outline"
+              size="lg"
+              title="Reject"
+              fullWidth
               onPress={() => rejectMutation.mutate()}
-              disabled={acceptMutation.isPending || rejectMutation.isPending}
-            >
-              {rejectMutation.isPending ? (
-                <ActivityIndicator color="#DC2626" />
-              ) : (
-                <Text style={styles.rejectButtonText}>Reject</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.acceptButton]}
+              loading={rejectMutation.isPending}
+              disabled={acceptMutation.isPending}
+              style={styles.flexBtn}
+            />
+            <Button
+              variant="success"
+              size="lg"
+              title="Accept"
+              icon="checkmark-circle"
+              fullWidth
               onPress={() => acceptMutation.mutate()}
-              disabled={acceptMutation.isPending || rejectMutation.isPending}
-            >
-              {acceptMutation.isPending ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.acceptButtonText}>Accept</Text>
-              )}
-            </TouchableOpacity>
+              loading={acceptMutation.isPending}
+              disabled={rejectMutation.isPending}
+              style={styles.flexBtn}
+            />
           </View>
         </Animated.View>
       </Animated.View>
@@ -227,80 +245,98 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: spacing.xl,
   },
   card: {
     width: '100%',
-    backgroundColor: '#fff',
-    borderRadius: 20,
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
+    ...shadow.large,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 12,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.md,
   },
-  cardTitle: { fontSize: 20, fontWeight: '800', color: '#111827' },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  bellWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardTitle: { fontSize: fontSize.xl, fontWeight: '800', color: colors.textPrimary },
   timerContainer: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 20,
-    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.gray100,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
     paddingVertical: 6,
   },
-  timerText: { fontSize: 18, fontWeight: '800' },
-  timerBarBg: { height: 4, backgroundColor: '#F3F4F6' },
+  timerText: { fontSize: fontSize.md, fontWeight: '800' },
+  timerBarBg: { height: 4, backgroundColor: colors.gray100 },
   timerBarFill: { height: 4 },
-  body: { padding: 20 },
-  locationBlock: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  body: { padding: spacing.xl },
+  locationBlock: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
   locationDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#2563EB',
-    marginTop: 3,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.info,
+    alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
   },
-  locationDotDelivery: { backgroundColor: '#16A34A' },
+  locationDotDelivery: { backgroundColor: colors.accent },
   locationInfo: { flex: 1 },
-  locationLabel: { fontSize: 10, color: '#9CA3AF', fontWeight: '700', letterSpacing: 0.5, marginBottom: 2 },
-  locationAddress: { fontSize: 14, color: '#111827', fontWeight: '600' },
-  locationDistance: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  locationLabel: {
+    fontSize: 10,
+    color: colors.textMuted,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  locationAddress: {
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  locationDistance: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2 },
   routeDivider: {
     width: 2,
     height: 20,
-    backgroundColor: '#E5E7EB',
-    marginLeft: 5,
+    backgroundColor: colors.border,
+    marginLeft: 13,
     marginVertical: 6,
   },
   earningsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 16,
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: colors.divider,
   },
-  earningsLabel: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
-  earningsValue: { fontSize: 24, fontWeight: '800', color: '#16A34A' },
-  actions: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingBottom: 20 },
-  actionButton: {
-    flex: 1,
-    height: 54,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+  earningsLabel: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
-  rejectButton: { backgroundColor: '#FEE2E2', borderWidth: 1.5, borderColor: '#DC2626' },
-  rejectButtonText: { color: '#DC2626', fontSize: 16, fontWeight: '700' },
-  acceptButton: { backgroundColor: '#16A34A' },
-  acceptButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  earningsValue: { fontSize: fontSize.xxl, fontWeight: '800', color: colors.accent },
+  actions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xl,
+  },
+  flexBtn: { flex: 1 },
 });

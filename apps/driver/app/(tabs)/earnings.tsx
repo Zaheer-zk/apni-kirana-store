@@ -5,12 +5,17 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  FlatList,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { Card } from '@/components/Card';
+import { Badge, type BadgeVariant } from '@/components/Badge';
+import { EmptyState } from '@/components/EmptyState';
+import { Skeleton } from '@/components/Skeleton';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 import type { DriverEarningsSummary, DriverEarningsEntry } from '@aks/shared';
 
 type Period = 'today' | 'week' | 'month';
@@ -21,10 +26,10 @@ const PERIOD_LABELS: Record<Period, string> = {
   month: 'This Month',
 };
 
-const PAYOUT_STATUS_STYLES: Record<string, { bg: string; text: string }> = {
-  PENDING: { bg: '#FEF3C7', text: '#92400E' },
-  PROCESSING: { bg: '#DBEAFE', text: '#1E40AF' },
-  PAID: { bg: '#DCFCE7', text: '#166534' },
+const PAYOUT_STATUS_VARIANT: Record<string, BadgeVariant> = {
+  PENDING: 'warning',
+  PROCESSING: 'info',
+  PAID: 'success',
 };
 
 export default function EarningsScreen() {
@@ -33,109 +38,189 @@ export default function EarningsScreen() {
   const { data: summary, isLoading } = useQuery<DriverEarningsSummary>({
     queryKey: ['driverEarningsSummary'],
     queryFn: () =>
-      api.get<DriverEarningsSummary>('/api/v1/drivers/earnings/summary').then((r) => r.data),
-  });
-
-  const { data: breakdown, isLoading: breakdownLoading } = useQuery<DriverEarningsEntry[]>({
-    queryKey: ['driverEarningsBreakdown', period],
-    queryFn: () =>
       api
-        .get<DriverEarningsEntry[]>(`/api/v1/drivers/earnings/breakdown?period=${period}`)
+        .get<DriverEarningsSummary>('/api/v1/drivers/earnings/summary')
         .then((r) => r.data),
   });
 
+  const { data: breakdown, isLoading: breakdownLoading } = useQuery<
+    DriverEarningsEntry[]
+  >({
+    queryKey: ['driverEarningsBreakdown', period],
+    queryFn: () =>
+      api
+        .get<DriverEarningsEntry[]>(
+          `/api/v1/drivers/earnings/breakdown?period=${period}`,
+        )
+        .then((r) => r.data),
+  });
+
+  const heroValue =
+    period === 'today'
+      ? summary?.today
+      : period === 'week'
+      ? summary?.week
+      : summary?.month;
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.pageTitle}>Earnings</Text>
 
-        {/* Summary Cards */}
-        {isLoading ? (
-          <ActivityIndicator color="#DC2626" style={{ marginVertical: 20 }} />
-        ) : (
-          <View style={styles.summaryGrid}>
-            <View style={[styles.summaryCard, styles.summaryCardFull]}>
-              <Text style={styles.summaryLabel}>Today's Earnings</Text>
-              <Text style={styles.summaryValueLarge}>₹{summary?.today?.toFixed(2) ?? '0.00'}</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>This Week</Text>
-              <Text style={styles.summaryValue}>₹{summary?.week?.toFixed(2) ?? '0.00'}</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>This Month</Text>
-              <Text style={styles.summaryValue}>₹{summary?.month?.toFixed(2) ?? '0.00'}</Text>
-            </View>
+        {/* Hero Card */}
+        <View style={styles.heroCard}>
+          <View style={styles.heroLeft}>
+            <Text style={styles.heroLabel}>
+              {period === 'today'
+                ? "Today's earnings"
+                : period === 'week'
+                ? 'This week'
+                : 'This month'}
+            </Text>
+            {isLoading ? (
+              <Skeleton
+                width={140}
+                height={36}
+                style={{ marginTop: spacing.sm }}
+              />
+            ) : (
+              <Text style={styles.heroValue}>
+                ₹{Number(heroValue ?? 0).toFixed(2)}
+              </Text>
+            )}
           </View>
-        )}
-
-        {/* Payout Status */}
-        {summary?.payoutStatus && (
-          <View style={styles.payoutCard}>
-            <Text style={styles.payoutLabel}>Next Payout</Text>
-            <View style={styles.payoutRow}>
-              <Text style={styles.payoutAmount}>₹{summary.pendingPayout?.toFixed(2) ?? '0.00'}</Text>
-              <View
-                style={[
-                  styles.payoutStatusBadge,
-                  {
-                    backgroundColor:
-                      PAYOUT_STATUS_STYLES[summary.payoutStatus]?.bg ?? '#F3F4F6',
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.payoutStatusText,
-                    { color: PAYOUT_STATUS_STYLES[summary.payoutStatus]?.text ?? '#374151' },
-                  ]}
-                >
-                  {summary.payoutStatus}
-                </Text>
-              </View>
-            </View>
+          <View style={styles.heroIconWrap}>
+            <Ionicons name="wallet" size={32} color={colors.white} />
           </View>
-        )}
+        </View>
 
         {/* Period Selector */}
         <View style={styles.periodSelector}>
-          {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
-            <TouchableOpacity
-              key={p}
-              style={[styles.periodTab, period === p && styles.periodTabActive]}
-              onPress={() => setPeriod(p)}
-            >
-              <Text style={[styles.periodTabText, period === p && styles.periodTabTextActive]}>
-                {PERIOD_LABELS[p]}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
+            const active = period === p;
+            return (
+              <TouchableOpacity
+                key={p}
+                activeOpacity={0.7}
+                style={[styles.periodTab, active && styles.periodTabActive]}
+                onPress={() => setPeriod(p)}
+              >
+                <Text
+                  style={[
+                    styles.periodTabText,
+                    active && styles.periodTabTextActive,
+                  ]}
+                >
+                  {PERIOD_LABELS[p]}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* Per-Delivery Breakdown */}
-        <Text style={styles.sectionTitle}>Per-Delivery Breakdown</Text>
+        {/* Summary tiles */}
+        <View style={styles.summaryRow}>
+          <Card style={styles.summaryCard} padding={spacing.md}>
+            <Text style={styles.summaryLabel}>Today</Text>
+            <Text style={styles.summaryValue}>
+              ₹{summary?.today?.toFixed(0) ?? '0'}
+            </Text>
+          </Card>
+          <Card style={styles.summaryCard} padding={spacing.md}>
+            <Text style={styles.summaryLabel}>Week</Text>
+            <Text style={styles.summaryValue}>
+              ₹{summary?.week?.toFixed(0) ?? '0'}
+            </Text>
+          </Card>
+          <Card style={styles.summaryCard} padding={spacing.md}>
+            <Text style={styles.summaryLabel}>Month</Text>
+            <Text style={styles.summaryValue}>
+              ₹{summary?.month?.toFixed(0) ?? '0'}
+            </Text>
+          </Card>
+        </View>
 
-        {breakdownLoading ? (
-          <ActivityIndicator color="#DC2626" style={{ marginTop: 16 }} />
-        ) : breakdown && breakdown.length === 0 ? (
-          <Text style={styles.emptyText}>No deliveries in this period</Text>
-        ) : (
-          breakdown?.map((entry) => (
-            <View key={entry.orderId} style={styles.breakdownRow}>
-              <View>
-                <Text style={styles.breakdownOrderId}>#{entry.orderId.slice(-8).toUpperCase()}</Text>
-                <Text style={styles.breakdownDate}>
-                  {new Date(entry.completedAt).toLocaleDateString('en-IN', {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+        {/* Payout Status */}
+        {summary?.payoutStatus && (
+          <Card style={styles.payoutCard}>
+            <View style={styles.payoutHeader}>
+              <View style={styles.payoutIconWrap}>
+                <Ionicons name="cash" size={20} color={colors.warning} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.payoutLabel}>Next payout</Text>
+                <Text style={styles.payoutAmount}>
+                  ₹{summary.pendingPayout?.toFixed(2) ?? '0.00'}
                 </Text>
               </View>
-              <Text style={styles.breakdownAmount}>+₹{entry.driverEarnings.toFixed(2)}</Text>
+              <Badge
+                variant={PAYOUT_STATUS_VARIANT[summary.payoutStatus] ?? 'default'}
+                text={summary.payoutStatus}
+              />
             </View>
-          ))
+          </Card>
+        )}
+
+        {/* Per-Delivery Breakdown */}
+        <Text style={styles.sectionTitle}>Per-delivery breakdown</Text>
+
+        {breakdownLoading ? (
+          <View style={{ gap: spacing.sm }}>
+            {[0, 1, 2].map((i) => (
+              <View key={i} style={styles.breakdownSkeleton}>
+                <View>
+                  <Skeleton width={100} height={14} />
+                  <Skeleton width={140} height={12} style={{ marginTop: 6 }} />
+                </View>
+                <Skeleton width={70} height={18} />
+              </View>
+            ))}
+          </View>
+        ) : !breakdown || breakdown.length === 0 ? (
+          <EmptyState
+            icon="receipt-outline"
+            title="No deliveries"
+            subtitle={`No deliveries in ${PERIOD_LABELS[period].toLowerCase()}. Stay online to earn!`}
+          />
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {breakdown.map((entry) => (
+              <Card key={entry.orderId} style={styles.breakdownCard} padding={spacing.md}>
+                <View style={styles.breakdownLeft}>
+                  <View style={styles.breakdownIconWrap}>
+                    <Ionicons name="checkmark-circle" size={18} color={colors.accent} />
+                  </View>
+                  <View>
+                    <Text style={styles.breakdownOrderId}>
+                      #{entry.orderId.slice(-8).toUpperCase()}
+                    </Text>
+                    <Text style={styles.breakdownDate}>
+                      {new Date(entry.completedAt).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.breakdownAmount}>
+                  +₹{entry.driverEarnings.toFixed(2)}
+                </Text>
+              </Card>
+            ))}
+          </View>
+        )}
+
+        {isLoading && !summary && (
+          <ActivityIndicator
+            color={colors.primary}
+            style={{ marginTop: spacing.xl }}
+          />
         )}
       </ScrollView>
     </SafeAreaView>
@@ -143,63 +228,163 @@ export default function EarningsScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 32 },
-  pageTitle: { fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 20 },
-  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
-  summaryCard: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 18,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+  content: {
+    padding: spacing.xl,
+    paddingBottom: spacing.xxxl,
+    gap: spacing.lg,
   },
-  summaryCardFull: { flexBasis: '100%' },
-  summaryLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '600', marginBottom: 6 },
-  summaryValue: { fontSize: 22, fontWeight: '800', color: '#111827' },
-  summaryValueLarge: { fontSize: 36, fontWeight: '800', color: '#DC2626' },
-  payoutCard: {
-    backgroundColor: '#FFF7ED',
-    borderRadius: 14,
-    padding: 18,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#FED7AA',
+  pageTitle: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.textPrimary,
   },
-  payoutLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '600', marginBottom: 8 },
-  payoutRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  payoutAmount: { fontSize: 24, fontWeight: '800', color: '#111827' },
-  payoutStatusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  payoutStatusText: { fontSize: 12, fontWeight: '700' },
+
+  heroCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    ...shadow.medium,
+  },
+  heroLeft: { flex: 1 },
+  heroLabel: {
+    fontSize: fontSize.sm,
+    color: colors.primaryLight,
+    fontWeight: '600',
+  },
+  heroValue: {
+    fontSize: 38,
+    fontWeight: '800',
+    color: colors.white,
+    letterSpacing: -0.5,
+    marginTop: 4,
+  },
+  heroIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   periodSelector: {
     flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
+    backgroundColor: colors.gray100,
+    borderRadius: radius.md,
     padding: 4,
-    marginBottom: 20,
   },
-  periodTab: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
-  periodTabActive: { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
-  periodTabText: { fontSize: 13, color: '#6B7280', fontWeight: '600' },
-  periodTabTextActive: { color: '#DC2626' },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 12 },
-  breakdownRow: {
+  periodTab: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+  },
+  periodTabActive: {
+    backgroundColor: colors.card,
+    ...shadow.small,
+  },
+  periodTabText: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  periodTabTextActive: { color: colors.primary },
+
+  summaryRow: { flexDirection: 'row', gap: spacing.sm },
+  summaryCard: { flex: 1, alignItems: 'flex-start' },
+  summaryLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  summaryValue: {
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+
+  payoutCard: { padding: spacing.lg },
+  payoutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  payoutIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.warningLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payoutLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+  payoutAmount: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginTop: 2,
+  },
+
+  sectionTitle: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: spacing.sm,
+  },
+
+  breakdownCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 8,
   },
-  breakdownOrderId: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  breakdownDate: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  breakdownAmount: { fontSize: 16, fontWeight: '800', color: '#16A34A' },
-  emptyText: { color: '#9CA3AF', fontSize: 14, textAlign: 'center', marginTop: 8 },
+  breakdownLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  breakdownIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.full,
+    backgroundColor: colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  breakdownOrderId: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  breakdownDate: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  breakdownAmount: {
+    fontSize: fontSize.md,
+    fontWeight: '800',
+    color: colors.accent,
+  },
+  breakdownSkeleton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
 });

@@ -1,143 +1,285 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { Card } from '@/components/Card';
+import { Badge, type BadgeVariant } from '@/components/Badge';
+import { EmptyState } from '@/components/EmptyState';
+import { Skeleton } from '@/components/Skeleton';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import type { DriverDelivery } from '@aks/shared';
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  DELIVERED: { bg: '#DCFCE7', text: '#166534' },
-  REJECTED: { bg: '#FEE2E2', text: '#991B1B' },
-  CANCELLED: { bg: '#FEF3C7', text: '#92400E' },
-  IN_TRANSIT: { bg: '#DBEAFE', text: '#1E40AF' },
+const STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  DELIVERED: 'success',
+  REJECTED: 'error',
+  CANCELLED: 'warning',
+  IN_TRANSIT: 'info',
+  PICKED_UP: 'info',
+  DRIVER_ASSIGNED: 'info',
 };
 
-function DeliveryCard({ item }: { item: DriverDelivery }) {
-  const statusStyle = STATUS_COLORS[item.status] ?? { bg: '#F3F4F6', text: '#374151' };
+function formatStatus(s: string): string {
+  return s.replaceAll('_', ' ').replaceAll(/\b\w/g, (c) => c.toUpperCase());
+}
+
+interface DeliveryCardProps {
+  item: DriverDelivery;
+}
+
+function DeliveryCard({ item }: Readonly<DeliveryCardProps>) {
+  const variant = STATUS_VARIANTS[item.status] ?? 'default';
   const date = new Date(item.createdAt);
-  const dateStr = date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const dateStr = date.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  const timeStr = date.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   return (
-    <View style={styles.card}>
+    <Card style={styles.card}>
       <View style={styles.cardTop}>
-        <Text style={styles.dateText}>{dateStr}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
-          <Text style={[styles.statusText, { color: statusStyle.text }]}>{item.status}</Text>
+        <View>
+          <Text style={styles.dateText}>{dateStr}</Text>
+          <Text style={styles.timeText}>{timeStr}</Text>
         </View>
+        <Badge variant={variant} text={formatStatus(item.status)} dot />
       </View>
+
       <View style={styles.cardRow}>
         <View style={styles.iconCol}>
-          <Text style={styles.routeIcon}>📦</Text>
+          <View style={[styles.routeNode, { backgroundColor: colors.info }]}>
+            <Ionicons name="storefront" size={10} color={colors.white} />
+          </View>
           <View style={styles.routeLine} />
-          <Text style={styles.routeIcon}>📍</Text>
+          <View style={[styles.routeNode, { backgroundColor: colors.accent }]}>
+            <Ionicons name="home" size={10} color={colors.white} />
+          </View>
         </View>
         <View style={styles.addressCol}>
-          <Text style={styles.addressLabel}>Pickup</Text>
-          <Text style={styles.addressText}>{item.pickupArea}</Text>
+          <Text style={styles.addressLabel}>PICKUP</Text>
+          <Text style={styles.addressText} numberOfLines={2}>
+            {item.pickupArea}
+          </Text>
           <View style={styles.addressGap} />
-          <Text style={styles.addressLabel}>Delivery Area</Text>
-          <Text style={styles.addressText}>{item.deliveryArea}</Text>
+          <Text style={styles.addressLabel}>DELIVERY</Text>
+          <Text style={styles.addressText} numberOfLines={2}>
+            {item.deliveryArea}
+          </Text>
         </View>
       </View>
+
       <View style={styles.cardFooter}>
-        <Text style={styles.orderId}>Order #{item.orderId.slice(-8).toUpperCase()}</Text>
+        <Text style={styles.orderId}>
+          Order #{item.orderId.slice(-8).toUpperCase()}
+        </Text>
         <Text style={styles.earningsText}>+₹{item.driverEarnings.toFixed(2)}</Text>
       </View>
+    </Card>
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <View style={styles.list}>
+      {[0, 1, 2].map((i) => (
+        <View key={i} style={styles.skeletonCard}>
+          <View style={styles.skeletonRow}>
+            <Skeleton width={140} height={14} />
+            <Skeleton width={80} height={20} radius={999} />
+          </View>
+          <Skeleton width="80%" height={14} style={{ marginTop: spacing.md }} />
+          <Skeleton width="60%" height={14} style={{ marginTop: spacing.sm }} />
+          <View style={[styles.skeletonRow, { marginTop: spacing.lg }]}>
+            <Skeleton width={120} height={12} />
+            <Skeleton width={60} height={16} />
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
 
 export default function DeliveriesScreen() {
-  const { data, isLoading, isError } = useQuery<DriverDelivery[]>({
+  const [refreshing, setRefreshing] = useState(false);
+
+  const { data, isLoading, isError, refetch } = useQuery<DriverDelivery[]>({
     queryKey: ['driverDeliveries'],
-    queryFn: () => api.get<DriverDelivery[]>('/api/v1/drivers/deliveries').then((r) => r.data),
+    queryFn: async () => {
+      const r = await api.get<
+        DriverDelivery[] | { success: boolean; data: DriverDelivery[] }
+      >('/api/v1/drivers/deliveries');
+      const body = r.data;
+      if (Array.isArray(body)) return body;
+      if (body && typeof body === 'object' && Array.isArray((body as { data?: unknown }).data)) {
+        return (body as { data: DriverDelivery[] }).data;
+      }
+      return [];
+    },
   });
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Delivery History</Text>
+        <Text style={styles.headerSubtitle}>
+          {(data?.length ?? 0) === 1
+            ? '1 delivery completed'
+            : `${data?.length ?? 0} deliveries completed`}
+        </Text>
       </View>
 
-      {isLoading && (
+      {isLoading && <ListSkeleton />}
+
+      {isError && !isLoading && (
         <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color="#DC2626" />
+          <EmptyState
+            icon="alert-circle-outline"
+            title="Failed to load deliveries"
+            subtitle="Pull down to try again."
+            iconBg={colors.errorLight}
+            iconColor={colors.error}
+            actionLabel="Retry"
+            onAction={() => refetch()}
+          />
         </View>
       )}
 
-      {isError && (
-        <View style={styles.centerContent}>
-          <Text style={styles.errorText}>Failed to load deliveries.</Text>
-        </View>
+      {!isLoading && data?.length === 0 && (
+        <EmptyState
+          icon="cube-outline"
+          title="No deliveries yet"
+          subtitle="Go online from the dashboard to start receiving delivery requests."
+        />
       )}
 
-      {data && data.length === 0 && (
-        <View style={styles.centerContent}>
-          <Text style={styles.emptyIcon}>📭</Text>
-          <Text style={styles.emptyText}>No deliveries yet</Text>
-          <Text style={styles.emptySubtext}>Start delivering to see your history here</Text>
-        </View>
-      )}
-
-      {data && data.length > 0 && (
+      {!isLoading && (data?.length ?? 0) > 0 && data && (
         <FlatList
           data={data}
           keyExtractor={(item) => item.orderId}
           renderItem={({ item }) => <DeliveryCard item={item} />}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+            />
+          }
         />
       )}
+
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1, backgroundColor: colors.background },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#fff',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#111827' },
-  list: { padding: 16, gap: 12 },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+  headerTitle: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.textPrimary,
   },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
-  dateText: { fontSize: 13, color: '#6B7280', fontWeight: '500' },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12 },
-  statusText: { fontSize: 11, fontWeight: '700' },
-  cardRow: { flexDirection: 'row', gap: 12, marginBottom: 14 },
-  iconCol: { alignItems: 'center', width: 24 },
-  routeIcon: { fontSize: 16 },
-  routeLine: { flex: 1, width: 2, backgroundColor: '#E5E7EB', marginVertical: 4 },
+  headerSubtitle: {
+    marginTop: 4,
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  list: {
+    padding: spacing.xl,
+    paddingTop: 0,
+    gap: spacing.md,
+  },
+  card: { gap: spacing.md },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  dateText: { fontSize: fontSize.sm, color: colors.textPrimary, fontWeight: '700' },
+  timeText: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2 },
+
+  cardRow: { flexDirection: 'row', gap: spacing.md },
+  iconCol: { alignItems: 'center', width: 24, paddingTop: 2 },
+  routeNode: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routeLine: {
+    flex: 1,
+    width: 2,
+    backgroundColor: colors.border,
+    marginVertical: 4,
+  },
   addressCol: { flex: 1 },
-  addressLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '600', textTransform: 'uppercase' },
-  addressText: { fontSize: 14, color: '#111827', fontWeight: '500', marginBottom: 2 },
-  addressGap: { height: 12 },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 10 },
-  orderId: { fontSize: 12, color: '#9CA3AF', fontWeight: '500' },
-  earningsText: { fontSize: 16, fontWeight: '800', color: '#16A34A' },
-  centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
-  errorText: { color: '#DC2626', fontSize: 15 },
-  emptyIcon: { fontSize: 48, marginBottom: 8 },
-  emptyText: { fontSize: 18, fontWeight: '700', color: '#374151' },
-  emptySubtext: { fontSize: 13, color: '#9CA3AF' },
+  addressLabel: {
+    fontSize: 10,
+    color: colors.textMuted,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  addressText: {
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  addressGap: { height: spacing.md },
+
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    paddingTop: spacing.md,
+  },
+  orderId: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' },
+  earningsText: { fontSize: fontSize.md, fontWeight: '800', color: colors.accent },
+
+  centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  skeletonCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+  },
+  skeletonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
 });

@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { Card } from '@/components/Card';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
 
 interface FaqEntry {
   q: string;
@@ -57,49 +58,72 @@ const SUPPORT_PHONE_DISPLAY = '+91 1800-XXX-XXXX';
 const SUPPORT_EMAIL = 'drivers@apnikirana.in';
 const SUPPORT_WHATSAPP = '911800XXXXXXX';
 
-function FaqItem({ entry }: { entry: FaqEntry }) {
+interface FaqItemProps {
+  entry: FaqEntry;
+  isLast?: boolean;
+}
+
+function FaqItem({ entry, isLast }: Readonly<FaqItemProps>) {
   const [open, setOpen] = useState(false);
   return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={() => setOpen((v) => !v)}
-      style={styles.faqItem}
-    >
-      <View style={styles.faqHeaderRow}>
-        <Text style={styles.faqQuestion}>{entry.q}</Text>
-        <Ionicons
-          name={open ? 'chevron-up' : 'chevron-down'}
-          size={20}
-          color="#6B7280"
-        />
-      </View>
-      {open && <Text style={styles.faqAnswer}>{entry.a}</Text>}
-    </TouchableOpacity>
+    <View>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => setOpen((v) => !v)}
+        style={styles.faqItem}
+      >
+        <View style={styles.faqHeaderRow}>
+          <Text style={styles.faqQuestion}>{entry.q}</Text>
+          <Ionicons
+            name={open ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={colors.textSecondary}
+          />
+        </View>
+        {open && <Text style={styles.faqAnswer}>{entry.a}</Text>}
+      </TouchableOpacity>
+      {!isLast && <View style={styles.divider} />}
+    </View>
   );
+}
+
+interface ContactRowProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  iconBg?: string;
+  iconColor?: string;
+  label: string;
+  value: string;
+  onPress: () => void;
+  isLast?: boolean;
 }
 
 function ContactRow({
   icon,
+  iconBg = colors.primaryLight,
+  iconColor = colors.primary,
   label,
   value,
   onPress,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-  onPress: () => void;
-}) {
+  isLast,
+}: Readonly<ContactRowProps>) {
   return (
-    <TouchableOpacity style={styles.contactRow} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.contactIconBox}>
-        <Ionicons name={icon} size={22} color="#DC2626" />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.contactLabel}>{label}</Text>
-        <Text style={styles.contactValue}>{value}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
-    </TouchableOpacity>
+    <View>
+      <TouchableOpacity
+        style={styles.contactRow}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.contactIconBox, { backgroundColor: iconBg }]}>
+          <Ionicons name={icon} size={22} color={iconColor} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.contactLabel}>{label}</Text>
+          <Text style={styles.contactValue}>{value}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+      </TouchableOpacity>
+      {!isLast && <View style={styles.divider} />}
+    </View>
   );
 }
 
@@ -118,60 +142,53 @@ export default function DriverHelpScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backBtn}
-          hitSlop={10}
-        >
-          <Ionicons name="chevron-back" size={26} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Help & Support</Text>
-        <View style={styles.backBtn} />
-      </View>
-
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
         {/* FAQ Section */}
-        <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
-        <View style={styles.faqCard}>
+        <Text style={styles.sectionTitle}>Frequently asked questions</Text>
+        <Card padding={0}>
           {FAQS.map((entry, idx) => (
-            <View key={entry.q}>
-              <FaqItem entry={entry} />
-              {idx < FAQS.length - 1 && <View style={styles.divider} />}
-            </View>
+            <FaqItem
+              key={entry.q}
+              entry={entry}
+              isLast={idx === FAQS.length - 1}
+            />
           ))}
-        </View>
+        </Card>
 
         {/* Contact Section */}
         <Text style={styles.sectionTitle}>Need more help?</Text>
-        <View style={styles.contactCard}>
+        <Card padding={0}>
           <ContactRow
-            icon="call-outline"
-            label="Call Support"
+            icon="call"
+            iconBg={colors.primaryLight}
+            iconColor={colors.primary}
+            label="Call support"
             value={SUPPORT_PHONE_DISPLAY}
             onPress={() => openLink(`tel:${SUPPORT_PHONE}`)}
           />
-          <View style={styles.divider} />
           <ContactRow
-            icon="mail-outline"
-            label="Email Us"
+            icon="mail"
+            iconBg={colors.infoLight}
+            iconColor={colors.info}
+            label="Email us"
             value={SUPPORT_EMAIL}
             onPress={() => openLink(`mailto:${SUPPORT_EMAIL}`)}
           />
-          <View style={styles.divider} />
           <ContactRow
             icon="logo-whatsapp"
+            iconBg={colors.successLight}
+            iconColor={colors.success}
             label="WhatsApp"
             value="Chat with support"
             onPress={() => openLink(`https://wa.me/${SUPPORT_WHATSAPP}`)}
+            isLast
           />
-        </View>
+        </Card>
 
         <Text style={styles.footerNote}>
           We typically respond within a few hours during business hours.
@@ -182,44 +199,28 @@ export default function DriverHelpScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F9FAFB' },
+  safe: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+  content: {
+    padding: spacing.xl,
+    paddingTop: spacing.xxxl + spacing.lg,
+    paddingBottom: spacing.xxl,
+    gap: spacing.lg,
   },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
 
   sectionTitle: {
-    fontSize: 14,
+    fontSize: fontSize.xs,
     fontWeight: '700',
-    color: '#6B7280',
-    marginBottom: 10,
-    marginTop: 8,
+    color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginTop: spacing.sm,
   },
 
-  faqCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+  faqItem: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
-  faqItem: { paddingVertical: 14 },
   faqHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -227,50 +228,53 @@ const styles = StyleSheet.create({
   },
   faqQuestion: {
     flex: 1,
-    fontSize: 15,
+    fontSize: fontSize.sm,
     fontWeight: '600',
-    color: '#111827',
-    paddingRight: 12,
+    color: colors.textPrimary,
+    paddingRight: spacing.md,
   },
   faqAnswer: {
-    marginTop: 10,
-    fontSize: 14,
-    color: '#4B5563',
+    marginTop: spacing.sm,
+    fontSize: fontSize.sm,
+    color: colors.gray600,
     lineHeight: 20,
   },
-  divider: { height: 1, backgroundColor: '#F3F4F6' },
-
-  contactCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.divider,
+    marginHorizontal: spacing.lg,
   },
+
   contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    gap: 14,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
   },
   contactIconBox: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: '#FEE2E2',
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  contactLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
-  contactValue: { fontSize: 15, color: '#111827', fontWeight: '600', marginTop: 2 },
+  contactLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+  contactValue: {
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
+    fontWeight: '700',
+    marginTop: 2,
+  },
 
   footerNote: {
-    marginTop: 24,
-    fontSize: 13,
-    color: '#9CA3AF',
+    marginTop: spacing.md,
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
     textAlign: 'center',
   },
 });

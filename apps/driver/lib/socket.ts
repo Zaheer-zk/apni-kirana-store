@@ -1,10 +1,8 @@
 import { io, Socket } from 'socket.io-client';
-import Constants from 'expo-constants';
 import { useDriverStore } from '@/store/driver.store';
 
-const SOCKET_URL =
-  (Constants.expoConfig?.extra?.socketUrl as string | undefined) ??
-  'http://localhost:3000';
+// Reuse the same EXPO_PUBLIC_API_URL the rest of the app uses.
+const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
 
 let socket: Socket | null = null;
 

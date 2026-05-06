@@ -1,10 +1,10 @@
 import { io, Socket } from 'socket.io-client';
-import Constants from 'expo-constants';
 import { useStorePortalStore } from '@/store/store.store';
 
-const SOCKET_URL =
-  (Constants.expoConfig?.extra?.socketUrl as string | undefined) ??
-  'http://localhost:3000';
+// Reuse the same EXPO_PUBLIC_API_URL the rest of the app uses.
+// On the phone "localhost" refers to the phone itself, so the LAN IP
+// must come from the env var (set by `npx expo start --lan` invocation).
+const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
 
 let socket: Socket | null = null;
 

@@ -9,12 +9,27 @@ import {
   Alert,
   Platform,
   ToastAndroid,
+  Vibration,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
 import { onOrderRescinded } from '@/lib/socket';
-import type { IncomingOrderPreview } from '@aks/shared';
+
+// Order preview shape from GET /api/v1/orders/:id (we extract the bits we need)
+interface IncomingOrderPreview {
+  id: string;
+  itemsCount: number;
+  orderTotal: number;
+}
+
+function unwrap<T>(payload: unknown): T {
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    const inner = (payload as { data: unknown }).data;
+    if (inner !== undefined) return inner as T;
+  }
+  return payload as T;
+}
 
 const COUNTDOWN_SECONDS = 180; // 3 minutes
 
@@ -41,12 +56,23 @@ export function IncomingOrderBanner({ orderId }: Props) {
 
   const { data: order, isLoading } = useQuery<IncomingOrderPreview>({
     queryKey: ['storeIncomingOrder', orderId],
-    queryFn: () =>
-      api.get<IncomingOrderPreview>(`/api/v1/orders/${orderId}/preview`).then((r) => r.data),
+    queryFn: async () => {
+      const r = await api.get(`/api/v1/orders/${orderId}`);
+      const o = unwrap<{
+        id: string;
+        items?: Array<unknown>;
+        total?: number;
+      }>(r.data);
+      return {
+        id: o.id,
+        itemsCount: o.items?.length ?? 0,
+        orderTotal: o.total ?? 0,
+      };
+    },
     enabled: !!orderId,
   });
 
-  // Slide down animation
+  // Slide down + buzz pattern + vibrate on first appearance
   useEffect(() => {
     Animated.spring(slideAnim, {
       toValue: 0,
@@ -54,6 +80,15 @@ export function IncomingOrderBanner({ orderId }: Props) {
       friction: 8,
       tension: 60,
     }).start();
+    // Buzz pattern: vibrate three times to grab attention
+    if (Platform.OS === 'android') {
+      Vibration.vibrate([0, 400, 200, 400, 200, 400]);
+    } else {
+      // iOS: simple repeating vibrate (system default)
+      Vibration.vibrate();
+      setTimeout(() => Vibration.vibrate(), 600);
+      setTimeout(() => Vibration.vibrate(), 1200);
+    }
   }, []);
 
   // Countdown
@@ -95,8 +130,8 @@ export function IncomingOrderBanner({ orderId }: Props) {
   }, [orderId]);
 
   const acceptMutation = useMutation({
-    mutationFn: () =>
-      api.put(`/api/v1/orders/${orderId}/store-accept`).then((r) => r.data),
+    // Backend route is /orders/:id/accept (not /store-accept)
+    mutationFn: () => api.put(`/api/v1/orders/${orderId}/accept`).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['storeOrders'] });
       queryClient.invalidateQueries({ queryKey: ['storeActiveOrders'] });
@@ -107,8 +142,11 @@ export function IncomingOrderBanner({ orderId }: Props) {
   });
 
   const rejectMutation = useMutation({
+    // Backend route is /orders/:id/reject and requires { reason }
     mutationFn: () =>
-      api.put(`/api/v1/orders/${orderId}/store-reject`).then((r) => r.data),
+      api
+        .put(`/api/v1/orders/${orderId}/reject`, { reason: 'Store unavailable' })
+        .then((r) => r.data),
     onSuccess: () => dismiss(),
     onError: (err: Error) => Alert.alert('Error', err.message),
   });

@@ -206,6 +206,8 @@ model Order {
   rejectionReason   String?
   cancelReason      String?
   dropoffOtp        String?       // 4-digit OTP for driver-to-customer handoff verification
+  promoCode         String?
+  promoDiscount     Float?        // amount deducted by the applied promo (snapshot)
   storeAcceptedAt   DateTime?
   driverAssignedAt  DateTime?
   pickedUpAt        DateTime?
@@ -279,4 +281,46 @@ model Notification {
   data      Json?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+// Admin-created discount/promo code that customers can apply at checkout.
+// Either flat (e.g. ₹50 off) or percentage (e.g. 10% off, capped at maxDiscount).
+model Promo {
+  id              String       @id @default(cuid())
+  code            String       @unique
+  description     String?
+  discountType    DiscountType // FLAT or PERCENT
+  discountValue   Float        // for FLAT: rupees off; for PERCENT: 0–100
+  maxDiscount     Float?       // cap for PERCENT discounts (rupees)
+  minOrderValue   Float        @default(0)
+  usageLimit      Int?         // total usage cap across all users; null = unlimited
+  perUserLimit    Int?         // per-customer usage cap; null = unlimited
+  usedCount       Int          @default(0)
+  validFrom       DateTime     @default(now())
+  validUntil      DateTime?
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  redemptions     PromoRedemption[]
+
+  @@index([code])
+  @@index([isActive])
+}
+
+model PromoRedemption {
+  id         String   @id @default(cuid())
+  promoId    String
+  userId     String
+  orderId    String   @unique
+  discount   Float    // actual amount discounted
+  createdAt  DateTime @default(now())
+
+  promo Promo @relation(fields: [promoId], references: [id], onDelete: Cascade)
+
+  @@index([promoId, userId])
+}
+
+enum DiscountType {
+  FLAT
+  PERCENT
 }

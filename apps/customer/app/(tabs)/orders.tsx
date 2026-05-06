@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
+  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -15,8 +16,9 @@ import { EmptyState } from '@/components/EmptyState';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { Skeleton } from '@/components/Skeleton';
 import { apiClient } from '@/lib/api';
+import { useCartStore } from '@/store/cart.store';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
-import { OrderStatus, type Order } from '@aks/shared';
+import { OrderStatus, type Order, type OrderItem } from '@aks/shared';
 
 const ACTIVE_STATUSES: OrderStatus[] = [
   OrderStatus.PENDING,
@@ -39,12 +41,32 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
-function OrderCard({ order }: { order: Order }) {
+function OrderCard({ order, isPast }: Readonly<{ order: Order; isPast: boolean }>) {
+  const addItem = useCartStore((s) => s.addItem);
   const summary = order.items
     .slice(0, 3)
     .map((i) => i.name)
     .join(', ');
   const moreCount = order.items.length - 3;
+
+  function handleReorder() {
+    const items = order.items as Array<OrderItem & { imageUrl?: string }>;
+    items.forEach((it) => {
+      addItem({
+        itemId: it.itemId,
+        name: it.name,
+        price: it.price,
+        unit: it.unit,
+        qty: it.qty,
+        imageUrl: it.imageUrl ?? '',
+      });
+    });
+    Alert.alert(
+      'Added to cart',
+      `${items.length} ${items.length === 1 ? 'item' : 'items'} added to your cart`
+    );
+    router.push('/cart');
+  }
 
   return (
     <TouchableOpacity
@@ -76,9 +98,21 @@ function OrderCard({ order }: { order: Order }) {
           <Text style={styles.metaLabel}>{formatDate(order.createdAt)}</Text>
           <Text style={styles.metaValue}>₹{order.total.toFixed(0)}</Text>
         </View>
-        <View style={styles.chevronWrap}>
-          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-        </View>
+        {isPast ? (
+          <TouchableOpacity
+            style={styles.reorderBtn}
+            activeOpacity={0.7}
+            onPress={handleReorder}
+            hitSlop={6}
+          >
+            <Ionicons name="refresh-outline" size={16} color={colors.primary} />
+            <Text style={styles.reorderText}>Reorder</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.chevronWrap}>
+            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -172,7 +206,7 @@ export default function OrdersScreen() {
               colors={[colors.primary]}
             />
           }
-          renderItem={({ item }) => <OrderCard order={item} />}
+          renderItem={({ item }) => <OrderCard order={item} isPast={tab === 'past'} />}
           ListEmptyComponent={
             <EmptyState
               icon="receipt-outline"
@@ -314,5 +348,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.gray100,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  reorderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  reorderText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.primary,
   },
 });

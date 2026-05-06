@@ -65,6 +65,8 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="profile/ratings" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/help" options={{ headerShown: false }} />
     </Stack>
   );
 }

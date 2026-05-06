@@ -27,7 +27,7 @@
 | Phase 7 — Beta Launch         | 🔲 Pending | Pilot stores/drivers/customers not yet onboarded              |
 | Phase 8 — Scale               | 🔲 Pending | Awaits beta feedback                                          |
 
-**Remaining work:** Twilio production integration, Razorpay live keys, Cloudinary uploads, FCM real device tokens, CI/CD, app store submissions, beta launch.
+**Remaining work:** Twilio production integration, Razorpay live keys, Cloudinary uploads, CI/CD, app store submissions, beta launch.
 
 ---
 
@@ -182,7 +182,7 @@
   - Store timeout auto-reassignment
   - Driver timeout auto-reassignment
   - Scheduled reminders
-- ❌ Firebase Cloud Messaging integration
+- ✅ Firebase Cloud Messaging integration
   - Push notification service with templates per event
 - ✅ Socket.io setup for real-time:
   - Driver location updates (emit every 5s when on a job)
@@ -302,9 +302,9 @@
 
 - ✅ Earnings per delivery + daily summary
 - ❌ Weekly payout history
-- ❌ Ratings received from customers
+- ✅ Ratings received from customers
 - ✅ Delivery history list
-- ❌ Help / support contact
+- ✅ Help / support contact
 
 ---
 
@@ -531,7 +531,7 @@ Phase 0 (Design + Infra)
 - ✅ **Two browse modes**: by store (current per-store browse) OR by catalog (browse all products)
 - ❌ Catalog browse home: tile per category, infinite-scroll item grid
 - ❌ Item detail: "Available at 3 stores nearby" picker (closest auto-selected, customer can switch)
-- ❌ Floating cart preview button (appears once cart has items, sticky bottom)
+- ✅ Floating cart preview button (appears once cart has items, sticky bottom)
 - ❌ Show dropoff OTP on tracking screen once order is PICKED_UP
 - ❌ Address picker integrated with map (DONE — onboarding/map-picker)
 

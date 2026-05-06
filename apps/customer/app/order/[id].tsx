@@ -127,6 +127,35 @@ function StepIndicator({ currentStatus }: { currentStatus: OrderStatus }) {
   );
 }
 
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+interface EtaInfo {
+  label: string;
+  value: string;
+  delivered: boolean;
+}
+
+function computeEta(status: OrderStatus, order: Order): EtaInfo | null {
+  if (status === OrderStatus.CANCELLED || status === OrderStatus.REJECTED) return null;
+  if (status === OrderStatus.DELIVERED) {
+    const deliveredAt =
+      (order as Order & { deliveredAt?: string | null }).deliveredAt ?? order.updatedAt;
+    return {
+      label: 'Delivered at',
+      value: formatTime(deliveredAt),
+      delivered: true,
+    };
+  }
+  if (status === OrderStatus.DRIVER_ASSIGNED || status === OrderStatus.PICKED_UP) {
+    return { label: 'Arriving in', value: '15–25 mins', delivered: false };
+  }
+  // PENDING or STORE_ACCEPTED
+  return { label: 'Arriving in', value: '30–45 mins', delivered: false };
+}
+
 function statusHeadline(status: OrderStatus): string {
   switch (status) {
     case OrderStatus.PENDING:
@@ -214,6 +243,7 @@ export default function OrderDetailScreen() {
   const headline = statusHeadline(status);
   const canCancel = status === OrderStatus.PENDING;
   const isDelivered = status === OrderStatus.DELIVERED;
+  const eta = computeEta(status, order);
 
   const dropoffOtp = (order as Order & { dropoffOtp?: string | null }).dropoffOtp ?? null;
   const showDropoffOtp =
@@ -310,6 +340,13 @@ export default function OrderDetailScreen() {
             </Text>
           ) : null}
           <StepIndicator currentStatus={status} />
+          {eta ? (
+            <View style={styles.etaCard}>
+              <Ionicons name="time-outline" size={18} color={colors.success} />
+              <Text style={styles.etaLabel}>{eta.label} </Text>
+              <Text style={styles.etaValue}>{eta.value}</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Delivery OTP — shown to customer once driver has picked up the order */}
@@ -559,6 +596,29 @@ const styles = StyleSheet.create({
   },
   stepWrap: {
     marginTop: spacing.xl,
+  },
+  etaCard: {
+    marginTop: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.successLight,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.success,
+  },
+  etaLabel: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.success,
+  },
+  etaValue: {
+    fontSize: fontSize.md,
+    fontWeight: '800',
+    color: colors.success,
   },
   stepRow: {
     flexDirection: 'row',

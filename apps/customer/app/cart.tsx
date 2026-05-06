@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { AxiosError } from 'axios';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
@@ -42,6 +43,22 @@ async function placeOrderRequest(payload: {
   const res = await apiClient.post<{ data: Order } | Order>('/api/v1/orders', payload);
   const data = res.data as unknown;
   return ((data as { data?: Order }).data ?? data) as Order;
+}
+
+interface PromoValidateResponse {
+  code: string;
+  discountAmount: number;
+}
+
+async function validatePromoRequest(payload: {
+  code: string;
+  subtotal: number;
+}): Promise<PromoValidateResponse> {
+  const res = await apiClient.post<
+    { data: PromoValidateResponse } | PromoValidateResponse
+  >('/api/v1/promos/validate', payload);
+  const data = res.data as unknown;
+  return ((data as { data?: PromoValidateResponse }).data ?? data) as PromoValidateResponse;
 }
 
 function CartItemRow({ item }: { item: CartItem }) {
@@ -102,10 +119,12 @@ export default function CartScreen() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.CASH_ON_DELIVERY);
   const [promoCode, setPromoCode] = useState('');
   const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [promoError, setPromoError] = useState<string | null>(null);
 
   const subtotal = useMemo(() => total(), [items, total]);
   const deliveryFee = items.length === 0 ? 0 : BASE_DELIVERY_FEE;
-  const discount = appliedPromo ? Math.min(50, subtotal * 0.1) : 0;
+  const discount = appliedPromo ? discountAmount : 0;
   const grandTotal = Math.max(0, subtotal + deliveryFee - discount);
 
   const addressesQuery = useQuery({ queryKey: ['addresses'], queryFn: fetchAddresses });
@@ -124,9 +143,42 @@ export default function CartScreen() {
     },
   });
 
+  const promoMutation = useMutation({
+    mutationFn: validatePromoRequest,
+    onSuccess: (data) => {
+      setAppliedPromo(data.code.toUpperCase());
+      setDiscountAmount(data.discountAmount);
+      setPromoError(null);
+    },
+    onError: (err: unknown) => {
+      let message = 'Invalid promo code';
+      if (err instanceof AxiosError) {
+        const respData = err.response?.data as
+          | { message?: string; error?: { message?: string } }
+          | undefined;
+        message =
+          respData?.error?.message ?? respData?.message ?? err.message ?? message;
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
+      setAppliedPromo(null);
+      setDiscountAmount(0);
+      setPromoError(message);
+    },
+  });
+
   function handleApplyPromo() {
-    if (!promoCode.trim()) return;
-    setAppliedPromo(promoCode.trim().toUpperCase());
+    const trimmed = promoCode.trim();
+    if (!trimmed) return;
+    setPromoError(null);
+    promoMutation.mutate({ code: trimmed.toUpperCase(), subtotal });
+  }
+
+  function handleRemovePromo() {
+    setAppliedPromo(null);
+    setDiscountAmount(0);
+    setPromoCode('');
+    setPromoError(null);
   }
 
   function handlePlaceOrder() {
@@ -238,6 +290,22 @@ export default function CartScreen() {
         {/* Promo */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Promo Code</Text>
+          {appliedPromo ? (
+            <View style={styles.promoPill}>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+              <Text style={styles.promoPillText} numberOfLines={1}>
+                {appliedPromo} applied — ₹{discount.toFixed(0)} off
+              </Text>
+              <TouchableOpacity
+                style={styles.promoRemoveBtn}
+                activeOpacity={0.7}
+                onPress={handleRemovePromo}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={14} color={colors.success} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
           <View style={[styles.cardGroup, styles.promoCard]}>
             <Ionicons name="pricetag-outline" size={18} color={colors.primary} />
             <TextInput
@@ -245,22 +313,30 @@ export default function CartScreen() {
               placeholder="Enter promo code"
               placeholderTextColor={colors.textMuted}
               value={promoCode}
-              onChangeText={setPromoCode}
+              onChangeText={(t) => {
+                setPromoCode(t);
+                if (promoError) setPromoError(null);
+              }}
               autoCapitalize="characters"
+              editable={!appliedPromo}
             />
             <TouchableOpacity
-              style={styles.promoBtn}
+              style={[styles.promoBtn, promoMutation.isPending && { opacity: 0.7 }]}
               activeOpacity={0.7}
               onPress={handleApplyPromo}
+              disabled={promoMutation.isPending || !!appliedPromo}
             >
-              <Text style={styles.promoBtnText}>{appliedPromo ? 'Applied' : 'Apply'}</Text>
+              <Text style={styles.promoBtnText}>
+                {appliedPromo
+                  ? 'Applied'
+                  : promoMutation.isPending
+                    ? 'Applying...'
+                    : 'Apply'}
+              </Text>
             </TouchableOpacity>
           </View>
-          {appliedPromo ? (
-            <View style={styles.promoApplied}>
-              <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-              <Text style={styles.promoAppliedText}>"{appliedPromo}" applied — ₹{discount.toFixed(0)} off</Text>
-            </View>
+          {promoError ? (
+            <Text style={styles.promoErrorText}>Invalid promo: {promoError}</Text>
           ) : null}
         </View>
 
@@ -270,7 +346,9 @@ export default function CartScreen() {
           <View style={[styles.cardGroup, { padding: spacing.lg }]}>
             <BillRow label="Subtotal" value={subtotal} />
             <BillRow label="Delivery fee" value={deliveryFee} />
-            {discount > 0 ? <BillRow label="Discount" value={-discount} highlight /> : null}
+            {discount > 0 && appliedPromo ? (
+              <BillRow label={`Promo (${appliedPromo})`} value={-discount} highlight />
+            ) : null}
             <View style={styles.itemDivider} />
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total</Text>
@@ -539,6 +617,39 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.success,
     fontWeight: '700',
+  },
+  promoPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.successLight,
+    borderWidth: 1,
+    borderColor: colors.success,
+    marginBottom: spacing.sm,
+  },
+  promoPillText: {
+    fontSize: fontSize.xs,
+    color: colors.success,
+    fontWeight: '700',
+  },
+  promoRemoveBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.successLight,
+  },
+  promoErrorText: {
+    marginTop: spacing.sm,
+    marginLeft: spacing.xs,
+    fontSize: fontSize.xs,
+    color: colors.error,
+    fontWeight: '600',
   },
   billRow: {
     flexDirection: 'row',

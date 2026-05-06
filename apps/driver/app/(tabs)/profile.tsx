@@ -36,6 +36,24 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function MenuRow({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: string;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.menuRow} onPress={onPress} activeOpacity={0.7}>
+      <Text style={styles.menuIcon}>{icon}</Text>
+      <Text style={styles.menuLabel}>{label}</Text>
+      <Text style={styles.menuChevron}>›</Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function ProfileScreen() {
   const { user, driverProfile, clearAuth } = useDriverStore();
 
@@ -123,6 +141,24 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Menu */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>More</Text>
+          <View style={styles.card}>
+            <MenuRow
+              icon="⭐"
+              label="My Ratings"
+              onPress={() => router.push('/profile/ratings')}
+            />
+            <View style={styles.divider} />
+            <MenuRow
+              icon="💬"
+              label="Help & Support"
+              onPress={() => router.push('/profile/help')}
+            />
+          </View>
+        </View>
+
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutButtonText}>Logout</Text>
         </TouchableOpacity>
@@ -182,4 +218,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   logoutButtonText: { color: '#DC2626', fontSize: 16, fontWeight: '700' },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 12,
+  },
+  menuIcon: { fontSize: 20 },
+  menuLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
+  menuChevron: { fontSize: 22, color: '#9CA3AF', fontWeight: '600' },
 });

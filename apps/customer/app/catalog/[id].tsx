@@ -229,7 +229,7 @@ export default function CatalogDetailScreen() {
             <View style={{ gap: spacing.md }}>
               {stores.map((s) => {
                 const isSelected = selected?.id === s.id;
-                const isOpen = s.status ? s.status === StoreStatus.OPEN : true;
+                const isOpen = s.status ? s.status === StoreStatus.ACTIVE : true;
                 return (
                   <TouchableOpacity
                     key={s.id}

@@ -168,9 +168,41 @@ router.post(
       const subtotal = resolvedItems.reduce((s, r) => s + r.storeItem.price * r.qty, 0);
       const deliveryFee = DELIVERY_FEE;
       const commission = parseFloat((subtotal * COMMISSION_RATE).toFixed(2));
-      const total = parseFloat((subtotal + deliveryFee).toFixed(2));
 
-      // 4-digit dropoff OTP for driver delivery handoff (privacy-preserving verification)
+      // Promo code application (validated server-side; ignore invalid silently for now)
+      let promoDiscount = 0;
+      let promoCodeApplied: string | null = null;
+      const promoCode = (req.body.promoCode as string | undefined)?.trim().toUpperCase();
+      if (promoCode) {
+        const promo = await prisma.promo.findUnique({ where: { code: promoCode } });
+        if (promo && promo.isActive) {
+          const now = new Date();
+          const validNow = promo.validFrom <= now && (!promo.validUntil || promo.validUntil >= now);
+          const minOk = promo.minOrderValue <= subtotal;
+          const usageOk = !promo.usageLimit || promo.usedCount < promo.usageLimit;
+          let perUserOk = true;
+          if (promo.perUserLimit) {
+            const used = await prisma.promoRedemption.count({
+              where: { promoId: promo.id, userId: req.user!.id },
+            });
+            perUserOk = used < promo.perUserLimit;
+          }
+          if (validNow && minOk && usageOk && perUserOk) {
+            promoDiscount =
+              promo.discountType === 'FLAT'
+                ? Math.min(promo.discountValue, subtotal)
+                : Math.min(
+                    (subtotal * promo.discountValue) / 100,
+                    promo.maxDiscount ?? Number.POSITIVE_INFINITY,
+                  );
+            promoDiscount = Math.round(promoDiscount * 100) / 100;
+            promoCodeApplied = promo.code;
+          }
+        }
+      }
+
+      const total = parseFloat((subtotal + deliveryFee - promoDiscount).toFixed(2));
+
       const dropoffOtp = Math.floor(1000 + Math.random() * 9000).toString();
 
       const order = await prisma.$transaction(async (tx) => {
@@ -188,6 +220,8 @@ router.post(
             deliveryAddressId,
             notes,
             dropoffOtp,
+            promoCode: promoCodeApplied,
+            promoDiscount: promoDiscount > 0 ? promoDiscount : null,
             items: {
               create: resolvedItems.map((r) => ({
                 itemId: r.storeItem.id,
@@ -201,6 +235,16 @@ router.post(
           },
           include: { items: true },
         });
+
+        if (promoCodeApplied && promoDiscount > 0) {
+          const promo = await tx.promo.findUnique({ where: { code: promoCodeApplied } });
+          if (promo) {
+            await tx.promoRedemption.create({
+              data: { promoId: promo.id, userId: req.user!.id, orderId: created.id, discount: promoDiscount },
+            });
+            await tx.promo.update({ where: { id: promo.id }, data: { usedCount: { increment: 1 } } });
+          }
+        }
         return created;
       });
 

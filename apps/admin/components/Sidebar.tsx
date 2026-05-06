@@ -12,6 +12,7 @@ import {
   Users,
   Settings,
   LogOut,
+  Ticket,
 } from 'lucide-react';
 import { clearToken } from '@/lib/auth';
 
@@ -26,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/stores', label: 'Stores', icon: <Store className="h-4 w-4" /> },
   { href: '/drivers', label: 'Drivers', icon: <Bike className="h-4 w-4" /> },
   { href: '/catalog', label: 'Catalog', icon: <BookOpen className="h-4 w-4" /> },
+  { href: '/promos', label: 'Promos', icon: <Ticket className="h-4 w-4" /> },
   { href: '/orders', label: 'Orders', icon: <ShoppingCart className="h-4 w-4" /> },
   { href: '/users', label: 'Users', icon: <Users className="h-4 w-4" /> },
   { href: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },

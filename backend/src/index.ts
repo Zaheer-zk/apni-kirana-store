@@ -22,6 +22,7 @@ import adminRouter from './routes/admin.routes';
 import notificationsRouter from './routes/notifications.routes';
 import addressesRouter from './routes/addresses.routes';
 import usersRouter from './routes/users.routes';
+import promosRouter from './routes/promos.routes';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/addresses', addressesRouter);
 app.use('/api/v1/users', usersRouter);
+app.use('/api/v1/promos', promosRouter);
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 

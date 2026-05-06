@@ -1,60 +1,78 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors, fontSize } from '@/constants/theme';
 
-function TabIcon({ icon, focused }: { icon: string; focused: boolean }) {
-  return <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{icon}</Text>;
+type IoniconsName = keyof typeof Ionicons.glyphMap;
+
+function tabIcon(focused: IoniconsName, unfocused: IoniconsName) {
+  return ({ focused: isFocused, color, size }: { focused: boolean; color: string; size: number }) => (
+    <Ionicons name={isFocused ? focused : unfocused} size={size} color={color} />
+  );
 }
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 0);
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#2563EB',
-        tabBarInactiveTintColor: '#9CA3AF',
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
+          backgroundColor: colors.card,
+          borderTopColor: colors.border,
           borderTopWidth: 1,
-          borderTopColor: '#F3F4F6',
-          paddingBottom: 6,
-          paddingTop: 4,
-          height: 62,
+          height: 70 + bottomInset,
+          paddingBottom: 8 + bottomInset,
+          paddingTop: 8,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarLabelStyle: {
+          fontSize: fontSize.xs - 1,
+          fontWeight: '600',
+          marginTop: 2,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 4,
+        },
       }}
     >
       <Tabs.Screen
         name="dashboard"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ focused }) => <TabIcon icon="🏠" focused={focused} />,
+          tabBarIcon: tabIcon('home', 'home-outline'),
         }}
       />
       <Tabs.Screen
         name="orders"
         options={{
           title: 'Orders',
-          tabBarIcon: ({ focused }) => <TabIcon icon="📋" focused={focused} />,
+          tabBarIcon: tabIcon('receipt', 'receipt-outline'),
         }}
       />
       <Tabs.Screen
         name="inventory"
         options={{
           title: 'Inventory',
-          tabBarIcon: ({ focused }) => <TabIcon icon="📦" focused={focused} />,
+          tabBarIcon: tabIcon('cube', 'cube-outline'),
         }}
       />
       <Tabs.Screen
         name="earnings"
         options={{
           title: 'Earnings',
-          tabBarIcon: ({ focused }) => <TabIcon icon="💰" focused={focused} />,
+          tabBarIcon: tabIcon('wallet', 'wallet-outline'),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ focused }) => <TabIcon icon="🏪" focused={focused} />,
+          tabBarIcon: tabIcon('storefront', 'storefront-outline'),
         }}
       />
     </Tabs>

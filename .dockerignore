@@ -1,0 +1,47 @@
+# Don't copy node_modules from host into the build context
+node_modules
+**/node_modules
+
+# Build outputs
+dist
+build
+.next
+out
+**/dist
+**/build
+**/.next
+
+# Logs
+*.log
+**/*.log
+
+# Environment files (mounted at runtime)
+.env
+**/.env
+!.env.example
+!**/.env.example
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+.DS_Store
+
+# Expo apps not needed for backend/admin Docker builds
+apps/customer
+apps/driver
+apps/store-portal
+
+# Docs
+docs
+*.md
+!README.md
+
+# CI/CD
+.github
+
+# Turbo cache
+.turbo

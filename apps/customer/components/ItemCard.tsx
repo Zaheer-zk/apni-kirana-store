@@ -1,57 +1,114 @@
-import {
-  Image,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  type ViewStyle,
-} from 'react-native';
-import type { InventoryItem } from '@aks/shared';
+import { Ionicons } from '@expo/vector-icons';
+import { Image, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { ItemCategory, type InventoryItem } from '@aks/shared';
+import { useCartStore } from '@/store/cart.store';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 
 interface ItemCardProps {
   item: InventoryItem;
   onPress?: () => void;
-  onAddToCart?: () => void;
+  variant?: 'horizontal' | 'compact';
   style?: ViewStyle;
 }
 
-export function ItemCard({ item, onPress, onAddToCart, style }: ItemCardProps) {
+const CATEGORY_EMOJI: Record<ItemCategory, string> = {
+  [ItemCategory.GROCERY]: '🛒',
+  [ItemCategory.MEDICINE]: '💊',
+  [ItemCategory.HOUSEHOLD]: '🧹',
+  [ItemCategory.SNACKS]: '🍿',
+  [ItemCategory.BEVERAGES]: '🥤',
+  [ItemCategory.OTHER]: '📦',
+};
+
+export function ItemCard({ item, onPress, variant = 'horizontal', style }: ItemCardProps) {
+  const items = useCartStore((s) => s.items);
+  const addItem = useCartStore((s) => s.addItem);
+  const updateQty = useCartStore((s) => s.updateQty);
+
+  const cartItem = items.find((i) => i.itemId === item.id);
+  const qty = cartItem?.qty ?? 0;
+
+  function handleAdd(e?: { stopPropagation?: () => void }) {
+    e?.stopPropagation?.();
+    addItem({
+      itemId: item.id,
+      name: item.name,
+      price: item.price,
+      unit: item.unit,
+      qty: 1,
+      imageUrl: item.imageUrl,
+    });
+  }
+
+  function handleInc(e?: { stopPropagation?: () => void }) {
+    e?.stopPropagation?.();
+    updateQty(item.id, qty + 1);
+  }
+
+  function handleDec(e?: { stopPropagation?: () => void }) {
+    e?.stopPropagation?.();
+    updateQty(item.id, qty - 1);
+  }
+
+  const isCompact = variant === 'compact';
+
   return (
     <TouchableOpacity
-      style={[styles.card, style]}
+      style={[styles.card, isCompact && styles.cardCompact, style]}
       onPress={onPress}
-      activeOpacity={0.75}
+      activeOpacity={0.7}
     >
-      {/* Image */}
-      <Image
-        source={{ uri: item.imageUrl || 'https://via.placeholder.com/160x100' }}
-        style={styles.image}
-        resizeMode="cover"
-      />
+      <View style={[styles.thumb, isCompact && styles.thumbCompact]}>
+        {item.imageUrl ? (
+          <Image source={{ uri: item.imageUrl }} style={styles.image} resizeMode="cover" />
+        ) : (
+          <Text style={styles.emoji}>{CATEGORY_EMOJI[item.category]}</Text>
+        )}
+      </View>
 
-      {/* Body */}
       <View style={styles.body}>
         <Text style={styles.name} numberOfLines={2}>
           {item.name}
         </Text>
-        <Text style={styles.unit}>{item.unit}</Text>
+        <Text style={styles.unit} numberOfLines={1}>
+          {item.unit}
+        </Text>
 
         <View style={styles.footer}>
-          <Text style={styles.price}>₹{item.price.toFixed(2)}</Text>
-          {item.isAvailable ? (
+          <Text style={styles.price}>₹{item.price.toFixed(0)}</Text>
+
+          {!item.isAvailable ? (
+            <View style={styles.oosTag}>
+              <Text style={styles.oosText}>Out</Text>
+            </View>
+          ) : qty === 0 ? (
             <TouchableOpacity
               style={styles.addButton}
-              onPress={(e) => {
-                e.stopPropagation();
-                onAddToCart?.();
-              }}
-              activeOpacity={0.85}
+              onPress={handleAdd}
+              activeOpacity={0.7}
             >
-              <Text style={styles.addButtonText}>+ Add</Text>
+              <Ionicons name="add" size={16} color={colors.white} />
+              <Text style={styles.addButtonText}>Add</Text>
             </TouchableOpacity>
           ) : (
-            <View style={styles.oosTag}>
-              <Text style={styles.oosText}>Out of stock</Text>
+            <View style={styles.stepper}>
+              <TouchableOpacity
+                onPress={handleDec}
+                activeOpacity={0.7}
+                style={styles.stepperBtn}
+                hitSlop={6}
+              >
+                <Ionicons name="remove" size={16} color={colors.white} />
+              </TouchableOpacity>
+              <Text style={styles.stepperQty}>{qty}</Text>
+              <TouchableOpacity
+                onPress={handleInc}
+                activeOpacity={0.7}
+                style={styles.stepperBtn}
+                hitSlop={6}
+              >
+                <Ionicons name="add" size={16} color={colors.white} />
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -62,67 +119,111 @@ export function ItemCard({ item, onPress, onAddToCart, style }: ItemCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    overflow: 'hidden',
+    flexDirection: 'row',
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.md,
+    alignItems: 'center',
+    ...shadow.small,
+  },
+  cardCompact: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    width: 160,
+    gap: spacing.sm,
+  },
+  thumb: {
+    width: 80,
+    height: 80,
+    borderRadius: radius.md,
+    backgroundColor: colors.gray100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  thumbCompact: {
+    width: '100%',
+    height: 100,
   },
   image: {
     width: '100%',
-    height: 110,
-    backgroundColor: '#F9FAFB',
+    height: '100%',
+  },
+  emoji: {
+    fontSize: 36,
   },
   body: {
-    padding: 10,
-    gap: 3,
+    flex: 1,
+    gap: 2,
   },
   name: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#111827',
-    lineHeight: 18,
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    lineHeight: 20,
   },
   unit: {
-    fontSize: 11,
-    color: '#9CA3AF',
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 6,
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
   },
   price: {
-    fontSize: 14,
+    fontSize: fontSize.lg,
     fontWeight: '700',
-    color: '#16A34A',
+    color: colors.primary,
   },
   addButton: {
-    backgroundColor: '#16A34A',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    gap: 2,
   },
   addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
+    color: colors.white,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+  },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+  },
+  stepperBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperQty: {
+    color: colors.white,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    minWidth: 20,
+    textAlign: 'center',
   },
   oosTag: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 6,
-    paddingHorizontal: 8,
+    backgroundColor: colors.gray100,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 4,
   },
   oosText: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    fontWeight: '500',
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 });

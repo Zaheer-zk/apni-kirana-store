@@ -1,90 +1,116 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import {
   Alert,
-  FlatList,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Avatar } from '@/components/Avatar';
+import { Button } from '@/components/Button';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useCartStore } from '@/store/cart.store';
-import type { Address } from '@aks/shared';
-import Constants from 'expo-constants';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
+import { OrderStatus, type Address, type Order } from '@aks/shared';
 
-async function fetchAddresses(): Promise<Address[]> {
-  const res = await apiClient.get<{ data: Address[] }>('/api/v1/addresses');
-  return res.data.data ?? [];
+const APP_VERSION = '1.0.0';
+
+interface MenuItem {
+  icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  iconBg?: string;
+  iconColor?: string;
 }
 
-function AddressRow({ address }: { address: Address }) {
+interface MenuSection {
+  title: string;
+  items: MenuItem[];
+}
+
+async function fetchOrders(): Promise<Order[]> {
+  try {
+    const res = await apiClient.get<{ data: Order[] } | Order[]>('/api/v1/orders/mine');
+    const payload = res.data as unknown;
+    if (Array.isArray(payload)) return payload as Order[];
+    return ((payload as { data?: Order[] }).data ?? []) as Order[];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchAddresses(): Promise<Address[]> {
+  try {
+    const res = await apiClient.get<{ data: Address[] } | Address[]>('/api/v1/addresses');
+    const payload = res.data as unknown;
+    if (Array.isArray(payload)) return payload as Address[];
+    return ((payload as { data?: Address[] }).data ?? []) as Address[];
+  } catch {
+    return [];
+  }
+}
+
+function StatTile({ label, value, icon, color }: {
+  label: string;
+  value: number | string;
+  icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
+  color: string;
+}) {
   return (
-    <View style={styles.addressRow}>
-      <View style={styles.addressIconContainer}>
-        <Text style={styles.addressIcon}>
-          {address.label.toLowerCase().includes('home')
-            ? '🏠'
-            : address.label.toLowerCase().includes('work')
-            ? '💼'
-            : '📍'}
-        </Text>
+    <View style={styles.statTile}>
+      <View style={[styles.statIcon, { backgroundColor: color }]}>
+        <Ionicons name={icon} size={18} color={colors.white} />
       </View>
-      <View style={styles.addressText}>
-        <View style={styles.addressLabelRow}>
-          <Text style={styles.addressLabel}>{address.label}</Text>
-          {address.isDefault && (
-            <View style={styles.defaultBadge}>
-              <Text style={styles.defaultBadgeText}>Default</Text>
-            </View>
-          )}
-        </View>
-        <Text style={styles.addressStreet} numberOfLines={2}>
-          {address.street}, {address.city} — {address.pincode}
-        </Text>
-      </View>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
-function MenuItem({
-  emoji,
-  label,
-  onPress,
-  danger,
-}: {
-  emoji: string;
-  label: string;
-  onPress: () => void;
-  danger?: boolean;
-}) {
+function MenuRow({ item, isLast }: { item: MenuItem; isLast: boolean }) {
   return (
-    <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
-      <Text style={styles.menuEmoji}>{emoji}</Text>
-      <Text style={[styles.menuLabel, danger && styles.menuLabelDanger]}>{label}</Text>
-      <Text style={styles.menuChevron}>›</Text>
+    <TouchableOpacity
+      style={[styles.menuRow, isLast && { borderBottomWidth: 0 }]}
+      activeOpacity={0.7}
+      onPress={item.onPress}
+    >
+      <View
+        style={[
+          styles.menuIcon,
+          { backgroundColor: item.iconBg ?? colors.primaryLight },
+        ]}
+      >
+        <Ionicons name={item.icon} size={18} color={item.iconColor ?? colors.primary} />
+      </View>
+      <Text style={styles.menuLabel}>{item.label}</Text>
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
     </TouchableOpacity>
   );
 }
 
 export default function ProfileScreen() {
-  const { user, clearAuth } = useAuthStore();
-  const { clearCart } = useCartStore();
+  const user = useAuthStore((s) => s.user);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
+  const clearCart = useCartStore((s) => s.clearCart);
 
-  const { data: addresses, isLoading: addressesLoading } = useQuery({
-    queryKey: ['addresses'],
-    queryFn: fetchAddresses,
-    enabled: !!user,
-  });
+  const ordersQuery = useQuery({ queryKey: ['my-orders'], queryFn: fetchOrders });
+  const addressesQuery = useQuery({ queryKey: ['addresses'], queryFn: fetchAddresses });
+
+  const totalOrders = ordersQuery.data?.length ?? 0;
+  const savedAddresses = addressesQuery.data?.length ?? 0;
+  const deliveredOrders = ordersQuery.data?.filter((o) => o.status === OrderStatus.DELIVERED).length ?? 0;
 
   function handleLogout() {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
+    Alert.alert('Log out', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Logout',
+        text: 'Log out',
         style: 'destructive',
         onPress: async () => {
           await SecureStore.deleteItemAsync('accessToken');
@@ -98,87 +124,148 @@ export default function ProfileScreen() {
     ]);
   }
 
-  const appVersion = Constants.expoConfig?.version ?? '1.0.0';
+  function notImplemented(feature: string) {
+    return () => Alert.alert(feature, 'This feature will be available soon.');
+  }
+
+  const sections: MenuSection[] = [
+    {
+      title: 'Account',
+      items: [
+        {
+          icon: 'location-outline',
+          label: 'My Addresses',
+          onPress: notImplemented('Addresses'),
+          iconBg: colors.primaryLight,
+          iconColor: colors.primary,
+        },
+        {
+          icon: 'wallet-outline',
+          label: 'My Wallet',
+          onPress: notImplemented('Wallet'),
+          iconBg: colors.warningLight,
+          iconColor: '#B45309',
+        },
+        {
+          icon: 'heart-outline',
+          label: 'Favorites',
+          onPress: notImplemented('Favorites'),
+          iconBg: colors.errorLight,
+          iconColor: colors.error,
+        },
+      ],
+    },
+    {
+      title: 'Help',
+      items: [
+        {
+          icon: 'help-circle-outline',
+          label: 'Help Center',
+          onPress: notImplemented('Help Center'),
+          iconBg: colors.infoLight,
+          iconColor: colors.info,
+        },
+        {
+          icon: 'document-text-outline',
+          label: 'Terms & Conditions',
+          onPress: notImplemented('Terms'),
+          iconBg: colors.gray100,
+          iconColor: colors.gray700,
+        },
+        {
+          icon: 'shield-checkmark-outline',
+          label: 'Privacy Policy',
+          onPress: notImplemented('Privacy'),
+          iconBg: colors.gray100,
+          iconColor: colors.gray700,
+        },
+      ],
+    },
+    {
+      title: 'App',
+      items: [
+        {
+          icon: 'star-outline',
+          label: 'Rate App',
+          onPress: notImplemented('Rate'),
+          iconBg: colors.warningLight,
+          iconColor: '#B45309',
+        },
+        {
+          icon: 'share-social-outline',
+          label: 'Share App',
+          onPress: notImplemented('Share'),
+          iconBg: colors.purpleLight,
+          iconColor: colors.purple,
+        },
+        {
+          icon: 'information-circle-outline',
+          label: `App version ${APP_VERSION}`,
+          onPress: () => {},
+          iconBg: colors.gray100,
+          iconColor: colors.gray700,
+        },
+      ],
+    },
+  ];
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <FlatList
-        data={[]}
-        renderItem={null}
-        ListHeaderComponent={
-          <>
-            {/* Profile card */}
-            <View style={styles.profileCard}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {user?.name ? user.name[0].toUpperCase() : 'U'}
-                </Text>
-              </View>
-              <View>
-                <Text style={styles.userName}>{user?.name ?? 'User'}</Text>
-                <Text style={styles.phone}>{user?.phone ?? ''}</Text>
-              </View>
-            </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.xxxl }}>
+        {/* Profile head */}
+        <View style={styles.profileHead}>
+          <Avatar name={user?.name} size={72} />
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName} numberOfLines={1}>
+              {user?.name ?? 'Customer'}
+            </Text>
+            <Text style={styles.profilePhone}>{user?.phone ?? ''}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.editBtn}
+            activeOpacity={0.7}
+            onPress={notImplemented('Edit profile')}
+          >
+            <Ionicons name="pencil" size={16} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
 
-            {/* Saved Addresses */}
-            <Text style={styles.sectionTitle}>Saved Addresses</Text>
-            <View style={styles.card}>
-              {addressesLoading ? (
-                <Text style={styles.loadingText}>Loading addresses…</Text>
-              ) : addresses && addresses.length > 0 ? (
-                addresses.map((addr) => <AddressRow key={addr.id} address={addr} />)
-              ) : (
-                <Text style={styles.emptyText}>No saved addresses.</Text>
-              )}
-              <TouchableOpacity
-                style={styles.addAddressButton}
-                onPress={() => {
-                  /* navigate to add address screen */
-                }}
-              >
-                <Text style={styles.addAddressText}>+ Add New Address</Text>
-              </TouchableOpacity>
-            </View>
+        {/* Stat row */}
+        <View style={styles.statRow}>
+          <StatTile label="Orders" value={totalOrders} icon="bag-handle" color={colors.primary} />
+          <StatTile label="Delivered" value={deliveredOrders} icon="checkmark-done" color={colors.success} />
+          <StatTile label="Addresses" value={savedAddresses} icon="location" color={colors.info} />
+        </View>
 
-            {/* Menu */}
-            <Text style={styles.sectionTitle}>More</Text>
-            <View style={styles.card}>
-              <MenuItem
-                emoji="🛒"
-                label="My Orders"
-                onPress={() => router.push('/(tabs)/orders')}
-              />
-              <View style={styles.divider} />
-              <MenuItem
-                emoji="🔔"
-                label="Notifications"
-                onPress={() => {
-                  /* navigate */
-                }}
-              />
-              <View style={styles.divider} />
-              <MenuItem
-                emoji="🆘"
-                label="Help & Support"
-                onPress={() => {
-                  /* navigate */
-                }}
-              />
-              <View style={styles.divider} />
-              <MenuItem
-                emoji="🚪"
-                label="Logout"
-                onPress={handleLogout}
-                danger
-              />
+        {/* Menu sections */}
+        {sections.map((section) => (
+          <View key={section.title} style={styles.section}>
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+            <View style={styles.menuCard}>
+              {section.items.map((item, idx) => (
+                <MenuRow
+                  key={item.label}
+                  item={item}
+                  isLast={idx === section.items.length - 1}
+                />
+              ))}
             </View>
+          </View>
+        ))}
 
-            {/* App version */}
-            <Text style={styles.version}>Apni Kirana v{appVersion}</Text>
-          </>
-        }
-        contentContainerStyle={styles.container}
-      />
+        {/* Logout */}
+        <View style={styles.logoutWrap}>
+          <Button
+            variant="outline"
+            title="Log out"
+            icon="log-out-outline"
+            onPress={handleLogout}
+            fullWidth
+            size="lg"
+            style={{ borderColor: colors.error }}
+          />
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -186,165 +273,115 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
   },
-  container: {
-    paddingBottom: 32,
-  },
-  profileCard: {
+  profileHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    margin: 20,
-    padding: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    gap: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+    gap: spacing.lg,
   },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#DCFCE7',
-    justifyContent: 'center',
-    alignItems: 'center',
+  profileInfo: {
+    flex: 1,
   },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#16A34A',
+  profileName: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    color: colors.textPrimary,
   },
-  userName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  phone: {
-    fontSize: 14,
-    color: '#6B7280',
+  profilePhone: {
     marginTop: 2,
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+  },
+  editBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statRow: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.small,
+  },
+  statTile: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  statIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  statValue: {
+    fontSize: fontSize.xl,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  statLabel: {
+    marginTop: 2,
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  section: {
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.lg,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
+    fontSize: fontSize.xs,
+    fontWeight: '800',
+    color: colors.textMuted,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    paddingHorizontal: 20,
-    marginBottom: 8,
-    marginTop: 8,
+    letterSpacing: 0.6,
+    marginBottom: spacing.sm,
+    marginLeft: spacing.xs,
   },
-  card: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    borderRadius: 12,
+  menuCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginBottom: 16,
+    borderColor: colors.border,
     overflow: 'hidden',
   },
-  addressRow: {
+  menuRow: {
     flexDirection: 'row',
-    padding: 14,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  addressIconContainer: {
+  menuIcon: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addressIcon: {
-    fontSize: 18,
-  },
-  addressText: {
-    flex: 1,
-    gap: 3,
-  },
-  addressLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  addressLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  defaultBadge: {
-    backgroundColor: '#DCFCE7',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  defaultBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#16A34A',
-  },
-  addressStreet: {
-    fontSize: 13,
-    color: '#6B7280',
-    lineHeight: 18,
-  },
-  addAddressButton: {
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  addAddressText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#16A34A',
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-  },
-  menuEmoji: {
-    fontSize: 20,
-    width: 28,
-    textAlign: 'center',
   },
   menuLabel: {
     flex: 1,
-    fontSize: 15,
-    color: '#111827',
-    fontWeight: '500',
+    fontSize: fontSize.md,
+    color: colors.textPrimary,
+    fontWeight: '600',
   },
-  menuLabelDanger: {
-    color: '#DC2626',
-  },
-  menuChevron: {
-    fontSize: 20,
-    color: '#D1D5DB',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#F3F4F6',
-    marginLeft: 56,
-  },
-  loadingText: {
-    padding: 16,
-    color: '#9CA3AF',
-    fontSize: 14,
-  },
-  emptyText: {
-    padding: 16,
-    color: '#9CA3AF',
-    fontSize: 14,
-  },
-  version: {
-    textAlign: 'center',
-    fontSize: 12,
-    color: '#D1D5DB',
-    marginTop: 8,
+  logoutWrap: {
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.lg,
   },
 });

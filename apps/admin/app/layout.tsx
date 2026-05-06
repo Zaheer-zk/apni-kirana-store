@@ -21,13 +21,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <title>Apni Kirana Store — Admin</title>
         <meta name="description" content="Internal admin dashboard for Apni Kirana Store" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <QueryClientProvider client={queryClient}>
           <AuthGuard>{children}</AuthGuard>
         </QueryClientProvider>

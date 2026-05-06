@@ -1,8 +1,8 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -11,10 +11,12 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { EmptyState } from '@/components/EmptyState';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
+import { Skeleton } from '@/components/Skeleton';
 import { apiClient } from '@/lib/api';
-import type { Order } from '@aks/shared';
-import { OrderStatus } from '@aks/shared';
+import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
+import { OrderStatus, type Order } from '@aks/shared';
 
 const ACTIVE_STATUSES: OrderStatus[] = [
   OrderStatus.PENDING,
@@ -23,133 +25,166 @@ const ACTIVE_STATUSES: OrderStatus[] = [
   OrderStatus.PICKED_UP,
 ];
 
+type Tab = 'active' | 'past';
+
 async function fetchOrders(): Promise<Order[]> {
-  const res = await apiClient.get<{ data: Order[] }>('/api/v1/orders/mine');
-  return res.data.data ?? [];
+  const res = await apiClient.get<{ data: Order[] } | Order[]>('/api/v1/orders/mine');
+  const payload = res.data as unknown;
+  if (Array.isArray(payload)) return payload as Order[];
+  return ((payload as { data?: Order[] }).data ?? []) as Order[];
 }
 
-function formatDate(iso: string) {
+function formatDate(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
 function OrderCard({ order }: { order: Order }) {
-  const itemsSummary =
-    order.items.length === 1
-      ? order.items[0].name
-      : `${order.items[0].name} +${order.items.length - 1} more`;
+  const summary = order.items
+    .slice(0, 3)
+    .map((i) => i.name)
+    .join(', ');
+  const moreCount = order.items.length - 3;
 
   return (
     <TouchableOpacity
-      style={styles.orderCard}
-      onPress={() => router.push(`/order/${order.id}`)}
       activeOpacity={0.7}
+      style={styles.card}
+      onPress={() => router.push(`/order/${order.id}`)}
     >
-      <View style={styles.orderCardHeader}>
-        <Text style={styles.orderId} numberOfLines={1}>
-          #{order.id.slice(-8).toUpperCase()}
-        </Text>
+      <View style={styles.cardTop}>
+        <View style={styles.storeRow}>
+          <View style={styles.storeIcon}>
+            <Ionicons name="storefront" size={16} color={colors.primary} />
+          </View>
+          <Text style={styles.storeName} numberOfLines={1}>
+            Order #{order.id.slice(-6).toUpperCase()}
+          </Text>
+        </View>
         <OrderStatusBadge status={order.status} />
       </View>
 
-      <Text style={styles.itemsSummary} numberOfLines={1}>
-        {itemsSummary}
+      <Text style={styles.summary} numberOfLines={2}>
+        {order.items.length} {order.items.length === 1 ? 'item' : 'items'}: {summary}
+        {moreCount > 0 ? ` +${moreCount} more` : ''}
       </Text>
-      <Text style={styles.storeId}>Store ID: {order.storeId.slice(-8).toUpperCase()}</Text>
 
-      <View style={styles.orderCardFooter}>
-        <Text style={styles.total}>₹{order.total.toFixed(2)}</Text>
-        <Text style={styles.timestamp}>
-          {formatDate(order.createdAt)} · {formatTime(order.createdAt)}
-        </Text>
+      <View style={styles.divider} />
+
+      <View style={styles.cardBottom}>
+        <View style={styles.metaCol}>
+          <Text style={styles.metaLabel}>{formatDate(order.createdAt)}</Text>
+          <Text style={styles.metaValue}>₹{order.total.toFixed(0)}</Text>
+        </View>
+        <View style={styles.chevronWrap}>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </View>
       </View>
     </TouchableOpacity>
   );
 }
 
-type Tab = 'active' | 'past';
+function OrderSkeleton() {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardTop}>
+        <Skeleton width={120} height={16} />
+        <Skeleton width={80} height={20} radius={10} />
+      </View>
+      <View style={{ marginTop: spacing.md }}>
+        <Skeleton width="100%" height={14} />
+      </View>
+      <View style={styles.divider} />
+      <Skeleton width={140} height={14} />
+    </View>
+  );
+}
 
 export default function OrdersScreen() {
-  const [activeTab, setActiveTab] = useState<Tab>('active');
+  const [tab, setTab] = useState<Tab>('active');
 
-  const { data: orders, isLoading, isRefetching, refetch } = useQuery({
-    queryKey: ['orders'],
+  const ordersQuery = useQuery({
+    queryKey: ['my-orders'],
     queryFn: fetchOrders,
   });
 
-  const filtered = (orders ?? []).filter((o) => {
-    const isActive = ACTIVE_STATUSES.includes(o.status);
-    return activeTab === 'active' ? isActive : !isActive;
-  });
+  const orders = ordersQuery.data ?? [];
+
+  const filtered = useMemo(() => {
+    const sorted = [...orders].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    return sorted.filter((o) =>
+      tab === 'active' ? ACTIVE_STATUSES.includes(o.status) : !ACTIVE_STATUSES.includes(o.status)
+    );
+  }, [orders, tab]);
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* Title */}
-      <Text style={styles.screenTitle}>My Orders</Text>
-
-      {/* Tab switcher */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'active' && styles.tabActive]}
-          onPress={() => setActiveTab('active')}
-        >
-          <Text style={[styles.tabLabel, activeTab === 'active' && styles.tabLabelActive]}>
-            Active
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'past' && styles.tabActive]}
-          onPress={() => setActiveTab('past')}
-        >
-          <Text style={[styles.tabLabel, activeTab === 'past' && styles.tabLabelActive]}>
-            Past
-          </Text>
-        </TouchableOpacity>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>My Orders</Text>
+        <Text style={styles.headerSubtitle}>Track your active and past orders</Text>
       </View>
 
-      {isLoading ? (
-        <ActivityIndicator style={{ marginTop: 48 }} color="#16A34A" />
+      {/* Segmented control */}
+      <View style={styles.segment}>
+        {(['active', 'past'] as Tab[]).map((t) => {
+          const active = tab === t;
+          const count = orders.filter((o) =>
+            t === 'active' ? ACTIVE_STATUSES.includes(o.status) : !ACTIVE_STATUSES.includes(o.status)
+          ).length;
+          return (
+            <TouchableOpacity
+              key={t}
+              style={styles.segmentItem}
+              activeOpacity={0.7}
+              onPress={() => setTab(t)}
+            >
+              <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
+                {t === 'active' ? 'Active' : 'Past'}
+                {count > 0 ? ` (${count})` : ''}
+              </Text>
+              <View style={[styles.segmentUnderline, active && styles.segmentUnderlineActive]} />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {ordersQuery.isLoading ? (
+        <View style={styles.listContent}>
+          <OrderSkeleton />
+          <View style={{ height: spacing.md }} />
+          <OrderSkeleton />
+          <View style={{ height: spacing.md }} />
+          <OrderSkeleton />
+        </View>
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
+          keyExtractor={(o) => o.id}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
           refreshControl={
             <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={refetch}
-              tintColor="#16A34A"
-              colors={['#16A34A']}
+              refreshing={ordersQuery.isRefetching}
+              onRefresh={ordersQuery.refetch}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
           }
           renderItem={({ item }) => <OrderCard order={item} />}
           ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyEmoji}>
-                {activeTab === 'active' ? '🚀' : '📋'}
-              </Text>
-              <Text style={styles.emptyTitle}>
-                {activeTab === 'active' ? 'No active orders' : 'No past orders'}
-              </Text>
-              <Text style={styles.emptySubtitle}>
-                {activeTab === 'active'
-                  ? 'Place an order to get started!'
-                  : "Your completed orders will appear here."}
-              </Text>
-              {activeTab === 'active' && (
-                <TouchableOpacity
-                  style={styles.shopButton}
-                  onPress={() => router.push('/(tabs)/home')}
-                >
-                  <Text style={styles.shopButtonText}>Start Shopping</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+            <EmptyState
+              icon="receipt-outline"
+              title={tab === 'active' ? 'No active orders' : 'No past orders'}
+              subtitle={
+                tab === 'active'
+                  ? 'Place your first order to see it here.'
+                  : 'Your order history will show up here.'
+              }
+              actionLabel="Browse stores"
+              onAction={() => router.push('/(tabs)/home')}
+            />
           }
         />
       )}
@@ -160,129 +195,124 @@ export default function OrdersScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
   },
-  screenTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
+  header: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  tabBar: {
+  headerTitle: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  headerSubtitle: {
+    marginTop: 2,
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+  },
+  segment: {
     flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    padding: 4,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.background,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 8,
+  segmentItem: {
+    paddingVertical: spacing.md,
+    marginRight: spacing.xl,
   },
-  tabActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
+  segmentLabel: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.textMuted,
   },
-  tabLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
+  segmentLabelActive: {
+    color: colors.primary,
   },
-  tabLabelActive: {
-    color: '#16A34A',
-    fontWeight: '600',
+  segmentUnderline: {
+    marginTop: spacing.sm,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'transparent',
   },
-  list: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    gap: 12,
+  segmentUnderlineActive: {
+    backgroundColor: colors.primary,
   },
-  orderCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
+  listContent: {
+    padding: spacing.lg,
+    flexGrow: 1,
+  },
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    gap: 6,
+    borderColor: colors.border,
+    ...shadow.small,
   },
-  orderCardHeader: {
+  cardTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
-  orderId: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
-    fontFamily: 'monospace',
-  },
-  itemsSummary: {
-    fontSize: 15,
-    color: '#374151',
-    fontWeight: '500',
-    marginTop: 4,
-  },
-  storeId: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  orderCardFooter: {
+  storeRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    gap: spacing.sm,
+    flex: 1,
   },
-  total: {
-    fontSize: 16,
+  storeIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storeName: {
+    flex: 1,
+    fontSize: fontSize.md,
     fontWeight: '700',
-    color: '#16A34A',
+    color: colors.textPrimary,
   },
-  timestamp: {
-    fontSize: 12,
-    color: '#9CA3AF',
+  summary: {
+    marginTop: spacing.md,
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
-  emptyState: {
+  divider: {
+    marginVertical: spacing.md,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+  },
+  cardBottom: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 64,
-    gap: 8,
+    justifyContent: 'space-between',
   },
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: 8,
+  metaCol: {
+    gap: 2,
   },
-  emptyTitle: {
-    fontSize: 18,
+  metaLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
     fontWeight: '600',
-    color: '#111827',
   },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    paddingHorizontal: 32,
+  metaValue: {
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    color: colors.textPrimary,
   },
-  shopButton: {
-    marginTop: 16,
-    backgroundColor: '#16A34A',
-    paddingHorizontal: 28,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  shopButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 15,
+  chevronWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.gray100,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -1,8 +1,8 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   ScrollView,
   StyleSheet,
@@ -12,192 +12,211 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { EmptyState } from '@/components/EmptyState';
 import { ItemCard } from '@/components/ItemCard';
+import { Skeleton } from '@/components/Skeleton';
 import { apiClient } from '@/lib/api';
-import { useCartStore } from '@/store/cart.store';
-import type { CartItem, InventoryItem } from '@aks/shared';
-import { ItemCategory } from '@aks/shared';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
+import { ItemCategory, ItemCategoryLabels, type InventoryItem, type StoreProfile } from '@aks/shared';
 
-const CATEGORY_OPTIONS: { label: string; emoji: string; value: ItemCategory | 'ALL' }[] = [
-  { label: 'All', emoji: '🛍️', value: 'ALL' },
-  { label: 'Grocery', emoji: '🥦', value: ItemCategory.GROCERY },
-  { label: 'Medicine', emoji: '💊', value: ItemCategory.MEDICINE },
-  { label: 'Household', emoji: '🧹', value: ItemCategory.HOUSEHOLD },
-  { label: 'Snacks', emoji: '🍿', value: ItemCategory.SNACKS },
-  { label: 'Beverages', emoji: '🥤', value: ItemCategory.BEVERAGES },
-  { label: 'Other', emoji: '📦', value: ItemCategory.OTHER },
+const DEFAULT_LAT = 28.6315;
+const DEFAULT_LNG = 77.2167;
+const TRENDING = ['Rice', 'Maggi', 'Paracetamol', 'Bread', 'Milk', 'Sugar'];
+
+const CATEGORY_CHIPS: Array<{ label: string; value: ItemCategory | 'ALL' }> = [
+  { label: 'All', value: 'ALL' },
+  ...Object.values(ItemCategory).map((c) => ({ label: ItemCategoryLabels[c], value: c })),
 ];
 
-function useDebounce(value: string, delay: number) {
+function useDebounced<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
-  const ref = useCallback(
-    (v: string) => {
-      const timer = setTimeout(() => setDebounced(v), delay);
-      return () => clearTimeout(timer);
-    },
-    [delay]
-  );
-
-  // Simpler pattern: keep the effect outside hook is not possible here,
-  // so we use a stateful version with a ref pattern via useState
-  return { debounced, ref };
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
 }
 
-async function searchItems(query: string, category: ItemCategory | 'ALL'): Promise<InventoryItem[]> {
-  if (!query && category === 'ALL') return [];
-  const params: Record<string, string> = {};
-  if (query) params.q = query;
-  if (category !== 'ALL') params.category = category;
-  const res = await apiClient.get<{ data: InventoryItem[] }>('/api/v1/items/search', { params });
-  return res.data.data ?? [];
-}
-
-function SkeletonCard() {
-  return (
-    <View style={styles.skeleton}>
-      <View style={styles.skeletonImage} />
-      <View style={{ flex: 1, gap: 8, padding: 10 }}>
-        <View style={styles.skeletonLine} />
-        <View style={[styles.skeletonLine, { width: '60%' }]} />
-        <View style={[styles.skeletonLine, { width: '40%' }]} />
-      </View>
-    </View>
+async function fetchAllItems(): Promise<InventoryItem[]> {
+  const storesRes = await apiClient.get<{ data: StoreProfile[] } | StoreProfile[]>(
+    `/api/v1/stores/nearby?lat=${DEFAULT_LAT}&lng=${DEFAULT_LNG}`
   );
+  const sPayload = storesRes.data as unknown;
+  const stores: StoreProfile[] = Array.isArray(sPayload)
+    ? (sPayload as StoreProfile[])
+    : ((sPayload as { data?: StoreProfile[] }).data ?? []);
+
+  const allItems = await Promise.all(
+    stores.map(async (s) => {
+      try {
+        const r = await apiClient.get<{ data: InventoryItem[] } | InventoryItem[]>(
+          `/api/v1/stores/${s.id}/items`
+        );
+        const payload = r.data as unknown;
+        return Array.isArray(payload)
+          ? (payload as InventoryItem[])
+          : ((payload as { data?: InventoryItem[] }).data ?? []);
+      } catch {
+        return [];
+      }
+    })
+  );
+  return allItems.flat();
 }
 
 export default function SearchScreen() {
+  const params = useLocalSearchParams<{ category?: string; storeId?: string }>();
+  const inputRef = useRef<TextInput>(null);
   const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<ItemCategory | 'ALL'>('ALL');
-  const { addItem } = useCartStore();
+  const [activeCategory, setActiveCategory] = useState<ItemCategory | 'ALL'>(
+    (params.category as ItemCategory) ?? 'ALL'
+  );
 
-  // Debounce via useEffect equivalent using setTimeout in onChange
-  function handleQueryChange(text: string) {
-    setQuery(text);
-    const timer = setTimeout(() => setDebouncedQuery(text), 400);
-    return () => clearTimeout(timer);
-  }
+  useEffect(() => {
+    if (params.category) {
+      setActiveCategory(params.category as ItemCategory);
+    }
+  }, [params.category]);
 
-  const { data: results, isLoading, isFetching } = useQuery({
-    queryKey: ['search', debouncedQuery, selectedCategory],
-    queryFn: () => searchItems(debouncedQuery, selectedCategory),
-    enabled: debouncedQuery.length > 0 || selectedCategory !== 'ALL',
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 250);
+    return () => clearTimeout(t);
+  }, []);
+
+  const debouncedQuery = useDebounced(query.trim(), 400);
+
+  const itemsQuery = useQuery({
+    queryKey: ['all-items'],
+    queryFn: fetchAllItems,
   });
 
-  function handleAddToCart(item: InventoryItem) {
-    const cartItem: CartItem = {
-      itemId: item.id,
-      name: item.name,
-      price: item.price,
-      unit: item.unit,
-      qty: 1,
-      imageUrl: item.imageUrl,
-    };
-    addItem(cartItem);
-  }
+  const allItems = itemsQuery.data ?? [];
 
-  const showSkeleton = isLoading || isFetching;
-  const showEmpty =
-    !showSkeleton &&
-    results !== undefined &&
-    results.length === 0 &&
-    (debouncedQuery.length > 0 || selectedCategory !== 'ALL');
-  const showResults = !showSkeleton && results && results.length > 0;
+  const filtered = useMemo(() => {
+    let result = allItems.filter((i) => i.isAvailable);
+    if (activeCategory !== 'ALL') {
+      result = result.filter((i) => i.category === activeCategory);
+    }
+    if (params.storeId) {
+      result = result.filter((i) => i.storeId === params.storeId);
+    }
+    if (debouncedQuery) {
+      const q = debouncedQuery.toLowerCase();
+      result = result.filter((i) => i.name.toLowerCase().includes(q));
+    }
+    return result;
+  }, [allItems, activeCategory, debouncedQuery, params.storeId]);
+
+  const hasFilters = !!debouncedQuery || activeCategory !== 'ALL' || !!params.storeId;
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {/* Search bar */}
-      <View style={styles.searchContainer}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search items…"
-          placeholderTextColor="#9CA3AF"
-          value={query}
-          onChangeText={handleQueryChange}
-          autoCorrect={false}
-          returnKeyType="search"
-        />
-        {query.length > 0 && (
-          <TouchableOpacity
-            onPress={() => {
-              setQuery('');
-              setDebouncedQuery('');
-            }}
-          >
-            <Text style={styles.clearIcon}>✕</Text>
-          </TouchableOpacity>
-        )}
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          activeOpacity={0.7}
+          onPress={() => {
+            if (router.canGoBack()) router.back();
+            else router.replace('/(tabs)/home');
+          }}
+        >
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+
+        <View style={styles.searchWrap}>
+          <Ionicons name="search" size={18} color={colors.textSecondary} />
+          <TextInput
+            ref={inputRef}
+            style={styles.searchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search items, brands..."
+            placeholderTextColor={colors.textMuted}
+            returnKeyType="search"
+          />
+          {query.length > 0 ? (
+            <TouchableOpacity activeOpacity={0.7} onPress={() => setQuery('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
-      {/* Category filter chips */}
+      {/* Category chips */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chips}
+        contentContainerStyle={styles.chipsRow}
       >
-        {CATEGORY_OPTIONS.map((opt) => (
-          <TouchableOpacity
-            key={opt.value}
-            style={[
-              styles.chip,
-              selectedCategory === opt.value && styles.chipActive,
-            ]}
-            onPress={() => setSelectedCategory(opt.value)}
-          >
-            <Text style={styles.chipEmoji}>{opt.emoji}</Text>
-            <Text
-              style={[
-                styles.chipLabel,
-                selectedCategory === opt.value && styles.chipLabelActive,
-              ]}
+        {CATEGORY_CHIPS.map((c) => {
+          const active = activeCategory === c.value;
+          return (
+            <TouchableOpacity
+              key={c.value}
+              activeOpacity={0.7}
+              onPress={() => setActiveCategory(c.value)}
+              style={[styles.chip, active && styles.chipActive]}
             >
-              {opt.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>{c.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
 
       {/* Results */}
-      {showSkeleton && (
-        <View style={styles.skeletonList}>
-          {[1, 2, 3, 4].map((k) => (
-            <SkeletonCard key={k} />
+      {!hasFilters ? (
+        <ScrollView contentContainerStyle={styles.idleContent}>
+          <Text style={styles.idleHeading}>Trending searches</Text>
+          <View style={styles.trendingWrap}>
+            {TRENDING.map((t) => (
+              <TouchableOpacity
+                key={t}
+                activeOpacity={0.7}
+                style={styles.trendingChip}
+                onPress={() => setQuery(t)}
+              >
+                <Ionicons name="trending-up" size={14} color={colors.primary} />
+                <Text style={styles.trendingText}>{t}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      ) : itemsQuery.isLoading ? (
+        <View style={styles.listContent}>
+          {[0, 1, 2, 3].map((i) => (
+            <View key={i} style={{ marginBottom: spacing.md }}>
+              <Skeleton width="100%" height={104} radius={12} />
+            </View>
           ))}
         </View>
-      )}
-
-      {showEmpty && (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyEmoji}>🔎</Text>
-          <Text style={styles.emptyTitle}>No results found</Text>
-          <Text style={styles.emptySubtitle}>Try a different search or category.</Text>
-        </View>
-      )}
-
-      {!debouncedQuery && selectedCategory === 'ALL' && !showSkeleton && (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyEmoji}>🛍️</Text>
-          <Text style={styles.emptyTitle}>Search for anything</Text>
-          <Text style={styles.emptySubtitle}>Find groceries, medicines, snacks and more.</Text>
-        </View>
-      )}
-
-      {showResults && (
+      ) : (
         <FlatList
-          data={results}
+          data={filtered}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.resultsList}
-          numColumns={2}
-          columnWrapperStyle={styles.columnWrapper}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
+          ListHeaderComponent={
+            filtered.length > 0 ? (
+              <Text style={styles.resultCount}>
+                {filtered.length} result{filtered.length === 1 ? '' : 's'}
+              </Text>
+            ) : null
+          }
           renderItem={({ item }) => (
-            <ItemCard
-              item={item}
-              onAddToCart={() => handleAddToCart(item)}
-              onPress={() => router.push(`/item/${item.id}`)}
-              style={styles.resultCard}
-            />
+            <ItemCard item={item} onPress={() => router.push(`/item/${item.id}`)} />
           )}
+          ListEmptyComponent={
+            <EmptyState
+              icon="bag-handle-outline"
+              title="No items found"
+              subtitle={
+                debouncedQuery
+                  ? `No items match "${debouncedQuery}". Try a different search.`
+                  : 'Try a different category or search term.'
+              }
+            />
+          }
         />
       )}
     </SafeAreaView>
@@ -207,118 +226,104 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
   },
-  searchContainer: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    margin: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    gap: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.background,
+    gap: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
-  searchIcon: {
-    fontSize: 16,
+  backBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+    minHeight: 44,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
-    color: '#111827',
+    fontSize: fontSize.md,
+    color: colors.textPrimary,
+    paddingVertical: spacing.sm,
   },
-  clearIcon: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    padding: 4,
-  },
-  chips: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 8,
+  chipsRow: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
   },
   chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    marginRight: spacing.sm,
   },
   chipActive: {
-    backgroundColor: '#16A34A',
-    borderColor: '#16A34A',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
-  chipEmoji: {
-    fontSize: 14,
-  },
-  chipLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#374151',
-  },
-  chipLabelActive: {
-    color: '#FFFFFF',
-  },
-  resultsList: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-  },
-  columnWrapper: {
-    gap: 12,
-    marginBottom: 12,
-  },
-  resultCard: {
-    flex: 1,
-  },
-  skeletonList: {
-    padding: 16,
-    gap: 12,
-  },
-  skeleton: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  skeletonImage: {
-    width: 80,
-    height: 80,
-    backgroundColor: '#F3F4F6',
-  },
-  skeletonLine: {
-    height: 12,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 6,
-    width: '80%',
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingBottom: 80,
-  },
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: 8,
-  },
-  emptyTitle: {
-    fontSize: 18,
+  chipText: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
     fontWeight: '600',
-    color: '#111827',
   },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    paddingHorizontal: 40,
+  chipTextActive: {
+    color: colors.white,
+  },
+  idleContent: {
+    padding: spacing.lg,
+  },
+  idleHeading: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+  },
+  trendingWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  trendingChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryLight,
+  },
+  trendingText: {
+    fontSize: fontSize.sm,
+    color: colors.primaryDark,
+    fontWeight: '600',
+  },
+  listContent: {
+    padding: spacing.lg,
+    flexGrow: 1,
+  },
+  resultCount: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    marginBottom: spacing.md,
   },
 });

@@ -1,70 +1,72 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { OrderStatus } from '@aks/shared';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
 
 interface OrderStatusBadgeProps {
   status: OrderStatus;
+  style?: ViewStyle;
 }
 
-const STATUS_CONFIG: Record<
-  OrderStatus,
-  { label: string; bgColor: string; textColor: string; emoji: string }
-> = {
+interface StatusConfig {
+  label: string;
+  bg: string;
+  fg: string;
+  dot: string;
+}
+
+const STATUS_CONFIG: Record<OrderStatus, StatusConfig> = {
   [OrderStatus.PENDING]: {
     label: 'Pending',
-    bgColor: '#FEF9C3',
-    textColor: '#92400E',
-    emoji: '⏳',
+    bg: colors.warningLight,
+    fg: '#B45309',
+    dot: colors.warning,
   },
   [OrderStatus.STORE_ACCEPTED]: {
     label: 'Accepted',
-    bgColor: '#DBEAFE',
-    textColor: '#1E40AF',
-    emoji: '✅',
+    bg: colors.infoLight,
+    fg: '#1E40AF',
+    dot: colors.info,
   },
   [OrderStatus.DRIVER_ASSIGNED]: {
-    label: 'Driver Assigned',
-    bgColor: '#EDE9FE',
-    textColor: '#5B21B6',
-    emoji: '🛵',
+    label: 'Driver assigned',
+    bg: colors.purpleLight,
+    fg: '#5B21B6',
+    dot: colors.purple,
   },
   [OrderStatus.PICKED_UP]: {
-    label: 'Picked Up',
-    bgColor: '#FFEDD5',
-    textColor: '#9A3412',
-    emoji: '📦',
+    label: 'Picked up',
+    bg: colors.indigoLight,
+    fg: '#3730A3',
+    dot: colors.indigo,
   },
   [OrderStatus.DELIVERED]: {
     label: 'Delivered',
-    bgColor: '#DCFCE7',
-    textColor: '#166534',
-    emoji: '🎉',
+    bg: colors.successLight,
+    fg: '#166534',
+    dot: colors.success,
   },
   [OrderStatus.CANCELLED]: {
     label: 'Cancelled',
-    bgColor: '#FEE2E2',
-    textColor: '#991B1B',
-    emoji: '✕',
+    bg: colors.errorLight,
+    fg: '#991B1B',
+    dot: colors.error,
   },
   [OrderStatus.REJECTED]: {
     label: 'Rejected',
-    bgColor: '#FEE2E2',
-    textColor: '#991B1B',
-    emoji: '✕',
+    bg: colors.errorLight,
+    fg: '#991B1B',
+    dot: colors.error,
   },
 };
 
-export function OrderStatusBadge({ status }: OrderStatusBadgeProps) {
-  const config = STATUS_CONFIG[status] ?? {
-    label: status,
-    bgColor: '#F3F4F6',
-    textColor: '#374151',
-    emoji: '•',
-  };
-
+export function OrderStatusBadge({ status, style }: OrderStatusBadgeProps) {
+  const config = STATUS_CONFIG[status];
   return (
-    <View style={[styles.badge, { backgroundColor: config.bgColor }]}>
-      <Text style={styles.emoji}>{config.emoji}</Text>
-      <Text style={[styles.label, { color: config.textColor }]}>{config.label}</Text>
+    <View style={[styles.badge, { backgroundColor: config.bg }, style]}>
+      <View style={[styles.dot, { backgroundColor: config.dot }]} />
+      <Text style={[styles.label, { color: config.fg }]} numberOfLines={1}>
+        {config.label}
+      </Text>
     </View>
   );
 }
@@ -73,16 +75,19 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
+    gap: 6,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: radius.full,
+    alignSelf: 'flex-start',
   },
-  emoji: {
-    fontSize: 11,
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   label: {
-    fontSize: 11,
+    fontSize: fontSize.xs,
     fontWeight: '700',
     letterSpacing: 0.2,
   },

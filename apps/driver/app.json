@@ -13,14 +13,19 @@
       "resizeMode": "contain",
       "backgroundColor": "#DC2626"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.apnikirana.driver",
       "infoPlist": {
         "NSLocationAlwaysAndWhenInUseUsageDescription": "AKS Driver needs your location to track active deliveries in the background.",
         "NSLocationWhenInUseUsageDescription": "AKS Driver needs your location while you are on a delivery.",
-        "UIBackgroundModes": ["location", "fetch"]
+        "UIBackgroundModes": [
+          "location",
+          "fetch"
+        ]
       }
     },
     "android": {
@@ -50,7 +55,9 @@
           "isAndroidForegroundServiceEnabled": true
         }
       ],
-      "expo-task-manager"
+      "expo-task-manager",
+      "expo-asset",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

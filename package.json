@@ -5,7 +5,7 @@
   "workspaces": [
     "backend",
     "shared",
-    "apps/*"
+    "apps/admin"
   ],
   "scripts": {
     "dev": "turbo run dev",
@@ -22,5 +22,16 @@
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=10.0.0"
+  },
+  "overrides": {
+    "metro-cache": "0.81.5",
+    "metro": "0.81.5",
+    "metro-config": "0.81.5",
+    "metro-core": "0.81.5",
+    "metro-resolver": "0.81.5",
+    "metro-runtime": "0.81.5",
+    "metro-source-map": "0.81.5",
+    "metro-transform-plugins": "0.81.5",
+    "metro-transform-worker": "0.81.5"
   }
 }

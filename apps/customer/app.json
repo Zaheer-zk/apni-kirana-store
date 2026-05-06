@@ -5,7 +5,10 @@
     "version": "1.0.0",
     "scheme": "apni-kirana",
     "orientation": "portrait",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "backgroundColor": "#FFFFFF",
     "primaryColor": "#16A34A",
     "icon": "./assets/icon.png",
@@ -33,7 +36,9 @@
       ],
       [
         "expo-secure-store"
-      ]
+      ],
+      "expo-asset",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm install *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Read(//opt/homebrew/opt/**)",
+      "Read(//usr/local/**)"
     ]
   }
 }

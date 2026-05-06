@@ -68,7 +68,44 @@ router.put('/users/:id/suspend', async (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /stores ──────────────────────────────────────────────────────────────
+// Supports ?status=PENDING_APPROVAL|ACTIVE|SUSPENDED and ?search=name
+
+router.get('/stores', async (req: Request, res: Response) => {
+  try {
+    const status = req.query['status'] as string | undefined;
+    const search = req.query['search'] as string | undefined;
+    const page = Math.max(1, parseInt((req.query['page'] as string) || '1', 10));
+    const limit = Math.min(100, parseInt((req.query['limit'] as string) || '50', 10));
+    const skip = (page - 1) * limit;
+
+    const where: Record<string, unknown> = {};
+    if (status) where['status'] = status;
+    if (search) where['name'] = { contains: search, mode: 'insensitive' };
+
+    const [stores, total] = await prisma.$transaction([
+      prisma.store.findMany({
+        where,
+        include: {
+          owner: { select: { id: true, name: true, phone: true } },
+          _count: { select: { items: true, orders: true } },
+        },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.store.count({ where }),
+    ]);
+
+    return sendSuccess(res, { stores, total, page, limit, pages: Math.ceil(total / limit) });
+  } catch (err) {
+    console.error('[Admin] get stores error:', err);
+    return sendError(res, 'Failed to fetch stores', 500);
+  }
+});
+
 // ─── GET /stores/pending ──────────────────────────────────────────────────────
+// Kept for backwards compatibility
 
 router.get('/stores/pending', async (_req: Request, res: Response) => {
   try {
@@ -123,7 +160,42 @@ router.put('/stores/:id/suspend', async (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /drivers ─────────────────────────────────────────────────────────────
+// Supports ?status=PENDING_APPROVAL|ACTIVE|ONLINE|OFFLINE|SUSPENDED
+
+router.get('/drivers', async (req: Request, res: Response) => {
+  try {
+    const status = req.query['status'] as string | undefined;
+    const page = Math.max(1, parseInt((req.query['page'] as string) || '1', 10));
+    const limit = Math.min(100, parseInt((req.query['limit'] as string) || '50', 10));
+    const skip = (page - 1) * limit;
+
+    const where: Record<string, unknown> = {};
+    if (status) where['status'] = status;
+
+    const [drivers, total] = await prisma.$transaction([
+      prisma.driver.findMany({
+        where,
+        include: {
+          user: { select: { id: true, name: true, phone: true } },
+          _count: { select: { orders: true } },
+        },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.driver.count({ where }),
+    ]);
+
+    return sendSuccess(res, { drivers, total, page, limit, pages: Math.ceil(total / limit) });
+  } catch (err) {
+    console.error('[Admin] get drivers error:', err);
+    return sendError(res, 'Failed to fetch drivers', 500);
+  }
+});
+
 // ─── GET /drivers/pending ─────────────────────────────────────────────────────
+// Kept for backwards compatibility
 
 router.get('/drivers/pending', async (_req: Request, res: Response) => {
   try {
@@ -137,6 +209,26 @@ router.get('/drivers/pending', async (_req: Request, res: Response) => {
   } catch (err) {
     console.error('[Admin] pending drivers error:', err);
     return sendError(res, 'Failed to fetch pending drivers', 500);
+  }
+});
+
+// ─── PUT /drivers/:id/suspend ─────────────────────────────────────────────────
+
+router.put('/drivers/:id/suspend', async (req: Request, res: Response) => {
+  try {
+    const driver = await prisma.driver.findUnique({ where: { id: req.params['id'] } });
+    if (!driver) return sendError(res, 'Driver not found', 404);
+
+    const newStatus = driver.status === 'SUSPENDED' ? 'OFFLINE' : 'SUSPENDED';
+    const updated = await prisma.driver.update({
+      where: { id: req.params['id'] },
+      data: { status: newStatus },
+    });
+
+    return sendSuccess(res, updated, `Driver ${newStatus === 'SUSPENDED' ? 'suspended' : 'reactivated'}`);
+  } catch (err) {
+    console.error('[Admin] suspend driver error:', err);
+    return sendError(res, 'Failed to update driver status', 500);
   }
 });
 

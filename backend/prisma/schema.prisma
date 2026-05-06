@@ -164,7 +164,7 @@ model Item {
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  store store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
 }
 
 model Order {

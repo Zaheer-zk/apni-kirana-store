@@ -13,7 +13,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#2563EB"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.apnikirana.storeportal",
@@ -53,7 +55,9 @@
           "cameraPermission": "AKS Store needs camera access to capture product images."
         }
       ],
-      "expo-document-picker"
+      "expo-document-picker",
+      "expo-asset",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

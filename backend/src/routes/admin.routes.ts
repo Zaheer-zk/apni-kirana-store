@@ -411,6 +411,27 @@ router.put('/orders/:id/assign-driver', async (req: Request, res: Response) => {
 
 // ─── GET /analytics ───────────────────────────────────────────────────────────
 
+// ─── GET /settings — global platform config ───────────────────────────────────
+router.get('/settings', async (_req: Request, res: Response) => {
+  try {
+    // For now: settings are derived from env / defaults. A dedicated Settings
+    // table can replace this when admin needs per-deployment overrides.
+    return sendSuccess(res, {
+      deliveryRadiusKm: 5,
+      baseDeliveryFee: 30,
+      perKmFee: 0,
+      commissionRate: 0.10,
+      storeAcceptTimeoutMinutes: 3,
+      driverAcceptTimeoutSeconds: 60,
+      matchingMode: process.env.STORE_MATCHING_MODE ?? 'BROADCAST',
+      driverMatchingMode: process.env.DRIVER_MATCHING_MODE ?? 'BROADCAST',
+    });
+  } catch (err) {
+    console.error('[Admin] settings error:', err);
+    return sendError(res, 'Failed to fetch settings', 500);
+  }
+});
+
 router.get('/analytics', async (_req: Request, res: Response) => {
   try {
     const today = new Date();

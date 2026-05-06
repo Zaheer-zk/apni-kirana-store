@@ -85,7 +85,9 @@ export default function StoresPage() {
       return api.put(path);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-stores'] });
+      // Refetch ALL admin-stores tabs (Pending, Active, Suspended) so the
+      // approved/suspended row appears on the destination tab immediately.
+      queryClient.invalidateQueries({ queryKey: ['admin-stores'], refetchType: 'all' });
     },
   });
 

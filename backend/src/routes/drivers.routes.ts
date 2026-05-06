@@ -149,6 +149,76 @@ router.get('/earnings', authenticate, authorize('DRIVER'), async (req: Request, 
   }
 });
 
+// ─── GET /stats/today ─────────────────────────────────────────────────────────
+// Today's deliveries + earnings + rating snapshot (used by driver dashboard).
+router.get(
+  '/stats/today',
+  authenticate,
+  authorize('DRIVER'),
+  async (req: Request, res: Response) => {
+    try {
+      const driver = await getDriverByUser(req.user!.id);
+      if (!driver) return sendError(res, 'Driver profile not found', 404);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const todayDeliveredOrders = await prisma.order.findMany({
+        where: { driverId: driver.id, status: 'DELIVERED', deliveredAt: { gte: today } },
+        select: { deliveryFee: true },
+      });
+      const todayEarnings = todayDeliveredOrders.reduce(
+        (sum, o) => sum + (o.deliveryFee ?? 0),
+        0,
+      );
+
+      return sendSuccess(res, {
+        todayDeliveries: todayDeliveredOrders.length,
+        todayEarnings,
+        rating: driver.rating,
+        totalRatings: driver.totalRatings,
+        status: driver.status,
+      });
+    } catch (err) {
+      console.error('[Drivers] stats/today error:', err);
+      return sendError(res, 'Failed to fetch stats', 500);
+    }
+  },
+);
+
+// ─── GET /deliveries ──────────────────────────────────────────────────────────
+// Driver's own delivery history (alias for orders filtered to this driver).
+router.get(
+  '/deliveries',
+  authenticate,
+  authorize('DRIVER'),
+  async (req: Request, res: Response) => {
+    try {
+      const driver = await getDriverByUser(req.user!.id);
+      if (!driver) return sendError(res, 'Driver profile not found', 404);
+
+      const status = req.query['status'] as string | undefined;
+      const orders = await prisma.order.findMany({
+        where: {
+          driverId: driver.id,
+          ...(status ? { status: status as never } : {}),
+        },
+        include: {
+          store: { select: { name: true, lat: true, lng: true } },
+          deliveryAddress: { select: { lat: true, lng: true, label: true, city: true, pincode: true } },
+          rating: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+      return sendSuccess(res, orders);
+    } catch (err) {
+      console.error('[Drivers] deliveries error:', err);
+      return sendError(res, 'Failed to fetch deliveries', 500);
+    }
+  },
+);
+
 // ─── PUT /orders/:orderId/accept ──────────────────────────────────────────────
 
 router.put(

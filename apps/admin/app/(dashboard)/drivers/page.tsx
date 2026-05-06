@@ -81,7 +81,9 @@ export default function DriversPage() {
       return api.put(path);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-drivers'] });
+      // Refetch ALL admin-drivers tabs (Pending, Active, Suspended) so the
+      // approved/suspended row appears on the destination tab immediately.
+      queryClient.invalidateQueries({ queryKey: ['admin-drivers'], refetchType: 'all' });
     },
   });
 

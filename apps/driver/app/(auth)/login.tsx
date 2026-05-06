@@ -41,10 +41,18 @@ export default function LoginScreen() {
   });
 
   const verifyOtpMutation = useMutation<VerifyOtpResponse, Error, { phone: string; otp: string }>({
-    mutationFn: (payload) =>
-      api
-        .post<VerifyOtpResponse>('/api/v1/auth/verify-otp', { ...payload, role: 'DRIVER' })
-        .then((r) => r.data),
+    mutationFn: async (payload) => {
+      const res = await api.post<{ success: boolean; data: VerifyOtpResponse; error?: string }>(
+        '/api/v1/auth/verify-otp',
+        { ...payload, role: 'DRIVER' },
+      );
+      // Backend wraps as { success, data, message } — unwrap to the inner payload
+      const inner = (res.data as { data?: VerifyOtpResponse }).data ?? (res.data as VerifyOtpResponse);
+      if (!inner?.accessToken || !inner?.user) {
+        throw new Error(res.data?.error ?? 'Invalid response from server');
+      }
+      return inner;
+    },
     onSuccess: async (data) => {
       await SecureStore.setItemAsync('accessToken', data.accessToken);
       await SecureStore.setItemAsync('user', JSON.stringify(data.user));
@@ -53,12 +61,12 @@ export default function LoginScreen() {
       }
       setAuth(data.accessToken, data.user, data.driverProfile);
 
-      if (!data.driverProfile) {
+      if (!data.driverProfile && data.user.role !== 'DRIVER') {
         router.replace('/(auth)/register');
         return;
       }
 
-      if (data.driverProfile.status === 'PENDING_APPROVAL') {
+      if (data.driverProfile?.status === 'PENDING_APPROVAL') {
         router.replace('/(auth)/pending');
         return;
       }

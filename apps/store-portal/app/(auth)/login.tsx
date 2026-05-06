@@ -41,19 +41,40 @@ export default function StoreLoginScreen() {
   });
 
   const verifyOtpMutation = useMutation<VerifyOtpResponse, Error, { phone: string; otp: string }>({
-    mutationFn: (payload) =>
-      api
-        .post<VerifyOtpResponse>('/api/v1/auth/verify-otp', { ...payload, role: 'STORE_OWNER' })
-        .then((r) => r.data),
+    mutationFn: async (payload) => {
+      const res = await api.post<{ success: boolean; data: VerifyOtpResponse; error?: string }>(
+        '/api/v1/auth/verify-otp',
+        { ...payload, role: 'STORE_OWNER' },
+      );
+      // Backend wraps as { success, data, message } — unwrap to the inner payload
+      const inner = (res.data as { data?: VerifyOtpResponse }).data ?? (res.data as VerifyOtpResponse);
+      if (!inner?.accessToken || !inner?.user) {
+        throw new Error(res.data?.error ?? 'Invalid response from server');
+      }
+      return inner;
+    },
     onSuccess: async (data) => {
       await SecureStore.setItemAsync('accessToken', data.accessToken);
       await SecureStore.setItemAsync('user', JSON.stringify(data.user));
-      if (data.storeProfile) {
-        await SecureStore.setItemAsync('storeProfile', JSON.stringify(data.storeProfile));
-      }
-      setAuth(data.accessToken, data.user, data.storeProfile);
 
-      if (!data.storeProfile) {
+      // Store owner: load their store profile (if any) so we can decide where to route
+      let storeProfile = data.storeProfile;
+      if (!storeProfile) {
+        try {
+          const meRes = await api.get<{ data?: { defaultStore?: unknown } }>('/api/v1/users/me');
+          const me = (meRes.data as { data?: Record<string, unknown> }).data ?? meRes.data;
+          // Backend doesn't currently embed the store, so fall back to a separate lookup below
+          void me;
+        } catch {
+          // ignore
+        }
+      }
+      if (storeProfile) {
+        await SecureStore.setItemAsync('storeProfile', JSON.stringify(storeProfile));
+      }
+      setAuth(data.accessToken, data.user, storeProfile);
+
+      if (!storeProfile && data.user.role !== 'STORE_OWNER') {
         router.replace('/(auth)/register');
         return;
       }

@@ -94,6 +94,9 @@ export async function createDriver(opts: {
   return { user, driver };
 }
 
+// Catalog-aware item helper. Creates a CatalogItem if needed, then a StoreItem
+// for the given store. Returns a "flat" object compatible with what tests expect
+// (id is the StoreItem id; name/category/unit come from the underlying catalog).
 export async function createItem(
   storeId: string,
   overrides: Partial<{
@@ -106,18 +109,39 @@ export async function createItem(
     description: string;
   }> = {},
 ) {
-  return prisma.item.create({
+  const name = overrides.name ?? `Test Item ${Math.random().toString(36).slice(2, 8)}`;
+  const category = overrides.category ?? 'GROCERY';
+  const unit = overrides.unit ?? '1kg';
+
+  const catalog = await prisma.catalogItem.upsert({
+    where: { name },
+    create: { name, category, defaultUnit: unit, description: overrides.description },
+    update: {},
+  });
+
+  const storeItem = await prisma.storeItem.create({
     data: {
       storeId,
-      name: overrides.name ?? 'Test Item',
-      category: overrides.category ?? 'GROCERY',
+      catalogItemId: catalog.id,
       price: overrides.price ?? 100,
-      unit: overrides.unit ?? '1kg',
       stockQty: overrides.stockQty ?? 10,
       isAvailable: overrides.isAvailable ?? true,
-      description: overrides.description,
     },
   });
+
+  // Return shape matching the old Item for test compatibility
+  return {
+    id: storeItem.id,
+    storeId: storeItem.storeId,
+    catalogItemId: storeItem.catalogItemId,
+    name: catalog.name,
+    description: catalog.description,
+    category: catalog.category,
+    unit: catalog.defaultUnit,
+    price: storeItem.price,
+    stockQty: storeItem.stockQty,
+    isAvailable: storeItem.isAvailable,
+  };
 }
 
 export async function createAddress(

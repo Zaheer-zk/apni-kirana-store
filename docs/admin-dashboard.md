@@ -55,6 +55,46 @@ The `/orders` table supports filters: status, date range, store, driver, custome
 - Refund button (if `paymentStatus=PAID`)
 - Reassign driver button (if stuck in `AWAITING_DRIVER`)
 
+### Order detail view
+
+`/orders/[id]` renders the full payload from `GET /api/v1/admin/orders/:id` —
+admins always see PII (customer name + phone, full delivery address, the
+4-digit `dropoffOtp`). The page exposes:
+
+| Section | Source |
+| --- | --- |
+| Customer | `customer.id`, `name`, `phone` |
+| Store | `store.id`, `name`, `ownerId`, `lat`/`lng`, `street`, `city` |
+| Driver | `driver.user.name`, `phone`, vehicle |
+| Items | `items[]` with snapshot `name`, `price`, `unit`, `qty` |
+| Address | full `deliveryAddress` |
+| Dropoff OTP | `dropoffOtp` — visible to admin so they can read it back to a customer who lost their phone |
+| Rating | if `rating` present |
+
+Two manual-override action buttons sit at the top of the detail page, useful
+when automatic matching fails:
+
+| Button | Endpoint | Behavior |
+| --- | --- | --- |
+| **Assign store** | `PUT /api/v1/admin/orders/:id/assign-store` | Dropdown of all `ACTIVE` stores. Submitting moves the order to `STORE_ACCEPTED`, stamps `storeAcceptedAt`, and notifies the new owner. |
+| **Assign driver** | `PUT /api/v1/admin/orders/:id/assign-driver` | Dropdown of all `ONLINE`/`ACTIVE` drivers. Submitting moves the order to `DRIVER_ASSIGNED`, stamps `driverAssignedAt`, and notifies the driver. |
+
+Both actions are blocked server-side for `DELIVERED` / `CANCELLED` orders.
+
+### Catalog management (planned)
+
+Now that the platform has a master `CatalogItem` table, admins are the source
+of truth for product names, categories, units, and images. The planned
+`/catalog` admin page will:
+
+- List, search, and filter all `CatalogItem` rows.
+- Add a new catalog item (`POST /api/v1/catalog`) with image upload.
+- Edit an existing item (`PUT /api/v1/catalog/:id`).
+- Soft-delete via `isActive=false` (toggle, not destructive).
+- **CSV bulk upload** (planned) — paste/upload a sheet of name/category/unit/image rows for fast onboarding.
+
+Until the UI ships, the catalog endpoints are usable directly via REST.
+
 ## Analytics
 
 Pulled from `GET /admin/analytics` plus a few server-rendered Prisma queries. Charts use Recharts.

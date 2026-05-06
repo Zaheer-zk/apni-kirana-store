@@ -34,7 +34,8 @@ describe('GET /api/v1/items/search', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBe(1);
-    expect(res.body.data[0].name).toBe('Tomato Ketchup');
+    // After the marketplace pivot the response is a StoreItem joined to CatalogItem
+    expect(res.body.data[0].catalogItem.name).toBe('Tomato Ketchup');
   });
 
   it('filters by category', async () => {
@@ -48,33 +49,35 @@ describe('GET /api/v1/items/search', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.length).toBe(1);
-    expect(res.body.data[0].category).toBe('MEDICINE');
+    expect(res.body.data[0].catalogItem.category).toBe('MEDICINE');
   });
 
-  it('returns 400 when q is missing or empty', async () => {
+  it('returns empty list when q is missing or empty', async () => {
+    // The new search endpoint accepts an empty q (returns latest items) — drop the 400 check.
     const res = await request(app).get('/api/v1/items/search');
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.data)).toBe(true);
   });
 });
 
 describe('POST /api/v1/items', () => {
-  it('store owner can create an item', async () => {
+  it('store owner can add a catalog item to their store', async () => {
     const { user, store } = await createStoreOwner();
     const token = tokenFor({ id: user.id, role: 'STORE_OWNER', phone: user.phone });
+
+    // Pivot: items are now references to a CatalogItem. Admin owns the catalog;
+    // store owner picks one and sets price + stock.
+    const catalog = await prisma.catalogItem.create({
+      data: { name: 'Bread', category: 'GROCERY', defaultUnit: '1 loaf' },
+    });
 
     const res = await request(app)
       .post('/api/v1/items')
       .set('Authorization', `Bearer ${token}`)
-      .send({
-        name: 'Bread',
-        category: 'GROCERY',
-        price: 40,
-        unit: '1 loaf',
-        stockQty: 25,
-      });
+      .send({ catalogItemId: catalog.id, price: 40, stockQty: 25 });
 
     expect(res.status).toBe(201);
-    expect(res.body.data.name).toBe('Bread');
+    expect(res.body.data.catalogItem.name).toBe('Bread');
     expect(res.body.data.storeId).toBe(store.id);
   });
 
@@ -145,7 +148,7 @@ describe('DELETE /api/v1/items/:id', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    const remaining = await prisma.item.findUnique({ where: { id: item.id } });
+    const remaining = await prisma.storeItem.findUnique({ where: { id: item.id } });
     expect(remaining).toBeNull();
   });
 

@@ -41,22 +41,31 @@ await startBackgroundLocationTask();
 
 Going offline does the inverse: stops the task, calls `/drivers/status` with `OFFLINE`. The server immediately removes the driver from the assignment pool.
 
-## Incoming offer modal
+## Incoming offer modal — broadcast mode
 
-When the server emits `order:assigned` to the driver's `user:<id>` room, the modal opens with:
+When the server emits **`order:offered`** (or the legacy `order:assigned`) to
+the driver's `user:<id>` room, the modal opens with:
 
 - Store name + distance + ETA
-- Drop area + distance from store
+- Drop area (only label/city/pincode — never street name; see Privacy)
 - Estimated payout
-- A circular 60-second countdown
+- A circular **60-second** countdown (`DRIVER_ACCEPT_TIMEOUT_MS`)
+
+In `BROADCAST` mode (default), the same offer is sent to **up to 3 ONLINE
+drivers in parallel** within 5 km of the store. First driver to call
+`PUT /drivers/orders/:id/accept` wins.
 
 Outcomes:
 
 - **Accept** → `PUT /drivers/orders/:id/accept`, navigate to Active Delivery screen.
 - **Reject** → `PUT /drivers/orders/:id/reject`, modal closes, driver remains online.
-- **Timeout** → modal closes automatically, server cascades to next driver.
+- **Rescinded** → `order:rescinded` socket event arrives because another driver accepted first. Modal closes with a "Another driver took it — stay online" toast.
+- **Timeout** → modal closes automatically, server safety-net broadcasts to the next batch after 2 min.
 
 Multiple offers are queued — only one modal shows at a time.
+
+> Legacy `CASCADE` mode (`DRIVER_MATCHING_MODE=CASCADE`) sends the offer to
+> one driver at a time with the same 60s window. Same UI.
 
 ## Active delivery flow
 
@@ -66,9 +75,46 @@ The Active Delivery screen has a single primary action that morphs by status:
 | --- | --- | --- |
 | `DRIVER_ASSIGNED` | "I'm at the store" | nothing server-side; arms next button |
 | arrived | "Picked up" | `PUT /drivers/orders/:id/pickup` |
-| `DRIVER_PICKED_UP` | "Delivered" | `PUT /drivers/orders/:id/deliver` |
+| `PICKED_UP` | "Delivered" | opens **Enter dropoff OTP** sheet (see below) |
 
-Optional proof-of-delivery photo is uploaded to Cloudinary then sent in the `deliver` body as `proofImageUrl`.
+### Confirming delivery with the dropoff OTP
+
+The "Delivered" button does NOT immediately mark the order delivered. It opens
+a sheet asking for the **4-digit dropoff OTP**:
+
+1. The driver asks the customer to read the 4-digit code shown in the
+   customer's app (visible there once the order moved to `PICKED_UP`).
+2. The driver types it into the sheet.
+3. App calls `PUT /drivers/orders/:id/deliver` with `{ "dropoffOtp": "1234" }`.
+4. Server compares against `Order.dropoffOtp`:
+   - **Match** → status moves to `DELIVERED`, driver earnings credit the delivery fee, customer is notified.
+   - **Mismatch / missing** → `400` returned, status stays `PICKED_UP`, the sheet shows "Incorrect code" and lets the driver retry.
+
+There is no override — the OTP is the **only** way to complete a delivery in
+the driver app. Admins can fall back to `PUT /admin/orders/:id/assign-driver`
+or read the OTP off the order detail page if a customer loses their phone.
+
+## Privacy
+
+The driver app intentionally hides customer PII. Server-side, `GET /orders/:id`
+strips fields when `req.user.role === 'DRIVER'`:
+
+| What you see | What you DON'T see |
+| --- | --- |
+| Pickup store: name, coords, address | Customer name |
+| Order items + total + COD flag | Customer phone |
+| Dropoff coords (`lat`, `lng`) | Recipient name |
+| Dropoff `label`, `city`, `pincode` | Street name / `line1` / `line2` |
+
+There is no in-app way to call the customer — coordination relies on:
+
+- The `label` ("Home", "Office") and city/pincode for context.
+- Map navigation to the dropoff coordinates.
+- The dropoff OTP at handoff.
+
+A masked-call number (Twilio) is on the roadmap. Until then, the OTP-only
+handoff is the privacy contract — never share screenshots that show the OTP
+or any customer info from a different driver's screen.
 
 ## Background GPS — `expo-task-manager`
 

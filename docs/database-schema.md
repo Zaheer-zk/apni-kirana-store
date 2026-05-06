@@ -17,15 +17,20 @@ The schema is defined in `apps/backend/prisma/schema.prisma`. Postgres 16 is the
                      |1                                   |1             |1
                      |                                    | *            |
                      |1                            +------+-----+        |
-              +------+-----+                       |    Item    |        |
-              | OrderItem  |*--------------------->+------------+        |
-              +------------+                                              |
-                     |1                                                   |
-                     |0..1                                                |
-              +------+--------+        Order.driverId ?-------------------+
-              | OrderRating   |
-              +---------------+
+              +------+-----+      itemId(?)        | StoreItem  |        |
+              | OrderItem  |- - - - - - - - - - ->+------+-----+        |
+              +------------+      (denormalized)         | *             |
+                     |1                                  | 1             |
+                     |0..1                        +------+-----+         |
+              +------+--------+                   |CatalogItem |         |
+              | OrderRating   |                   +------------+         |
+              +---------------+   Order.driverId ?--------------+--------+
 ```
+
+`CatalogItem` is the master product list maintained by ADMIN. `StoreItem` is a
+store's selection from the catalog with its own price and stock. `OrderItem.itemId`
+points at a `StoreItem` (nullable; `name`/`price`/`unit` are snapshotted so the
+historical record survives later catalog/store changes).
 
 ## Enums
 
@@ -120,21 +125,90 @@ enum NotificationType {
 | `commissionPct` | Float | platform cut |
 | `createdAt`, `updatedAt` | DateTime | |
 
-### `Item`
+### `CatalogItem`
+
+The platform-wide master product list, maintained by ADMIN. Every store sells
+items chosen from this list (via `StoreItem`), so item names and metadata are
+defined once and reused everywhere.
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | String (PK) | |
-| `storeId` | String (FK → Store) | indexed |
-| `name` | String | indexed (trigram) for search |
+| `name` | String, **unique**, indexed | one row per product (e.g. "Amul Milk 1L") |
 | `description` | String? | |
-| `price` | Decimal(10,2) | |
-| `mrp` | Decimal(10,2)? | |
-| `stock` | Int | default 0 |
-| `unit` | String | "1 L", "500 g", "pack of 6" |
-| `imageUrl` | String? | |
-| `available` | Boolean | default `true` |
+| `category` | ItemCategory, indexed | `GROCERY`, `MEDICINE`, `HOUSEHOLD`, `SNACKS`, `BEVERAGES`, `OTHER` |
+| `defaultUnit` | String | "1 L", "500 g", "pack of 6" — default unit; stores may not override |
+| `imageUrl` | String? | Cloudinary URL |
+| `isActive` | Boolean | soft-delete flag (default `true`) |
 | `createdAt`, `updatedAt` | DateTime | |
+
+**Relations:** `storeItems` (one CatalogItem → many StoreItem rows across stores).
+
+```prisma
+model CatalogItem {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String?
+  category    ItemCategory
+  defaultUnit String
+  imageUrl    String?
+  isActive    Boolean      @default(true)
+  storeItems  StoreItem[]
+
+  @@index([category])
+  @@index([name])
+}
+```
+
+### `StoreItem`
+
+A store's per-shop listing of a `CatalogItem` — its price, stock, and
+availability. Each (store, catalog item) pair is unique.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | String (PK) | |
+| `storeId` | String (FK → Store) | indexed; `ON DELETE CASCADE` |
+| `catalogItemId` | String (FK → CatalogItem) | indexed; `ON DELETE CASCADE` |
+| `price` | Float | per-store price for the catalog item |
+| `stockQty` | Int | default 0 |
+| `isAvailable` | Boolean | default `true`; quick toggle without deleting |
+| `createdAt`, `updatedAt` | DateTime | |
+
+**Constraints:** `@@unique([storeId, catalogItemId])` — a store can list each
+catalog item only once.
+
+```prisma
+model StoreItem {
+  id            String      @id @default(cuid())
+  storeId       String
+  catalogItemId String
+  price         Float
+  stockQty      Int         @default(0)
+  isAvailable   Boolean     @default(true)
+  store         Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  catalogItem   CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, catalogItemId])
+  @@index([storeId])
+  @@index([catalogItemId])
+}
+```
+
+### Why split `CatalogItem` / `StoreItem`?
+
+Pre-pivot, every store created its own `Item` rows, which led to:
+
+- **Duplicate names** across stores ("Amul Milk 1L" written 30 different ways) — broke search and analytics.
+- **No cross-store comparisons** — customers couldn't see "this product is at N stores nearby" without an expensive name match.
+- **Dirty data** — typos, missing units, stale photos.
+
+Splitting into a master catalog and per-store listings gives us:
+
+- **Single source of truth** for product names, categories, units, and images.
+- **Clean per-store pricing and stock** without duplicating product metadata.
+- **Search & SEO** — one canonical product page (`/catalog/:id`) listing all stores carrying it, sorted by price/distance.
+- **Cleaner schema** — orders, ratings, inventory all reference one stable `catalogItemId`.
 
 ### `Order`
 
@@ -152,22 +226,29 @@ enum NotificationType {
 | `paymentMethod` | PaymentMethod | |
 | `paymentStatus` | String | `PENDING` / `PAID` / `REFUNDED` |
 | `addressSnapshot` | Json | full address copied at order time |
+| `dropoffOtp` | String? | **4-digit OTP** generated at order placement; revealed to the customer in-app once the order is `PICKED_UP`; entered by the driver on the deliver endpoint to confirm handoff. See `docs/privacy.md`. |
 | `placedAt` | DateTime | |
 | `acceptedAt`, `readyAt`, `pickedUpAt`, `deliveredAt`, `cancelledAt` | DateTime? | |
 
 ### `OrderItem`
 
-Why denormalised? Items can be edited or deleted *after* an order is placed. Snapshotting `name` and `price` at order time guarantees the historical record stays accurate even if the parent `Item` row changes.
+Why denormalised? Items can be edited or deleted *after* an order is placed.
+Snapshotting `name`, `price`, and `unit` at order time guarantees the historical
+record stays accurate even if the parent `StoreItem` or `CatalogItem` row
+changes. After the marketplace pivot, `OrderItem.itemId` references a
+`StoreItem` id (nullable; the FK was dropped during the migration so deleting a
+StoreItem no longer blocks order history).
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `id` | String (PK) | |
 | `orderId` | String (FK → Order) | indexed |
-| `itemId` | String (FK → Item) | nullable on delete-set-null |
-| `nameSnapshot` | String | copied from Item at order time |
-| `priceSnapshot` | Decimal(10,2) | copied at order time |
+| `itemId` | String? | StoreItem id at order time; not enforced by FK (snapshot semantics) |
+| `name` | String | snapshot from `CatalogItem.name` |
+| `price` | Float | snapshot from `StoreItem.price` |
+| `unit` | String | snapshot from `CatalogItem.defaultUnit` |
 | `qty` | Int | |
-| `lineTotal` | Decimal(10,2) | `priceSnapshot * qty` |
+| `imageUrl` | String? | snapshot from `CatalogItem.imageUrl` |
 
 ### `Driver`
 
@@ -215,7 +296,8 @@ Why denormalised? Items can be edited or deleted *after* an order is placed. Sna
 | --- | --- | --- |
 | User | `phone` unique | login lookup |
 | Store | `(lat, lng)`, `category`, `status` | nearby queries, filters |
-| Item | `storeId`, GIN trigram on `name` | catalog + cross-store search |
+| CatalogItem | unique `name`, `category`, `name` | catalog browse + admin uniqueness |
+| StoreItem | `(storeId, catalogItemId)` unique, `storeId`, `catalogItemId` | per-store inventory & cross-store availability |
 | Order | `customerId`, `storeId`, `driverId`, `status`, `placedAt` desc | inbox queries |
 | Notification | `(userId, createdAt desc)`, partial WHERE `readAt IS NULL` | unread badge |
 | RefreshToken | `tokenHash` unique, `userId` | refresh + bulk revoke |

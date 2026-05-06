@@ -2,6 +2,7 @@
 // Catalog item CRUD lives in catalog.routes.ts (admin-only).
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import Fuse from 'fuse.js';
 import { prisma } from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
@@ -11,34 +12,53 @@ const router = Router();
 
 // ─── Public search: returns store-items (price/stock) joined to catalog ───────
 
+// Fuzzy search across in-stock items at active stores. Uses Fuse.js to be typo-tolerant.
 router.get('/search', async (req: Request, res: Response) => {
   try {
-    const q = (req.query['q'] as string) || '';
+    const q = ((req.query['q'] as string) || '').trim();
     const category = req.query['category'] as string | undefined;
 
-    const where: Record<string, unknown> = {
+    // Stage 1: SQL prefilter — narrow to candidates loosely matching the query/category.
+    const baseWhere: Record<string, unknown> = {
       isAvailable: true,
       stockQty: { gt: 0 },
       store: { status: 'ACTIVE' },
     };
-    if (q || category) {
-      const catalogWhere: Record<string, unknown> = { isActive: true };
-      if (q) catalogWhere['name'] = { contains: q, mode: 'insensitive' };
-      if (category) catalogWhere['category'] = category;
-      where['catalogItem'] = catalogWhere;
-    }
+    if (category) baseWhere['catalogItem'] = { category, isActive: true };
 
-    const items = await prisma.storeItem.findMany({
-      where,
+    let candidates = await prisma.storeItem.findMany({
+      where: baseWhere,
       include: {
         catalogItem: true,
         store: { select: { id: true, name: true, lat: true, lng: true, isOpen: true } },
       },
-      take: 100,
-      orderBy: { catalogItem: { name: 'asc' } },
+      take: 500,
     });
 
-    return sendSuccess(res, items);
+    // Stage 2: Fuse fuzzy ranking when a query is provided.
+    if (q) {
+      const fuse = new Fuse(candidates, {
+        keys: [
+          { name: 'catalogItem.name', weight: 0.7 },
+          { name: 'catalogItem.description', weight: 0.3 },
+        ],
+        threshold: 0.4,
+        ignoreLocation: true,
+        minMatchCharLength: 2,
+        includeScore: true,
+      });
+      candidates = fuse
+        .search(q)
+        .slice(0, 100)
+        .map((r) => r.item);
+    } else {
+      // No query: alphabetical, capped
+      candidates = candidates
+        .slice(0, 100)
+        .sort((a, b) => a.catalogItem.name.localeCompare(b.catalogItem.name));
+    }
+
+    return sendSuccess(res, candidates);
   } catch (err) {
     console.error('[Items] search error:', err);
     return sendError(res, 'Failed to search items', 500);

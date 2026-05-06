@@ -33,18 +33,41 @@ Sign up (phone OTP)
 | Operating Hours | Per-day schedule |
 | Profile / Settings | Bank, GST, support |
 
-## Inventory CRUD
+## Inventory — "Add from Catalog" flow
+
+After the marketplace pivot, **store owners cannot create new product names**.
+Every item in a store's inventory is a `StoreItem` — a row that points at a
+master `CatalogItem` (name, category, unit, image) and adds the store's own
+`price`, `stockQty`, and `isAvailable`. Admin owns the master catalog.
+
+The old "Add Item" form (name, category, price, unit, stock, image) is
+**replaced** by a 3-step "Add from Catalog" flow:
+
+1. **Search/select** a master catalog item — type to query
+   `GET /catalog?q=...` (or `/catalog/search/q?q=...`). Tap the result.
+2. **Set price** — your store's price for this item (₹).
+3. **Set stock** — quantity on hand. Tap "Add to my store" → `POST /items`
+   with `{ catalogItemId, price, stockQty }`.
+
+If a catalog item the owner needs doesn't exist, they request it from admin
+(in-app "Request product" form, planned). They cannot create it themselves.
 
 | Action | Endpoint |
 | --- | --- |
-| List | `GET /stores/:id/items` |
-| Add | `POST /items` |
-| Edit | `PUT /items/:id` |
-| Delete | `DELETE /items/:id` |
-| Quick toggle | `PUT /items/:id/toggle-availability` |
-| Stock adjust | `PUT /items/:id/stock` |
+| List my inventory | `GET /stores/:id/items` (returns flattened `StoreItem` + `CatalogItem`) |
+| Add (from catalog) | `POST /items` body `{ catalogItemId, price, stockQty, isAvailable? }` |
+| Edit price / stock / availability | `PUT /items/:id` |
+| Remove from my store | `DELETE /items/:id` (CatalogItem is untouched) |
+| Quick "out of stock" toggle | `PUT /items/:id/toggle-availability` |
+| Stock adjust | `PUT /items/:id/stock` body `{ stockQty }` |
 
-The list view supports a swipe action for "Out of stock" (single tap to toggle availability) — the most common use during a busy day.
+`GET /stores/:id/items` returns only the rows the store actually carries —
+items the store doesn't list are simply absent from the response. There are no
+per-store duplicates of the same product name (the unique constraint
+`(storeId, catalogItemId)` enforces this).
+
+The list view still supports a swipe action for "Out of stock" — single tap to
+flip `isAvailable` without deleting the row.
 
 ## Image upload
 
@@ -60,21 +83,35 @@ const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD}/image/upload`,
 const { secure_url } = await res.json();
 ```
 
-## Incoming order banner — 3 minute window
+## Incoming order banner — broadcast mode
 
-When the server emits `order:new` to the store owner's `user:<id>` room, a top banner appears with:
+When the server emits **`order:offered`** to the store owner's `user:<id>` room
+(this is the broadcast-mode event from `matching.service.ts`), a top banner
+appears with:
 
 - Item summary (`2x Amul Milk, 1x Bread`)
 - Subtotal
-- A 3-minute countdown progress bar
+- Match info from the payload — `matchedItemCount`, `distanceKm`, `score`
+- A **3-minute** countdown progress bar (`STORE_RETRY_DELAY_MS`)
+
+In `BROADCAST` mode (default), the same `order:offered` event is delivered to
+**up to 5 stores in parallel**; the first store to call `PUT /orders/:id/accept`
+wins. Losing stores receive an `order:rescinded` event and the banner
+disappears with a "Order taken by another store" toast.
 
 Outcomes:
 
 - **Accept** → `PUT /orders/:id/accept` → status moves to `STORE_ACCEPTED`, the banner closes, the order shows up in Active Orders.
-- **Reject** → `PUT /orders/:id/reject`. The server immediately offers to the next-best store.
-- **Timeout** → server cascades automatically.
+- **Reject** → `PUT /orders/:id/reject` with a reason. Server re-broadcasts to the next round (excluding this store).
+- **Rescinded by server** → `order:rescinded` socket event; banner closes silently with a "Another store accepted" toast.
+- **Timeout** → after 3 min the banner closes; the safety-net job broadcasts to the next round.
 
-Multiple incoming orders queue — only one banner is visible at a time, and the next one appears after the first is resolved.
+Multiple incoming offers queue — only one banner is visible at a time, the
+next one appears after the first is resolved or rescinded.
+
+> Legacy `CASCADE` mode (`STORE_MATCHING_MODE=CASCADE`) emits the same
+> `order:offered` event but to a single store at a time, with the same 3-min
+> window. The UI does not need to change between modes.
 
 ## Order fulfillment workflow
 

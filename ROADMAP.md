@@ -468,64 +468,105 @@ _Roadmap is subject to revision based on team size, scope changes, and beta feed
 
 ### Schema changes
 
-- [ ] **New model `CatalogItem`** (admin-managed master products)
-  - `id, name, description, category, defaultUnit, imageUrl, isActive`
-- [ ] **New model `StoreItem`** (which catalog items each store carries)
+- [x] **New model `CatalogItem`** (admin-managed master products)
+  - `id, name (unique), description, category, defaultUnit, imageUrl, isActive`
+- [x] **New model `StoreItem`** (which catalog items each store carries)
   - `id, storeId, catalogItemId, price, stockQty, isAvailable`
-  - unique(storeId, catalogItemId)
-- [ ] **Deprecate `Item` model** → rename to `StoreItem`, link to `CatalogItem`
-- [ ] **Migration**: lift unique item names from existing `Item` rows into `CatalogItem`, then convert `Item.name/category/unit` to FK
-- [ ] **Add `_count` indexes** on Store ↔ StoreItem and CatalogItem ↔ StoreItem
+  - unique(storeId, catalogItemId) so no duplicate listings per store
+- [x] **Deprecate `Item` model** — replaced by StoreItem with FK to CatalogItem
+- [x] **Migration** (`20260506_marketplace_catalog`): existing items lifted into CatalogItem (deduped by name), then converted into StoreItem rows pointing at the catalog row. OrderItem.itemId loosened (denormalized name/price/unit kept for history).
+- [x] Indexes on Store ↔ StoreItem and CatalogItem ↔ StoreItem
+- [x] `Order.dropoffOtp` (4-digit handoff verification)
 
 ### Backend endpoints
 
-- [ ] `GET /api/v1/catalog` — paginated catalog (public)
-- [ ] `GET /api/v1/catalog/:id/stores` — list stores carrying this item, sorted by distance, with price + stock
-- [ ] `GET /api/v1/catalog/search?q=...` — full-text search across catalog
-- [ ] `POST /api/v1/admin/catalog` — admin creates catalog item
-- [ ] `PUT /api/v1/admin/catalog/:id` — admin edits
-- [ ] `DELETE /api/v1/admin/catalog/:id`
-- [ ] `GET /api/v1/stores/me/items` — store owner: their catalog selections
-- [ ] `POST /api/v1/stores/me/items` — store owner adds catalog item to their inventory `{ catalogItemId, price, stockQty }`
-- [ ] `PUT /api/v1/stores/me/items/:id` — update price/stock
-- [ ] `DELETE /api/v1/stores/me/items/:id` — remove from inventory
+- [x] `GET /api/v1/catalog` — paginated catalog (public, filter by category/q)
+- [x] `GET /api/v1/catalog/:id` — single catalog item + list of stores carrying it (sorted by distance when lat/lng given), with each store's price + stock
+- [x] `GET /api/v1/catalog/search/q?q=...` — full-text search
+- [x] `POST /api/v1/catalog` — admin creates catalog item (Zod validated)
+- [x] `PUT /api/v1/catalog/:id` — admin edits
+- [x] `DELETE /api/v1/catalog/:id`
+- [x] `POST /api/v1/items` — store owner adds catalog item to their inventory `{ catalogItemId, price, stockQty }` (rejects duplicates with 409)
+- [x] `PUT /api/v1/items/:id` — update price/stock/availability (owner-only)
+- [x] `DELETE /api/v1/items/:id` — remove from inventory
+- [x] `PUT /api/v1/items/:id/toggle-availability` and `/stock`
+- [x] `GET /api/v1/stores/:id/items` — flattened (catalog joined) for customer-facing browse
+- [ ] CSV bulk upload for store inventory
+- [ ] CSV bulk upload for admin catalog
 
 ### Order flow change
 
-- [ ] `POST /api/v1/orders` accepts catalog items: `[{ catalogItemId, qty }]`
-- [ ] Matching engine: finds nearest store with all (or most) items in stock
-- [ ] If multi-store split needed → propose to customer or pick best score (existing logic)
-- [ ] Lock prices at order-creation time (StoreItem.price snapshotted into OrderItem.price)
+- [x] **Two ordering modes**:
+  - `STORE_DIRECT`: customer browses one store, sends `{ storeItemId }`s
+  - `CATALOG`: customer chose catalog items, sends `{ catalogItemId }`s and the engine picks the best store carrying all (majority-first ranking)
+- [x] Multi-store splits not supported in v1 (returns 400; future enhancement)
+- [x] Prices snapshotted into OrderItem at order time
 
-### Privacy
+### Matching engines (NEW: parallel-broadcast first-accept-wins)
 
-- [ ] **Driver order view** must omit `customer.name`, `customer.phone`. Only show:
+- [x] **Store matching — BROADCAST mode (default)**: top 5 candidate stores get notified in parallel. First store to tap Accept wins. Other broadcast recipients receive a "rescinded" notification. (`STORE_MATCHING_MODE=BROADCAST|CASCADE` env.)
+  - Score = matchRatio × 0.6 + proximity × 0.3 + rating × 0.1
+  - Filter: stores below 60% item match are skipped
+  - Stores ranked majority-first (most matched items) then by distance
+  - Safety net: if no acceptance within 3 minutes, retries with next 5 candidates
+- [x] **Driver assignment — BROADCAST mode (default)**: top 3 nearby ONLINE drivers notified in parallel, first-accept-wins. (`DRIVER_MATCHING_MODE=BROADCAST|CASCADE` env.)
+  - Score = proximity × 0.6 + rating × 0.3 + freshness × 0.1
+  - 60-second window per broadcast; if nobody accepts, retries excluding tried drivers
+
+### Admin manual override (NEW)
+
+- [x] `GET /api/v1/admin/orders/:id` — full order detail (customer, store, driver, items, address, rating)
+- [x] `PUT /api/v1/admin/orders/:id/assign-store` — manually assign or change store; status → STORE_ACCEPTED, store owner notified
+- [x] `PUT /api/v1/admin/orders/:id/assign-driver` — manually assign or change driver; status → DRIVER_ASSIGNED, driver notified
+- [ ] Admin UI: order detail page with assignment dropdowns + audit log
+
+### Privacy (driver-side)
+
+- [x] **Driver order view** strips `customer.name`/`customer.phone`. Driver sees:
   - Pickup: store name + address + items
-  - Dropoff: lat/lng + landmark text only (no name)
-  - Bill: total + payment method (COD or PAID)
-  - Verification: 4-digit dropoff OTP (entered by anyone at the location)
-- [ ] **Customer order view** continues to show driver name + vehicle for trust, but hides driver phone (in-app call only via masked number — placeholder for Twilio masked calls)
-- [ ] Add `dropoffOtp` field to Order model (auto-generated, shown to customer post-pickup)
-- [ ] Driver "Confirm Delivery" requires entering this 4-digit OTP
+  - Dropoff: lat/lng + label/pincode/city only (no street, no name)
+  - Bill: total + payment method (COD flag)
+  - Verification: 4-digit dropoff OTP shown in the customer's app
+- [x] `PUT /api/v1/drivers/orders/:orderId/deliver` requires `dropoffOtp` body field; mismatched OTP rejected with 400
+- [ ] Customer order view: hide driver's raw phone — call via masked number (placeholder for Twilio Programmable Voice)
+- [ ] Audit log: track admin manual assignments + privacy-affecting actions
 
 ### Customer app
 
-- [ ] New "Catalog" home screen: browse all products (not per-store)
-- [ ] Item detail page now shows "Available at 3 stores nearby" — picks the closest by default
-- [ ] Cart can mix items from multiple stores → shows split delivery in summary
-- [ ] Address picker integrated for dropoff
+- [x] **Two browse modes**: by store (current per-store browse) OR by catalog (browse all products)
+- [ ] Catalog browse home: tile per category, infinite-scroll item grid
+- [ ] Item detail: "Available at 3 stores nearby" picker (closest auto-selected, customer can switch)
+- [ ] Floating cart preview button (appears once cart has items, sticky bottom)
+- [ ] Show dropoff OTP on tracking screen once order is PICKED_UP
+- [ ] Address picker integrated with map (DONE — onboarding/map-picker)
 
 ### Store Portal
 
-- [ ] "Add from catalog" flow: search master catalog, set price + stock
-- [ ] "My products" page replaces "My inventory"
+- [x] Backend supports "Add from catalog": `POST /api/v1/items { catalogItemId, price, stockQty }`
+- [ ] UI: search master catalog → tap to add → set price + stock
+- [ ] UI: "My products" replaces "My inventory" (drives the new add-from-catalog flow)
 - [ ] Bulk price update screen
+- [ ] Inline notification on `order:offered` socket event (broadcast notification)
+
+### Driver app
+
+- [x] Backend supports privacy-preserving order view + dropoff OTP delivery
+- [ ] UI: receive `order:offered` socket → show pickup screen with store address + items
+- [ ] UI: pickup confirm → status PICKED_UP → show dropoff coords + OTP entry
+- [ ] UI: enter 4-digit dropoff OTP to confirm delivery
+- [ ] UI: rescinded notification when another driver accepts first
 
 ### Admin dashboard
 
-- [ ] **New top nav: Catalog** — manage master product list, categories, images
+- [ ] **New top nav: Catalog** — CRUD master products list, categories, images
 - [ ] CSV bulk upload for catalog items
-- [ ] Approve catalog item suggestions (if store-owners can suggest new items)
+- [ ] Order detail page with manual assign-store + assign-driver dropdowns
+- [ ] Approve catalog item suggestions (Phase 9.1: store-owners can suggest)
 
-### Estimated effort
-Medium-high — ~2 weeks for one engineer. Migration must be careful to preserve existing orders. Recommend doing this BEFORE beta launch (Phase 7) so customers don't have to relearn the UX.
+### Documentation
+
+- [ ] Update `docs/database-schema.md` — CatalogItem, StoreItem, Order.dropoffOtp
+- [ ] Update `docs/api-reference.md` — add /catalog endpoints, change /items, add admin /orders/:id/assign-store|driver
+- [ ] Update `docs/matching-algorithm.md` — broadcast vs cascade modes, scoring formulas
+- [ ] Update `docs/customer-app.md` / `docs/store-portal.md` / `docs/driver-app.md` / `docs/admin-dashboard.md`
+- [ ] New `docs/privacy.md` — explain dropoff OTP flow + driver order view rules

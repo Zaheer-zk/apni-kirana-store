@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import Fuse from 'fuse.js';
 import { prisma } from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
@@ -7,6 +8,19 @@ import { sendSuccess, sendError } from '../utils/response';
 import { haversineDistance, getBoundingBox } from '../utils/geo';
 
 const router = Router();
+
+// Fuse.js options — typo-tolerant fuzzy search across name + description.
+// threshold 0.4 ≈ moderate fuzziness. minMatchCharLength avoids matching everything on short queries.
+const FUSE_OPTIONS: Fuse.IFuseOptions<{ id: string; name: string; description: string | null }> = {
+  keys: [
+    { name: 'name', weight: 0.7 },
+    { name: 'description', weight: 0.3 },
+  ],
+  threshold: 0.4,
+  ignoreLocation: true,
+  minMatchCharLength: 2,
+  includeScore: true,
+};
 
 // ─── Public catalog browse ────────────────────────────────────────────────────
 
@@ -106,24 +120,67 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/v1/catalog/search?q=...&lat=&lng= — full-text search across catalog with availability
+// GET /api/v1/catalog/search/q?q=...
+// Fuzzy search via Fuse.js — tolerant to typos and partial matches.
+// Two-stage strategy:
+//   1. SQL prefilter — narrow to candidates whose name OR description contains
+//      any 3-char prefix of the query (cheap LIKE). Falls back to all-active for short queries.
+//   2. Fuse.js ranking — fuzzy-score the prefilter set; return top 50 by score.
 router.get('/search/q', async (req: Request, res: Response) => {
   try {
-    const q = (req.query['q'] as string) || '';
-    if (!q.trim()) return sendSuccess(res, []);
-    const items = await prisma.catalogItem.findMany({
-      where: {
-        isActive: true,
-        OR: [
-          { name: { contains: q, mode: 'insensitive' } },
-          { description: { contains: q, mode: 'insensitive' } },
-        ],
-      },
-      include: { _count: { select: { storeItems: true } } },
-      take: 50,
-      orderBy: { name: 'asc' },
-    });
-    return sendSuccess(res, items);
+    const rawQ = ((req.query['q'] as string) || '').trim();
+    if (!rawQ) return sendSuccess(res, []);
+
+    // SQL prefilter: collect candidates that loosely match the query so Fuse doesn't
+    // need to score the entire catalog. For short queries we just take all active items.
+    let candidates: Array<{
+      id: string;
+      name: string;
+      description: string | null;
+      category: string;
+      defaultUnit: string;
+      imageUrl: string | null;
+      _count: { storeItems: number };
+    }>;
+
+    if (rawQ.length <= 2) {
+      candidates = await prisma.catalogItem.findMany({
+        where: { isActive: true },
+        include: { _count: { select: { storeItems: true } } },
+        take: 200,
+      });
+    } else {
+      // Build OR list with the first 3-char and the full query, both name and description.
+      const prefix = rawQ.slice(0, 3);
+      candidates = await prisma.catalogItem.findMany({
+        where: {
+          isActive: true,
+          OR: [
+            { name: { contains: prefix, mode: 'insensitive' } },
+            { name: { contains: rawQ, mode: 'insensitive' } },
+            { description: { contains: rawQ, mode: 'insensitive' } },
+          ],
+        },
+        include: { _count: { select: { storeItems: true } } },
+        take: 200,
+      });
+      // If prefilter found nothing (uncommon typos), broaden to full active set
+      if (candidates.length === 0) {
+        candidates = await prisma.catalogItem.findMany({
+          where: { isActive: true },
+          include: { _count: { select: { storeItems: true } } },
+          take: 200,
+        });
+      }
+    }
+
+    const fuse = new Fuse(candidates, FUSE_OPTIONS);
+    const ranked = fuse
+      .search(rawQ)
+      .slice(0, 50)
+      .map((r) => ({ ...r.item, _matchScore: r.score ?? 1 }));
+
+    return sendSuccess(res, ranked);
   } catch (err) {
     console.error('[Catalog] search error:', err);
     return sendError(res, 'Failed to search catalog', 500);

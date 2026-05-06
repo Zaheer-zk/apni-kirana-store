@@ -49,7 +49,7 @@ describe('POST /api/v1/orders', () => {
       .post('/api/v1/orders')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        items: [{ itemId: item.id, qty: 2 }],
+        items: [{ storeItemId: item.id, qty: 2 }],
         deliveryAddressId: address.id,
         paymentMethod: 'CASH_ON_DELIVERY',
       });
@@ -85,7 +85,7 @@ describe('POST /api/v1/orders', () => {
       .post('/api/v1/orders')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        items: [{ itemId: fakeItemId, qty: 1 }],
+        items: [{ storeItemId: fakeItemId, qty: 1 }],
         deliveryAddressId: address.id,
         paymentMethod: 'CASH_ON_DELIVERY',
       });
@@ -100,7 +100,7 @@ describe('POST /api/v1/orders', () => {
       .post('/api/v1/orders')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        items: [{ itemId: item.id, qty: 5 }],
+        items: [{ storeItemId: item.id, qty: 5 }],
         deliveryAddressId: address.id,
         paymentMethod: 'CASH_ON_DELIVERY',
       });
@@ -117,7 +117,7 @@ describe('POST /api/v1/orders', () => {
       .post('/api/v1/orders')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        items: [{ itemId: item.id, qty: 1 }],
+        items: [{ storeItemId: item.id, qty: 1 }],
         deliveryAddressId: otherAddress.id,
         paymentMethod: 'CASH_ON_DELIVERY',
       });

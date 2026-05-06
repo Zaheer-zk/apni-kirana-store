@@ -11,9 +11,9 @@
 
 | Metric       | Count              |
 | ------------ | ------------------ |
-| ✅ Completed | **125** items      |
-| ❌ Remaining | **80** items       |
-| **Overall**  | **~61% complete**  |
+| ✅ Completed | **140** items      |
+| ❌ Remaining | **65** items       |
+| **Overall**  | **~68% complete**  |
 
 | Phase                         | Status     | Notes                                                         |
 | ----------------------------- | ---------- | ------------------------------------------------------------- |
@@ -144,7 +144,7 @@
 - ✅ Store registration and admin approval flow
 - ✅ Inventory model: item name, category, price, unit, stock quantity, image URL
 - ✅ Inventory CRUD APIs (for store owners)
-- ❌ Bulk CSV import endpoint
+- ✅ Bulk CSV import endpoint
 - ✅ Item search API (by name, category, keyword)
 - ✅ Geolocation: store lookup by radius (Haversine + bounding box)
 - ❌ Cloudinary integration for image uploads
@@ -226,7 +226,7 @@
 - ✅ Order status screen (5-step indicator)
 - ✅ Live map with driver marker (Socket.io updates)
 - ❌ Estimated time display
-- ❌ Push notification handling (foreground + background)
+- ✅ Push notification handling (foreground + background)
 - ✅ Cancel order flow (within allowed window)
 
 ### Profile + History + Polish
@@ -254,7 +254,7 @@
 - ✅ Inventory list screen
 - ✅ Add / Edit item form
 - ✅ Toggle item in/out of stock
-- ❌ CSV bulk upload for inventory
+- ✅ CSV bulk upload for inventory
 
 ### Order Management
 
@@ -267,9 +267,9 @@
 ### Earnings + Polish
 
 - ✅ Earnings screen with period filter
-- ❌ Operating hours settings
-- ❌ Store profile edit (address, photos)
-- ❌ Notification preferences
+- ✅ Operating hours settings
+- ✅ Store profile edit (address, photos)
+- ✅ Notification preferences
 - ❌ Offline handling (queue accept/reject until reconnected)
 
 ---
@@ -323,9 +323,9 @@
 ### Operations + Analytics
 
 - ✅ Order management with status + date filters
-- ❌ Dispute resolution: flag orders, add notes, issue refunds
+- ✅ Dispute resolution: flag orders, add notes, issue refunds
 - ✅ Promo code creation (flat or %, expiry, usage limits)
-- ❌ Zone configuration: delivery radius per city/area
+- ✅ Zone configuration: delivery radius per city/area
 - ✅ Commission & delivery fee settings page
 - ✅ Analytics dashboard with stat cards + charts
   - Orders per day (chart)
@@ -486,8 +486,8 @@ Phase 0 (Design + Infra)
 - ✅ `DELETE /api/v1/items/:id` — remove from inventory
 - ✅ `PUT /api/v1/items/:id/toggle-availability` and `/stock`
 - ✅ `GET /api/v1/stores/:id/items` — flattened (catalog joined) for customer-facing browse
-- ❌ CSV bulk upload for store inventory
-- ❌ CSV bulk upload for admin catalog
+- ✅ CSV bulk upload for store inventory
+- ✅ CSV bulk upload for admin catalog
 
 ### Order flow change
 
@@ -524,7 +524,7 @@ Phase 0 (Design + Infra)
   - Verification: 4-digit dropoff OTP shown in the customer's app
 - ✅ `PUT /api/v1/drivers/orders/:orderId/deliver` requires `dropoffOtp` body field; mismatched OTP rejected with 400
 - ❌ Customer order view: hide driver's raw phone — call via masked number (placeholder for Twilio Programmable Voice)
-- ❌ Audit log: track admin manual assignments + privacy-affecting actions
+- ✅ Audit log: track admin manual assignments + privacy-affecting actions
 
 ### Customer app
 
@@ -546,10 +546,10 @@ Phase 0 (Design + Infra)
 ### Driver app
 
 - ✅ Backend supports privacy-preserving order view + dropoff OTP delivery
-- ❌ UI: receive `order:offered` socket → show pickup screen with store address + items
-- ❌ UI: pickup confirm → status PICKED_UP → show dropoff coords + OTP entry
-- ❌ UI: enter 4-digit dropoff OTP to confirm delivery
-- ❌ UI: rescinded notification when another driver accepts first
+- ✅ UI: receive `order:offered` socket → show pickup screen with store address + items
+- ✅ UI: pickup confirm → status PICKED_UP → show dropoff coords + OTP entry
+- ✅ UI: enter 4-digit dropoff OTP to confirm delivery
+- ✅ UI: rescinded notification when another driver accepts first
 
 ### Admin dashboard
 

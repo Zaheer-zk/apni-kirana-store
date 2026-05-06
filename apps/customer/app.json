@@ -23,7 +23,8 @@
       "adaptiveIcon": {
         "backgroundColor": "#16A34A"
       },
-      "package": "com.apnikirana.customer"
+      "package": "com.apnikirana.customer",
+      "useNextNotificationsApi": true
     },
     "plugins": [
       "expo-router",
@@ -38,7 +39,8 @@
         "expo-secure-store"
       ],
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true

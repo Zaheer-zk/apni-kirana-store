@@ -58,6 +58,9 @@ function RootLayoutNav() {
         options={{ headerShown: true, title: 'Add from Catalog', headerBackTitle: 'Back' }}
       />
       <Stack.Screen name="inventory/[id]" options={{ headerShown: true, title: 'Edit Item', headerBackTitle: 'Back' }} />
+      <Stack.Screen name="profile/operating-hours" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/edit" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/notifications" options={{ headerShown: false }} />
     </Stack>
   );
 }

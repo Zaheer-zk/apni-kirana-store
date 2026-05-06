@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Redirect, Stack, usePathname } from 'expo-router';
+import { Redirect, Stack, router, usePathname } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -8,6 +8,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/auth.store';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
+import {
+  attachNotificationListeners,
+  registerForPushNotifications,
+} from '@/lib/notifications';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,6 +65,20 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     })();
     return () => { cancelled = true; };
   }, [setAuth]);
+
+  // Register for push notifications and attach tap listener once authenticated.
+  useEffect(() => {
+    if (!accessToken) return;
+    registerForPushNotifications();
+    const detach = attachNotificationListeners({
+      onTap: (data) => {
+        if (typeof data?.orderId === 'string') {
+          router.push(`/order/${data.orderId}`);
+        }
+      },
+    });
+    return detach;
+  }, [accessToken]);
 
   if (!isReady) return <SplashScreen />;
 

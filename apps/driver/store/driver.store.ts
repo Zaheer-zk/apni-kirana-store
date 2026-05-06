@@ -18,6 +18,7 @@ interface DriverState {
   setOnline: (online: boolean) => void;
   setActiveOrder: (orderId: string | null) => void;
   setIncomingOrder: (orderId: string | null) => void;
+  clearIncomingOrder: () => void;
   setDriverProfile: (profile: DriverProfile) => void;
 }
 
@@ -52,6 +53,8 @@ export const useDriverStore = create<DriverState>((set) => ({
   setActiveOrder: (orderId) => set({ activeOrderId: orderId }),
 
   setIncomingOrder: (orderId) => set({ incomingOrderId: orderId }),
+
+  clearIncomingOrder: () => set({ incomingOrderId: null }),
 
   setDriverProfile: (profile) => set({ driverProfile: profile }),
 }));

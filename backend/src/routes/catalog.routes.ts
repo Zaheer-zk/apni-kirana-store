@@ -250,4 +250,76 @@ router.delete(
   },
 );
 
+// ─── Bulk CSV import (admin) ─────────────────────────────────────────────────
+// Body: { csv: string }
+// Headers expected: name,description,category,defaultUnit,imageUrl,isActive
+import { parseCsv } from '../utils/csv';
+
+router.post(
+  '/bulk-import',
+  authenticate,
+  authorize('ADMIN'),
+  async (req: Request, res: Response) => {
+    try {
+      const csv = (req.body?.csv as string | undefined) ?? '';
+      if (!csv.trim()) return sendError(res, 'csv field required', 400);
+
+      const validCategories = ['GROCERY', 'MEDICINE', 'HOUSEHOLD', 'SNACKS', 'BEVERAGES', 'OTHER'];
+      const { rows, errors } = parseCsv<{
+        name: string; description?: string; category: string;
+        defaultUnit: string; imageUrl?: string; isActive: boolean;
+      }>(csv, (rec, line) => {
+        if (!rec.name) throw new Error(`Line ${line}: name required`);
+        if (!rec.category || !validCategories.includes(rec.category.toUpperCase())) {
+          throw new Error(`Line ${line}: category must be one of ${validCategories.join('|')}`);
+        }
+        if (!rec.defaultUnit) throw new Error(`Line ${line}: defaultUnit required`);
+        return {
+          name: rec.name.trim(),
+          description: rec.description?.trim() || undefined,
+          category: rec.category.toUpperCase(),
+          defaultUnit: rec.defaultUnit.trim(),
+          imageUrl: rec.imageUrl?.trim() || undefined,
+          isActive: rec.isActive ? rec.isActive.toLowerCase() !== 'false' : true,
+        };
+      });
+
+      let created = 0;
+      let updated = 0;
+      const failures: Array<{ name: string; error: string }> = [];
+
+      for (const r of rows) {
+        try {
+          await prisma.catalogItem.upsert({
+            where: { name: r.name },
+            create: { ...r, category: r.category as never },
+            update: {
+              description: r.description ?? null,
+              category: r.category as never,
+              defaultUnit: r.defaultUnit,
+              imageUrl: r.imageUrl ?? null,
+              isActive: r.isActive,
+            },
+          });
+          // Crude: we don't know if it was insert or update; count as created by default
+          created++;
+        } catch (err) {
+          failures.push({ name: r.name, error: (err as Error).message });
+        }
+      }
+
+      return sendSuccess(res, {
+        processed: rows.length,
+        created: created - updated,
+        updated,
+        parseErrors: errors,
+        upsertFailures: failures,
+      }, `${created} items imported`);
+    } catch (err) {
+      console.error('[Catalog] bulk-import error:', err);
+      return sendError(res, 'Failed to import catalog', 500);
+    }
+  },
+);
+
 export default router;

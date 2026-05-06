@@ -12,6 +12,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useDriverStore } from '@/store/driver.store';
+import { onOrderRescinded } from '@/lib/socket';
 import type { IncomingOrderPreview } from '@aks/shared';
 
 const COUNTDOWN_SECONDS = 60;
@@ -38,22 +39,51 @@ export function IncomingOrderModal({ orderId }: Props) {
 
   const acceptMutation = useMutation({
     mutationFn: () =>
-      api.put(`/api/v1/orders/${orderId}/accept`).then((r) => r.data),
+      api.put(`/api/v1/drivers/orders/${orderId}/accept`).then((r) => r.data),
     onSuccess: () => {
       setActiveOrder(orderId);
       setIncomingOrder(null);
       queryClient.invalidateQueries({ queryKey: ['activeOrder'] });
       queryClient.invalidateQueries({ queryKey: ['driverTodayStats'] });
     },
-    onError: (err: Error) => Alert.alert('Error', err.message),
+    onError: (err: Error) => {
+      // 409/400 means another driver already accepted — drop the modal
+      // gracefully; the rescinded socket event normally handles this too.
+      const msg = err.message || '';
+      if (/already|taken|not available|status/i.test(msg)) {
+        setIncomingOrder(null);
+        Alert.alert('Offer taken', 'Another driver accepted this order first.');
+      } else {
+        Alert.alert('Error', msg || 'Could not accept order');
+      }
+    },
   });
 
   const rejectMutation = useMutation({
     mutationFn: () =>
-      api.put(`/api/v1/orders/${orderId}/reject`).then((r) => r.data),
+      api.put(`/api/v1/drivers/orders/${orderId}/reject`).then((r) => r.data),
     onSuccess: () => setIncomingOrder(null),
-    onError: (err: Error) => Alert.alert('Error', err.message),
+    onError: (err: Error) => {
+      // Rejecting a rescinded offer can fail — just close the modal anyway.
+      console.warn('[IncomingOrderModal] reject failed:', err.message);
+      setIncomingOrder(null);
+    },
   });
+
+  // Subscribe to rescinded events — if this offer is taken by another driver
+  // we dismiss the modal with a friendly toast.
+  useEffect(() => {
+    const unsubscribe = onOrderRescinded((rescindedId) => {
+      if (rescindedId !== orderId) return;
+      if (timerRef.current) clearInterval(timerRef.current);
+      setIncomingOrder(null);
+      Alert.alert(
+        'Offer taken',
+        'Offer taken by another driver. Stay online for the next one.'
+      );
+    });
+    return unsubscribe;
+  }, [orderId, setIncomingOrder]);
 
   // Fade in modal
   useEffect(() => {

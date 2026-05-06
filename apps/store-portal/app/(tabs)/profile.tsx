@@ -1,20 +1,16 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
-  Switch,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { Ionicons } from '@expo/vector-icons';
 import { useStorePortalStore } from '@/store/store.store';
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -26,25 +22,41 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+interface MenuRowProps {
+  icon: string;
+  title: string;
+  onPress: () => void;
+}
+
+function MenuRow({ icon, title, onPress }: MenuRowProps) {
+  return (
+    <TouchableOpacity style={styles.menuRow} onPress={onPress} activeOpacity={0.7}>
+      <Text style={styles.menuIcon}>{icon}</Text>
+      <Text style={styles.menuTitle}>{title}</Text>
+      <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+    </TouchableOpacity>
+  );
+}
+
 export default function StoreProfileScreen() {
-  const { user, storeProfile, clearAuth, setStoreProfile } = useStorePortalStore();
-  const queryClient = useQueryClient();
+  const { user, storeProfile, clearAuth } = useStorePortalStore();
 
-  const [editingHours, setEditingHours] = useState(false);
-  const [openingTime, setOpeningTime] = useState(storeProfile?.openingTime ?? '09:00');
-  const [closingTime, setClosingTime] = useState(storeProfile?.closingTime ?? '21:00');
+  const openTime =
+    (storeProfile as any)?.openTime ??
+    (storeProfile as any)?.openingTime ??
+    storeProfile?.operatingHours?.open ??
+    '—';
+  const closeTime =
+    (storeProfile as any)?.closeTime ??
+    (storeProfile as any)?.closingTime ??
+    storeProfile?.operatingHours?.close ??
+    '—';
 
-  const updateHoursMutation = useMutation({
-    mutationFn: () =>
-      api
-        .put('/api/v1/stores/hours', { openingTime, closingTime })
-        .then((r) => r.data),
-    onSuccess: (data) => {
-      setStoreProfile({ ...storeProfile!, openingTime, closingTime });
-      setEditingHours(false);
-    },
-    onError: (err: Error) => Alert.alert('Error', err.message),
-  });
+  const addr = (storeProfile as any)?.address;
+  const addressObj =
+    typeof addr === 'object' && addr !== null
+      ? addr
+      : { street: '—', city: '—', state: '—', pincode: '—' };
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to log out?', [
@@ -87,10 +99,9 @@ export default function StoreProfileScreen() {
             <View style={styles.divider} />
             <InfoRow label="Category" value={storeProfile?.category ?? '—'} />
             <View style={styles.divider} />
-            <InfoRow
-              label="Status"
-              value={storeProfile?.status ?? '—'}
-            />
+            <InfoRow label="Status" value={storeProfile?.status ?? '—'} />
+            <View style={styles.divider} />
+            <InfoRow label="Hours" value={`${openTime} – ${closeTime}`} />
           </View>
         </View>
 
@@ -98,70 +109,38 @@ export default function StoreProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Address</Text>
           <View style={styles.card}>
-            <InfoRow label="Street" value={storeProfile?.address?.street ?? '—'} />
+            <InfoRow label="Street" value={addressObj.street ?? '—'} />
             <View style={styles.divider} />
-            <InfoRow label="City" value={storeProfile?.address?.city ?? '—'} />
+            <InfoRow label="City" value={addressObj.city ?? '—'} />
             <View style={styles.divider} />
-            <InfoRow label="State" value={storeProfile?.address?.state ?? '—'} />
+            <InfoRow label="State" value={addressObj.state ?? '—'} />
             <View style={styles.divider} />
-            <InfoRow label="Pincode" value={storeProfile?.address?.pincode ?? '—'} />
+            <InfoRow label="Pincode" value={addressObj.pincode ?? '—'} />
           </View>
         </View>
 
-        {/* Operating Hours */}
+        {/* Settings */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Operating Hours</Text>
-            <TouchableOpacity onPress={() => setEditingHours(!editingHours)}>
-              <Text style={styles.editLink}>{editingHours ? 'Cancel' : 'Edit'}</Text>
-            </TouchableOpacity>
+          <Text style={styles.sectionTitle}>Settings</Text>
+          <View style={styles.card}>
+            <MenuRow
+              icon="🕐"
+              title="Operating hours"
+              onPress={() => router.push('/profile/operating-hours')}
+            />
+            <View style={styles.divider} />
+            <MenuRow
+              icon="✏️"
+              title="Edit store profile"
+              onPress={() => router.push('/profile/edit')}
+            />
+            <View style={styles.divider} />
+            <MenuRow
+              icon="🔔"
+              title="Notifications"
+              onPress={() => router.push('/profile/notifications')}
+            />
           </View>
-
-          {editingHours ? (
-            <View style={styles.card}>
-              <View style={styles.hoursEditRow}>
-                <View style={styles.hoursField}>
-                  <Text style={styles.hoursLabel}>Opening</Text>
-                  <TextInput
-                    style={styles.hoursInput}
-                    value={openingTime}
-                    onChangeText={setOpeningTime}
-                    placeholder="HH:MM"
-                    keyboardType="numbers-and-punctuation"
-                  />
-                </View>
-                <Text style={styles.hoursDash}>—</Text>
-                <View style={styles.hoursField}>
-                  <Text style={styles.hoursLabel}>Closing</Text>
-                  <TextInput
-                    style={styles.hoursInput}
-                    value={closingTime}
-                    onChangeText={setClosingTime}
-                    placeholder="HH:MM"
-                    keyboardType="numbers-and-punctuation"
-                  />
-                </View>
-              </View>
-              <TouchableOpacity
-                style={[styles.saveButton, updateHoursMutation.isPending && styles.saveButtonDisabled]}
-                onPress={() => updateHoursMutation.mutate()}
-                disabled={updateHoursMutation.isPending}
-              >
-                {updateHoursMutation.isPending ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.saveButtonText}>Save Hours</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.card}>
-              <InfoRow
-                label="Hours"
-                value={`${storeProfile?.openingTime ?? '—'} – ${storeProfile?.closingTime ?? '—'}`}
-              />
-            </View>
-          )}
         </View>
 
         {/* Account */}
@@ -214,18 +193,17 @@ const styles = StyleSheet.create({
   storeName: { fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 4 },
   storeCategory: { fontSize: 14, color: '#6B7280' },
   section: { marginBottom: 24 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '700',
     color: '#6B7280',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 10,
   },
-  editLink: { fontSize: 14, color: '#2563EB', fontWeight: '600' },
   card: {
     backgroundColor: '#fff',
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 16,
     shadowColor: '#000',
     shadowOpacity: 0.06,
@@ -240,35 +218,21 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   infoLabel: { fontSize: 14, color: '#6B7280' },
-  infoValue: { fontSize: 14, color: '#111827', fontWeight: '600', maxWidth: '55%', textAlign: 'right' },
+  infoValue: {
+    fontSize: 14,
+    color: '#111827',
+    fontWeight: '600',
+    maxWidth: '55%',
+    textAlign: 'right',
+  },
   divider: { height: 1, backgroundColor: '#F3F4F6' },
-  hoursEditRow: {
+  menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
-    gap: 12,
   },
-  hoursField: { flex: 1 },
-  hoursLabel: { fontSize: 12, color: '#9CA3AF', marginBottom: 4, fontWeight: '600' },
-  hoursInput: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 40,
-    fontSize: 15,
-    color: '#111827',
-  },
-  hoursDash: { fontSize: 18, color: '#D1D5DB', marginTop: 16 },
-  saveButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  saveButtonDisabled: { opacity: 0.6 },
-  saveButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  menuIcon: { fontSize: 18, marginRight: 12 },
+  menuTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
   logoutButton: {
     backgroundColor: '#EFF6FF',
     borderRadius: 12,

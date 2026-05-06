@@ -8,6 +8,29 @@ const SOCKET_URL =
 
 let socket: Socket | null = null;
 
+// ---------------------------------------------------------------------------
+// Tiny event-emitter for "order:rescinded" subscribers (e.g. IncomingOrderModal)
+// ---------------------------------------------------------------------------
+type RescindCallback = (orderId: string) => void;
+const rescindSubscribers = new Set<RescindCallback>();
+
+export function onOrderRescinded(cb: RescindCallback): () => void {
+  rescindSubscribers.add(cb);
+  return () => {
+    rescindSubscribers.delete(cb);
+  };
+}
+
+function emitRescinded(orderId: string): void {
+  rescindSubscribers.forEach((cb) => {
+    try {
+      cb(orderId);
+    } catch (err) {
+      console.warn('[Socket] rescind subscriber threw:', err);
+    }
+  });
+}
+
 /**
  * Initialises the Socket.io connection for the driver app.
  * Safe to call multiple times — will reuse an existing connected socket.
@@ -41,11 +64,29 @@ export function initSocket(token: string): Socket {
   });
 
   // ---------------------------------------------------------------------------
-  // Incoming delivery request
+  // Incoming delivery offer — broadcast (top-3) or single-driver assignment.
+  // Backend may emit either "order:assigned" or "order:offered"; treat the
+  // same on the client.
   // ---------------------------------------------------------------------------
-  socket.on('order:assigned', (payload: { orderId: string }) => {
+  const handleOffer = (payload: { orderId: string }) => {
+    if (!payload?.orderId) return;
     const { setIncomingOrder } = useDriverStore.getState();
     setIncomingOrder(payload.orderId);
+  };
+
+  socket.on('order:assigned', handleOffer);
+  socket.on('order:offered', handleOffer);
+
+  // ---------------------------------------------------------------------------
+  // Offer rescinded — another driver accepted first.
+  // ---------------------------------------------------------------------------
+  socket.on('order:rescinded', (payload: { orderId: string }) => {
+    if (!payload?.orderId) return;
+    const { incomingOrderId, clearIncomingOrder } = useDriverStore.getState();
+    if (incomingOrderId === payload.orderId) {
+      clearIncomingOrder();
+    }
+    emitRescinded(payload.orderId);
   });
 
   // ---------------------------------------------------------------------------

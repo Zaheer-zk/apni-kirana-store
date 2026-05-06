@@ -324,3 +324,41 @@ enum DiscountType {
   FLAT
   PERCENT
 }
+
+// Audit log for sensitive admin actions: manual assignments, suspensions,
+// promo edits, refund issuance, etc.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String   // user id of admin
+  action     String   // e.g. "ORDER_ASSIGN_STORE", "STORE_SUSPEND"
+  targetType String?  // "Order" | "Store" | "Driver" | "User" | "Promo"
+  targetId   String?
+  before     Json?    // state before change (optional)
+  after      Json?    // state after change (optional)
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+// Delivery zones — admin-configurable per city/area (radius + fee structure).
+// Used for surge pricing, geofencing future expansion zones.
+model Zone {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  city            String
+  centerLat       Float
+  centerLng       Float
+  radiusKm        Float    @default(5)
+  baseDeliveryFee Float    @default(30)
+  perKmFee        Float    @default(0)
+  commissionRate  Float    @default(0.10) // 10%
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([city])
+  @@index([isActive])
+}

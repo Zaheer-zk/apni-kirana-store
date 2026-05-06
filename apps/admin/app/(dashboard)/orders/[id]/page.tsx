@@ -19,6 +19,7 @@ import {
   X,
   KeyRound,
   Star,
+  RefreshCcw,
 } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -172,6 +173,9 @@ export default function OrderDetailPage({
   const [storeChoice, setStoreChoice] = useState('');
   const [driverChoice, setDriverChoice] = useState('');
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundError, setRefundError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -276,6 +280,36 @@ export default function OrderDetailPage({
     },
   });
 
+  const refundMutation = useMutation({
+    mutationFn: async (reason: string) => {
+      const body: Record<string, unknown> = {};
+      if (reason.trim()) body.reason = reason.trim();
+      const res = await api.put<{ success: boolean; data: OrderDetail }>(
+        `/api/v1/admin/orders/${id}/refund`,
+        body
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-order', id] });
+      setRefundOpen(false);
+      setRefundReason('');
+      setRefundError(null);
+      setToast({ id: Date.now(), type: 'success', message: 'Refund issued successfully.' });
+    },
+    onError: (err: unknown) => {
+      const e = err as {
+        response?: { status?: number; data?: { error?: { message?: string } } };
+      };
+      const message = e?.response?.data?.error?.message ?? 'Failed to issue refund.';
+      if (e?.response?.status === 409) {
+        setRefundError(message);
+      } else {
+        setRefundError(message);
+      }
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-6 animate-pulse">
@@ -369,12 +403,40 @@ export default function OrderDetailPage({
               timeStyle: 'short',
             })}
           </span>
+          {data.paymentStatus && (
+            <span
+              className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                data.paymentStatus === 'REFUNDED'
+                  ? 'bg-orange-50 text-orange-700 border-orange-200'
+                  : data.paymentStatus === 'PAID'
+                    ? 'bg-green-50 text-green-700 border-green-200'
+                    : 'bg-gray-100 text-gray-600 border-gray-200'
+              }`}
+            >
+              {data.paymentStatus}
+            </span>
+          )}
         </div>
-        <div className="text-right">
-          <p className="text-xs uppercase tracking-wider text-gray-400">Total</p>
-          <p className="text-xl font-bold text-primary">
-            ₹{data.total.toFixed(2)}
-          </p>
+        <div className="flex items-center gap-4">
+          {data.paymentStatus !== 'REFUNDED' && (
+            <button
+              onClick={() => {
+                setRefundReason('');
+                setRefundError(null);
+                setRefundOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100"
+            >
+              <RefreshCcw className="h-3.5 w-3.5" />
+              Issue refund
+            </button>
+          )}
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wider text-gray-400">Total</p>
+            <p className="text-xl font-bold text-primary">
+              ₹{data.total.toFixed(2)}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -642,6 +704,98 @@ export default function OrderDetailPage({
           })}
         </ol>
       </div>
+
+      {/* Refund modal */}
+      {refundOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-900/50 p-4 sm:items-center">
+          <div className="card w-full max-w-md p-6">
+            <div className="mb-4 flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600">
+                  <RefreshCcw className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Issue refund
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    Refund ₹{data.total.toFixed(2)} to the customer
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (refundMutation.isPending) return;
+                  setRefundOpen(false);
+                  setRefundError(null);
+                }}
+                className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                disabled={refundMutation.isPending}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-sm text-gray-700">
+                This will mark the payment as <strong>REFUNDED</strong>
+                {data.status !== OrderStatus.DELIVERED && (
+                  <> and <strong>cancel the order</strong></>
+                )}
+                . The customer will be notified. This action is logged.
+              </p>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Reason (optional but recommended)
+                </label>
+                <textarea
+                  className="input min-h-[80px]"
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  placeholder="e.g. Customer reported missing items"
+                  maxLength={500}
+                  disabled={refundMutation.isPending}
+                />
+              </div>
+
+              {refundError && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <span>{refundError}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRefundOpen(false);
+                    setRefundError(null);
+                  }}
+                  className="btn-secondary"
+                  disabled={refundMutation.isPending}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => refundMutation.mutate(refundReason)}
+                  disabled={refundMutation.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-red-600 bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                >
+                  {refundMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCcw className="h-4 w-4" />
+                  )}
+                  Confirm refund
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (

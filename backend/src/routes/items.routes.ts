@@ -198,4 +198,84 @@ router.put(
   },
 );
 
+// ─── Bulk CSV import (store owner) ───────────────────────────────────────────
+// Body: { csv: string }
+// Headers expected: catalogName,price,stockQty,isAvailable
+// catalogName must match an existing CatalogItem.name (admin-managed master).
+import { parseCsv } from '../utils/csv';
+
+router.post(
+  '/bulk-import',
+  authenticate,
+  authorize('STORE_OWNER'),
+  async (req: Request, res: Response) => {
+    try {
+      const myStore = await prisma.store.findUnique({ where: { ownerId: req.user!.id } });
+      if (!myStore) return sendError(res, 'No store found for this owner', 404);
+
+      const csv = (req.body?.csv as string | undefined) ?? '';
+      if (!csv.trim()) return sendError(res, 'csv field required', 400);
+
+      const { rows, errors } = parseCsv<{ catalogName: string; price: number; stockQty: number; isAvailable: boolean }>(
+        csv,
+        (rec, line) => {
+          if (!rec.catalogName) throw new Error(`Line ${line}: catalogName required`);
+          const price = parseFloat(rec.price);
+          if (!isFinite(price) || price <= 0) throw new Error(`Line ${line}: price must be > 0`);
+          const stockQty = parseInt(rec.stockQty, 10);
+          if (!isFinite(stockQty) || stockQty < 0) throw new Error(`Line ${line}: stockQty must be >= 0`);
+          return {
+            catalogName: rec.catalogName.trim(),
+            price,
+            stockQty,
+            isAvailable: rec.isAvailable ? rec.isAvailable.toLowerCase() !== 'false' : true,
+          };
+        },
+      );
+
+      // Resolve catalog names → ids in one query
+      const catalogItems = await prisma.catalogItem.findMany({
+        where: { name: { in: rows.map((r) => r.catalogName) } },
+        select: { id: true, name: true },
+      });
+      const catalogByName = new Map(catalogItems.map((c) => [c.name, c.id]));
+
+      let upserted = 0;
+      const failures: Array<{ row: string; error: string }> = [];
+
+      for (const r of rows) {
+        const catalogItemId = catalogByName.get(r.catalogName);
+        if (!catalogItemId) {
+          failures.push({ row: r.catalogName, error: 'Catalog item not found in master list' });
+          continue;
+        }
+        try {
+          await prisma.storeItem.upsert({
+            where: { storeId_catalogItemId: { storeId: myStore.id, catalogItemId } },
+            create: {
+              storeId: myStore.id, catalogItemId,
+              price: r.price, stockQty: r.stockQty, isAvailable: r.isAvailable,
+            },
+            update: {
+              price: r.price, stockQty: r.stockQty, isAvailable: r.isAvailable,
+            },
+          });
+          upserted++;
+        } catch (err) {
+          failures.push({ row: r.catalogName, error: (err as Error).message });
+        }
+      }
+
+      return sendSuccess(
+        res,
+        { processed: rows.length, upserted, parseErrors: errors, upsertFailures: failures },
+        `${upserted} inventory rows imported`,
+      );
+    } catch (err) {
+      console.error('[Items] bulk-import error:', err);
+      return sendError(res, 'Failed to import inventory', 500);
+    }
+  },
+);
+
 export default router;

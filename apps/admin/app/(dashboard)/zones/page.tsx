@@ -1,6 +1,17 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
+
+// Leaflet uses window/document at module scope — must be client-only
+const ZoneMapPicker = dynamic(() => import('@/components/ZoneMapPicker'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[320px] items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-500">
+      Loading map…
+    </div>
+  ),
+});
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Plus,
@@ -439,6 +450,28 @@ export default function ZonesPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Pin zone center on map
+                </label>
+                <p className="mb-2 text-xs text-gray-500">
+                  Click anywhere or drag the marker. The green circle shows the
+                  delivery radius.
+                </p>
+                <ZoneMapPicker
+                  lat={Number(form.centerLat) || 28.6315}
+                  lng={Number(form.centerLng) || 77.2167}
+                  radiusKm={Number(form.radiusKm) || 5}
+                  onChange={({ lat, lng }) =>
+                    setForm((f) => ({
+                      ...f,
+                      centerLat: String(lat.toFixed(6)),
+                      centerLng: String(lng.toFixed(6)),
+                    }))
+                  }
+                />
+              </div>
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-600">
@@ -453,7 +486,7 @@ export default function ZonesPage() {
                       setForm((f) => ({ ...f, centerLat: e.target.value }))
                     }
                     required
-                    placeholder="19.0760"
+                    placeholder="28.6315"
                   />
                 </div>
                 <div>
@@ -469,7 +502,7 @@ export default function ZonesPage() {
                       setForm((f) => ({ ...f, centerLng: e.target.value }))
                     }
                     required
-                    placeholder="72.8777"
+                    placeholder="77.2167"
                   />
                 </div>
                 <div>

@@ -11,9 +11,9 @@
 
 | Metric       | Count              |
 | ------------ | ------------------ |
-| ✅ Completed | **120** items      |
-| ❌ Remaining | **85** items       |
-| **Overall**  | **~58% complete**  |
+| ✅ Completed | **125** items      |
+| ❌ Remaining | **80** items       |
+| **Overall**  | **~61% complete**  |
 
 | Phase                         | Status     | Notes                                                         |
 | ----------------------------- | ---------- | ------------------------------------------------------------- |
@@ -324,7 +324,7 @@
 
 - ✅ Order management with status + date filters
 - ❌ Dispute resolution: flag orders, add notes, issue refunds
-- ❌ Promo code creation (flat or %, expiry, usage limits)
+- ✅ Promo code creation (flat or %, expiry, usage limits)
 - ❌ Zone configuration: delivery radius per city/area
 - ✅ Commission & delivery fee settings page
 - ✅ Analytics dashboard with stat cards + charts

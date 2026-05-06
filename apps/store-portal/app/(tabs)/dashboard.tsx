@@ -101,15 +101,27 @@ export default function DashboardScreen() {
 
   const { data: stats, isLoading: statsLoading } = useQuery<StoreDashboardStats>({
     queryKey: ['storeDashboardStats'],
-    queryFn: () =>
-      api.get<StoreDashboardStats>('/api/v1/stores/stats/today').then((r) => r.data),
+    queryFn: async () => {
+      const r = await api.get('/api/v1/stores/stats/today');
+      const inner = (r.data as { data?: StoreDashboardStats }).data ?? r.data;
+      return (inner ?? {}) as StoreDashboardStats;
+    },
     refetchInterval: 30_000,
   });
 
   const { data: activeOrders, isLoading: ordersLoading } = useQuery<StoreOrder[]>({
     queryKey: ['storeActiveOrders'],
-    queryFn: () =>
-      api.get<StoreOrder[]>('/api/v1/stores/orders/active').then((r) => r.data),
+    queryFn: async () => {
+      // Backend returns { success, data: [...] } — unwrap before .map
+      const r = await api.get('/api/v1/stores/orders/active');
+      const payload = r.data as unknown;
+      if (Array.isArray(payload)) return payload as StoreOrder[];
+      if (payload && typeof payload === 'object') {
+        const o = payload as { data?: unknown };
+        if (Array.isArray(o.data)) return o.data as StoreOrder[];
+      }
+      return [];
+    },
     refetchInterval: 15_000,
   });
 

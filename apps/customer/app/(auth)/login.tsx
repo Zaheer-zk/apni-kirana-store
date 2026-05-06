@@ -109,16 +109,43 @@ export default function LoginScreen() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.post<VerifyOtpResponse>('/api/v1/auth/verify-otp', {
-        phone,
-        otp: otpString,
-      });
-      const { user, accessToken, refreshToken } = res.data;
+      const res = await apiClient.post<{ success: boolean; data: VerifyOtpResponse; error?: string }>(
+        '/api/v1/auth/verify-otp',
+        { phone, otp: otpString }
+      );
+      const payload = res.data?.data;
+      if (!payload?.accessToken || !payload?.refreshToken || !payload?.user) {
+        throw new Error(res.data?.error ?? 'Invalid response from server');
+      }
+      const { user, accessToken, refreshToken } = payload;
       await SecureStore.setItemAsync('accessToken', accessToken);
       await SecureStore.setItemAsync('refreshToken', refreshToken);
       await SecureStore.setItemAsync('user', JSON.stringify(user));
       setAuth(user, accessToken);
-      router.replace('/(tabs)/home');
+
+      // Check if user has any saved addresses; first-time users go through onboarding.
+      let hasAddress = false;
+      try {
+        const addrRes = await apiClient.get('/api/v1/addresses');
+        const data = addrRes.data;
+        let list: unknown[] = [];
+        if (Array.isArray(data)) {
+          list = data;
+        } else if (data && typeof data === 'object') {
+          const o = data as { data?: unknown };
+          if (Array.isArray(o.data)) list = o.data;
+        }
+        hasAddress = list.length > 0;
+      } catch {
+        // If the lookup fails, fall back to home rather than blocking the user.
+        hasAddress = true;
+      }
+
+      if (hasAddress) {
+        router.replace('/(tabs)/home');
+      } else {
+        router.replace('/onboarding/location');
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Invalid OTP. Please try again.';

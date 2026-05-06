@@ -19,6 +19,7 @@ interface OrderRow {
   customerName: string;
   storeName: string;
   driverName: string | null;
+  itemCount: number;
 }
 
 interface OrdersResponse {
@@ -32,6 +33,8 @@ interface OrdersResponse {
     customer?: { name: string | null; phone: string };
     store?: { name: string };
     driver?: { user?: { name: string | null } } | null;
+    items?: unknown[];
+    _count?: { items?: number };
   }>;
   total: number;
   page: number;
@@ -76,6 +79,7 @@ export default function OrdersPage() {
         customerName: o.customer?.name ?? o.customer?.phone ?? '—',
         storeName: o.store?.name ?? '—',
         driverName: o.driver?.user?.name ?? null,
+        itemCount: o._count?.items ?? o.items?.length ?? 0,
       }));
     },
   });
@@ -111,7 +115,7 @@ export default function OrdersPage() {
       key: 'items',
       header: 'Items',
       render: (o) => (
-        <span className="text-gray-700">{o.items.length}</span>
+        <span className="text-gray-700">{o.itemCount}</span>
       ),
     },
     {

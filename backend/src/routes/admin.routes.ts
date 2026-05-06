@@ -273,6 +273,7 @@ router.get('/orders', async (req: Request, res: Response) => {
           customer: { select: { name: true, phone: true } },
           store: { select: { name: true } },
           driver: { include: { user: { select: { name: true } } } },
+          _count: { select: { items: true } },
         },
         skip,
         take: limit,

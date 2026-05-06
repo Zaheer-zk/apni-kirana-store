@@ -84,11 +84,37 @@ export default function RootLayout() {
         <AuthGate>
           <Stack
             screenOptions={{
-              headerShown: false,
+              // Default: native iOS UIKit-style headers (back button, title) on every screen.
+              // Tabs/auth/onboarding screens override with headerShown: false in their own layouts.
+              headerShown: true,
+              headerLargeTitle: false,
+              headerTransparent: true,
+              headerBlurEffect: 'systemChromeMaterial',
+              headerStyle: { backgroundColor: 'transparent' },
+              headerTintColor: colors.primary,
+              headerTitleStyle: { color: colors.textPrimary },
+              headerBackTitle: 'Back',
+              headerBackButtonDisplayMode: 'minimal',
               contentStyle: { backgroundColor: colors.background },
-              animation: 'fade',
+              animation: 'default',
             }}
-          />
+          >
+            {/* Top-level groups own their own headers/tabs */}
+            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+            {/* Detail / modal style routes use the native header */}
+            <Stack.Screen name="item/[id]" options={{ title: 'Item details' }} />
+            <Stack.Screen name="cart" options={{ title: 'Cart', presentation: 'modal' }} />
+            <Stack.Screen name="order/[id]" options={{ title: 'Order tracking' }} />
+            <Stack.Screen name="account/profile" options={{ headerShown: false }} />
+            <Stack.Screen name="account/addresses" options={{ headerShown: false }} />
+            <Stack.Screen name="account/edit-address" options={{ headerShown: false }} />
+            <Stack.Screen name="account/notifications" options={{ headerShown: false }} />
+            <Stack.Screen name="account/help" options={{ headerShown: false }} />
+            <Stack.Screen name="account/about" options={{ headerShown: false }} />
+            <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
+          </Stack>
         </AuthGate>
       </SafeAreaProvider>
     </QueryClientProvider>

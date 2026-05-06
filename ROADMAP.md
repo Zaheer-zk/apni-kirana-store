@@ -4,7 +4,6 @@
 
 **Version:** 1.0  
 **Date:** 2026-05-06  
-**Total Estimated Duration:** ~20 Weeks
 
 ---
 
@@ -34,25 +33,28 @@
 
 ## Overview
 
-```
-Phase 0  │ Foundation & Design          │ Week 1–2
-Phase 1  │ Backend Core                 │ Week 3–6
-Phase 2  │ Customer App (MVP)           │ Week 5–10
-Phase 3  │ Store Owner Portal           │ Week 7–11
-Phase 4  │ Driver App                   │ Week 9–13
-Phase 5  │ Admin Dashboard              │ Week 11–14
-Phase 6  │ Integration & QA             │ Week 14–16
-Phase 7  │ Beta Launch                  │ Week 17–18
-Phase 8  │ Stabilization & Scale        │ Week 19–20
-```
+| Phase | Name |
+|-------|------|
+| Phase 0 | Foundation & Design |
+| Phase 1 | Backend Core |
+| Phase 2 | Customer App |
+| Phase 3 | Store Owner Portal |
+| Phase 4 | Driver App |
+| Phase 5 | Admin Dashboard |
+| Phase 6 | Integration & QA |
+| Phase 7 | Beta Launch |
+| Phase 8 | Stabilization & Scale |
+| Phase 9 | **Marketplace Pivot** (catalog model) |
+
+> Phases are organized by deliverable, not by calendar. Items get done as priorities allow.
 
 ---
 
-## Phase 0 — Foundation & Design (Week 1–2)
+## Phase 0 — Foundation & Design
 
 **Goal:** Resolve open questions, finalize decisions, set up infrastructure, produce design assets.
 
-### Week 1 — Decisions & Architecture
+### Decisions & Architecture
 
 - [ ] Finalize open questions from BRD (launch city, language, medicine flow, SLAs)
 - [x] Lock tech stack
@@ -89,7 +91,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [ ] Set up CI/CD pipeline (GitHub Actions)
 - [ ] Set up environments: `dev`, `staging`, `production`
 
-### Week 2 — Design System & UI/UX
+### Design System & UI/UX
 
 - [x] Define brand identity (colors, typography, logo)
 - [ ] Design UI in Figma — Customer App screens:
@@ -118,11 +120,11 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 
 ---
 
-## Phase 1 — Backend Core (Week 3–6)
+## Phase 1 — Backend Core
 
 **Goal:** Build all API services that power every app. Apps are built against these APIs.
 
-### Week 3 — Project Setup + Auth Service
+### Project Setup + Auth Service
 
 - [x] Initialize Node.js project (TypeScript, Express, Prisma ORM)
 - [x] Set up PostgreSQL schema (initial migrations)
@@ -136,7 +138,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Redis setup for OTP storage and session cache
 - [ ] API documentation setup (Swagger / Postman collection)
 
-### Week 4 — Store & Inventory Service
+### Store & Inventory Service
 
 - [x] Store model: name, address, lat/lng, category, status, operating hours
 - [x] Store registration and admin approval flow
@@ -147,7 +149,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Geolocation: store lookup by radius (Haversine + bounding box)
 - [ ] Cloudinary integration for image uploads
 
-### Week 5 — Order Service
+### Order Service
 
 - [x] Order model: items, customer, store, driver, status, timestamps
 - [x] Order placement API
@@ -164,7 +166,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Order cancellation with reason
 - [ ] Razorpay payment integration (initiate + webhook for confirmation)
 
-### Week 6 — Matching Engine + Notifications
+### Matching Engine + Notifications
 
 - [x] Store Matching Engine
   - Input: order items + customer lat/lng
@@ -188,11 +190,11 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 
 ---
 
-## Phase 2 — Customer App (Week 5–10)
+## Phase 2 — Customer App
 
 **Goal:** Fully functional customer-facing React Native app.
 
-### Week 5–6 — Setup + Auth + Navigation
+### Setup + Auth + Navigation
 
 - [x] Expo project init with TypeScript (SDK 54)
 - [x] Navigation setup (Expo Router v6 with tabs)
@@ -201,7 +203,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Auto-login on app open if token valid
 - [x] Splash screen with brand badge
 
-### Week 7 — Home, Browse, Search
+### Home, Browse, Search
 
 - [x] Home screen: category grid, popular items, nearby stores
 - [x] Category browse screen with item list
@@ -209,7 +211,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Item detail screen with sticky add-to-cart bar
 - [x] Cart management with Zustand store
 
-### Week 8 — Checkout + Order Placement
+### Checkout + Order Placement
 
 - [x] Cart review screen
 - [x] Delivery address selector
@@ -219,7 +221,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Order summary and confirm
 - [x] Order placement API call + loading/error states
 
-### Week 9 — Order Tracking
+### Order Tracking
 
 - [x] Order status screen (5-step indicator)
 - [x] Live map with driver marker (Socket.io updates)
@@ -227,7 +229,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [ ] Push notification handling (foreground + background)
 - [x] Cancel order flow (within allowed window)
 
-### Week 10 — Profile + History + Polish
+### Profile + History + Polish
 
 - [x] User profile screen with avatar, stats
 - [x] Saved addresses management
@@ -239,11 +241,11 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 
 ---
 
-## Phase 3 — Store Owner Portal (Week 7–11)
+## Phase 3 — Store Owner Portal
 
 **Goal:** Store owners can manage inventory and fulfill orders.
 
-### Week 7–8 — Setup + Onboarding + Inventory
+### Setup + Onboarding + Inventory
 
 - [x] React Native project init (SDK 54)
 - [x] Store registration form
@@ -254,7 +256,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Toggle item in/out of stock
 - [ ] CSV bulk upload for inventory
 
-### Week 9–10 — Order Management
+### Order Management
 
 - [x] Incoming order banner with 3-min countdown
 - [x] Order detail screen with items + accept/reject
@@ -262,7 +264,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Mark order as "Ready for Pickup"
 - [x] Active orders list + history
 
-### Week 11 — Earnings + Polish
+### Earnings + Polish
 
 - [x] Earnings screen with period filter
 - [ ] Operating hours settings
@@ -272,11 +274,11 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 
 ---
 
-## Phase 4 — Driver App (Week 9–13)
+## Phase 4 — Driver App
 
 **Goal:** Drivers can receive, pick up, and complete deliveries.
 
-### Week 9–10 — Setup + Onboarding + Availability
+### Setup + Onboarding + Availability
 
 - [x] React Native project init (SDK 54)
 - [x] Driver registration form
@@ -285,7 +287,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Background location tracking lib
 - [x] Emit location to backend via Socket.io
 
-### Week 11–12 — Order Assignment + Delivery Flow
+### Order Assignment + Delivery Flow
 
 - [x] Incoming order modal with 60s countdown
 - [x] Request card with addresses + earnings
@@ -296,7 +298,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Confirm delivery button
 - [x] Auto-update order status on each action
 
-### Week 13 — Earnings + Polish
+### Earnings + Polish
 
 - [x] Earnings per delivery + daily summary
 - [ ] Weekly payout history
@@ -306,11 +308,11 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 
 ---
 
-## Phase 5 — Admin Dashboard (Week 11–14)
+## Phase 5 — Admin Dashboard
 
 **Goal:** Internal tool to manage the entire platform.
 
-### Week 11–12 — Core Management
+### Core Management
 
 - [x] Next.js 15 web app init
 - [x] Admin login (phone OTP, like other roles)
@@ -318,7 +320,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [x] Store management with status tabs (Pending/Active/Suspended)
 - [x] Driver management with status tabs
 
-### Week 13–14 — Operations + Analytics
+### Operations + Analytics
 
 - [x] Order management with status + date filters
 - [ ] Dispute resolution: flag orders, add notes, issue refunds
@@ -334,11 +336,11 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 
 ---
 
-## Phase 6 — Integration & QA (Week 14–16)
+## Phase 6 — Integration & QA
 
 **Goal:** All components work together. No critical bugs before beta.
 
-### Week 14 — End-to-End Integration
+### End-to-End Integration
 
 - [x] Backend integration tests (Jest + Supertest, 8 test files)
 - [x] Frontend smoke tests (53 test files across all 4 apps)
@@ -350,7 +352,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
   - No driver → customer notified
 - [ ] All timeouts and auto-reassignment jobs verified
 
-### Week 15 — QA & Bug Fixes
+### QA & Bug Fixes
 
 - [ ] Internal QA on physical Android + iOS devices
 - [ ] Performance testing: app load time, API response times
@@ -362,7 +364,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
   - Sensitive data not logged
 - [ ] Fix all critical and high priority bugs
 
-### Week 16 — Pre-launch Checklist
+### Pre-launch Checklist
 
 - [ ] App icons, splash screens finalized
 - [ ] Play Store + App Store developer accounts set up
@@ -373,11 +375,11 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 
 ---
 
-## Phase 7 — Beta Launch (Week 17–18)
+## Phase 7 — Beta Launch
 
 **Goal:** Controlled launch with real users in a single city/zone.
 
-### Week 17 — Soft Launch
+### Soft Launch
 
 - [ ] Onboard 10–20 pilot stores manually
 - [ ] Onboard 5–10 pilot drivers
@@ -385,7 +387,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 - [ ] Monitor all orders in real-time via admin dashboard
 - [ ] Collect feedback via simple form or WhatsApp group
 
-### Week 18 — Iteration
+### Iteration
 
 - [ ] Daily bug triage from beta feedback
 - [ ] Fix top 10 most reported issues
@@ -394,7 +396,7 @@ Phase 8  │ Stabilization & Scale        │ Week 19–20
 
 ---
 
-## Phase 8 — Stabilization & Scale (Week 19–20)
+## Phase 8 — Stabilization & Scale
 
 **Goal:** Production-ready for public launch.
 
@@ -452,3 +454,78 @@ Phase 0 (Design + Infra)
 ---
 
 _Roadmap is subject to revision based on team size, scope changes, and beta feedback._
+
+---
+
+## 🚧 Phase 9 — Marketplace Pivot (NEW — high priority)
+
+**Decision (2026-05-06):** Switch from per-store inventory to a **catalog-based marketplace** model. The customer browses a unified product catalog; the system finds the nearest store carrying each item; drivers see only the dropoff coordinates and bill, never customer PII.
+
+### Why
+- Current model: each store defines its own items (duplicated names, no cross-store browsing)
+- Pivot: single canonical catalog → cleaner UX, easier matching, better SEO
+- Privacy: drivers should not learn customer name/phone — only dropoff lat/lng + items + amount
+
+### Schema changes
+
+- [ ] **New model `CatalogItem`** (admin-managed master products)
+  - `id, name, description, category, defaultUnit, imageUrl, isActive`
+- [ ] **New model `StoreItem`** (which catalog items each store carries)
+  - `id, storeId, catalogItemId, price, stockQty, isAvailable`
+  - unique(storeId, catalogItemId)
+- [ ] **Deprecate `Item` model** → rename to `StoreItem`, link to `CatalogItem`
+- [ ] **Migration**: lift unique item names from existing `Item` rows into `CatalogItem`, then convert `Item.name/category/unit` to FK
+- [ ] **Add `_count` indexes** on Store ↔ StoreItem and CatalogItem ↔ StoreItem
+
+### Backend endpoints
+
+- [ ] `GET /api/v1/catalog` — paginated catalog (public)
+- [ ] `GET /api/v1/catalog/:id/stores` — list stores carrying this item, sorted by distance, with price + stock
+- [ ] `GET /api/v1/catalog/search?q=...` — full-text search across catalog
+- [ ] `POST /api/v1/admin/catalog` — admin creates catalog item
+- [ ] `PUT /api/v1/admin/catalog/:id` — admin edits
+- [ ] `DELETE /api/v1/admin/catalog/:id`
+- [ ] `GET /api/v1/stores/me/items` — store owner: their catalog selections
+- [ ] `POST /api/v1/stores/me/items` — store owner adds catalog item to their inventory `{ catalogItemId, price, stockQty }`
+- [ ] `PUT /api/v1/stores/me/items/:id` — update price/stock
+- [ ] `DELETE /api/v1/stores/me/items/:id` — remove from inventory
+
+### Order flow change
+
+- [ ] `POST /api/v1/orders` accepts catalog items: `[{ catalogItemId, qty }]`
+- [ ] Matching engine: finds nearest store with all (or most) items in stock
+- [ ] If multi-store split needed → propose to customer or pick best score (existing logic)
+- [ ] Lock prices at order-creation time (StoreItem.price snapshotted into OrderItem.price)
+
+### Privacy
+
+- [ ] **Driver order view** must omit `customer.name`, `customer.phone`. Only show:
+  - Pickup: store name + address + items
+  - Dropoff: lat/lng + landmark text only (no name)
+  - Bill: total + payment method (COD or PAID)
+  - Verification: 4-digit dropoff OTP (entered by anyone at the location)
+- [ ] **Customer order view** continues to show driver name + vehicle for trust, but hides driver phone (in-app call only via masked number — placeholder for Twilio masked calls)
+- [ ] Add `dropoffOtp` field to Order model (auto-generated, shown to customer post-pickup)
+- [ ] Driver "Confirm Delivery" requires entering this 4-digit OTP
+
+### Customer app
+
+- [ ] New "Catalog" home screen: browse all products (not per-store)
+- [ ] Item detail page now shows "Available at 3 stores nearby" — picks the closest by default
+- [ ] Cart can mix items from multiple stores → shows split delivery in summary
+- [ ] Address picker integrated for dropoff
+
+### Store Portal
+
+- [ ] "Add from catalog" flow: search master catalog, set price + stock
+- [ ] "My products" page replaces "My inventory"
+- [ ] Bulk price update screen
+
+### Admin dashboard
+
+- [ ] **New top nav: Catalog** — manage master product list, categories, images
+- [ ] CSV bulk upload for catalog items
+- [ ] Approve catalog item suggestions (if store-owners can suggest new items)
+
+### Estimated effort
+Medium-high — ~2 weeks for one engineer. Migration must be careful to preserve existing orders. Recommend doing this BEFORE beta launch (Phase 7) so customers don't have to relearn the UX.

@@ -143,28 +143,49 @@ model Store {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  owner  User    @relation(fields: [ownerId], references: [id])
-  items  Item[]
+  owner  User        @relation(fields: [ownerId], references: [id])
+  items  StoreItem[]
   orders Order[]
 
   @@index([lat, lng])
 }
 
-model Item {
+// Master product catalog managed by ADMIN.
+// Stores select which catalog items they carry and set their own prices via StoreItem.
+model CatalogItem {
   id          String       @id @default(cuid())
-  storeId     String
-  name        String
+  name        String       @unique
   description String?
   category    ItemCategory
-  price       Float
-  unit        String
-  stockQty    Int          @default(0)
+  defaultUnit String
   imageUrl    String?
-  isAvailable Boolean      @default(true)
+  isActive    Boolean      @default(true)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  storeItems StoreItem[]
+
+  @@index([category])
+  @@index([name])
+}
+
+// Store's selection from the master catalog with their own price + stock.
+model StoreItem {
+  id            String   @id @default(cuid())
+  storeId       String
+  catalogItemId String
+  price         Float
+  stockQty      Int      @default(0)
+  isAvailable   Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  store       Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  catalogItem CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, catalogItemId])
+  @@index([storeId])
+  @@index([catalogItemId])
 }
 
 model Order {
@@ -184,6 +205,7 @@ model Order {
   notes             String?
   rejectionReason   String?
   cancelReason      String?
+  dropoffOtp        String?       // 4-digit OTP for driver-to-customer handoff verification
   storeAcceptedAt   DateTime?
   driverAssignedAt  DateTime?
   pickedUpAt        DateTime?

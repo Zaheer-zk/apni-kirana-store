@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -147,25 +147,21 @@ export default function ItemDetailScreen() {
             <Text style={styles.heroEmoji}>{CATEGORY_EMOJI[item.category]}</Text>
           )}
 
-          <SafeAreaView edges={['top']} style={styles.heroOverlay} pointerEvents="box-none">
-            <View style={styles.heroActions}>
-              <TouchableOpacity
-                style={styles.circleBtn}
-                activeOpacity={0.7}
-                onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/home'))}
-              >
-                <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.circleBtn}
-                activeOpacity={0.7}
-                onPress={() => router.push('/cart')}
-              >
-                <Ionicons name="cart-outline" size={22} color={colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-          </SafeAreaView>
+          {/* Native iOS header (back button + cart icon) is provided by Stack.Screen below */}
+          <Stack.Screen
+            options={{
+              title: '',
+              headerRight: () => (
+                <TouchableOpacity
+                  hitSlop={12}
+                  onPress={() => router.push('/cart')}
+                  style={{ paddingHorizontal: 4 }}
+                >
+                  <Ionicons name="cart-outline" size={24} color={colors.primary} />
+                </TouchableOpacity>
+              ),
+            }}
+          />
         </View>
 
         {/* Body card */}

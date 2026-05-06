@@ -145,8 +145,7 @@ export default function CartScreen() {
 
   if (items.length === 0) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <Header title="Cart" />
+      <View style={styles.safe}>
         <EmptyState
           emoji="🛒"
           title="Your cart is empty"
@@ -154,16 +153,12 @@ export default function CartScreen() {
           actionLabel="Browse stores"
           onAction={() => router.replace('/(tabs)/home')}
         />
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
     <View style={styles.safe}>
-      <SafeAreaView edges={['top']} style={{ backgroundColor: colors.card }}>
-        <Header title="Your Cart" subtitle={`${items.length} ${items.length === 1 ? 'item' : 'items'}`} />
-      </SafeAreaView>
-
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}

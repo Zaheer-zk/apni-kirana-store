@@ -17,9 +17,7 @@ import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useCartStore } from '@/store/cart.store';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
-import { OrderStatus, type Address, type Order } from '@aks/shared';
-
-const APP_VERSION = '1.0.0';
+import { type Address, type Order } from '@aks/shared';
 
 interface MenuItem {
   icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
@@ -27,6 +25,7 @@ interface MenuItem {
   onPress: () => void;
   iconBg?: string;
   iconColor?: string;
+  trailing?: string;
 }
 
 interface MenuSection {
@@ -34,12 +33,26 @@ interface MenuSection {
   items: MenuItem[];
 }
 
+function unwrapList<T>(payload: unknown, listKey?: string): T[] {
+  if (Array.isArray(payload)) return payload as T[];
+  if (payload && typeof payload === 'object') {
+    const o = payload as Record<string, unknown>;
+    if (Array.isArray(o.data)) return o.data as T[];
+    if (o.data && typeof o.data === 'object') {
+      const inner = o.data as Record<string, unknown>;
+      if (listKey && Array.isArray(inner[listKey])) return inner[listKey] as T[];
+      if (Array.isArray(inner.items)) return inner.items as T[];
+    }
+    if (listKey && Array.isArray(o[listKey])) return o[listKey] as T[];
+    if (Array.isArray(o.items)) return o.items as T[];
+  }
+  return [];
+}
+
 async function fetchOrders(): Promise<Order[]> {
   try {
-    const res = await apiClient.get<{ data: Order[] } | Order[]>('/api/v1/orders/mine');
-    const payload = res.data as unknown;
-    if (Array.isArray(payload)) return payload as Order[];
-    return ((payload as { data?: Order[] }).data ?? []) as Order[];
+    const res = await apiClient.get('/api/v1/orders/mine');
+    return unwrapList<Order>(res.data, 'orders');
   } catch {
     return [];
   }
@@ -47,16 +60,19 @@ async function fetchOrders(): Promise<Order[]> {
 
 async function fetchAddresses(): Promise<Address[]> {
   try {
-    const res = await apiClient.get<{ data: Address[] } | Address[]>('/api/v1/addresses');
-    const payload = res.data as unknown;
-    if (Array.isArray(payload)) return payload as Address[];
-    return ((payload as { data?: Address[] }).data ?? []) as Address[];
+    const res = await apiClient.get('/api/v1/addresses');
+    return unwrapList<Address>(res.data);
   } catch {
     return [];
   }
 }
 
-function StatTile({ label, value, icon, color }: {
+function StatTile({
+  label,
+  value,
+  icon,
+  color,
+}: {
   label: string;
   value: number | string;
   icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
@@ -89,6 +105,9 @@ function MenuRow({ item, isLast }: { item: MenuItem; isLast: boolean }) {
         <Ionicons name={item.icon} size={18} color={item.iconColor ?? colors.primary} />
       </View>
       <Text style={styles.menuLabel}>{item.label}</Text>
+      {item.trailing ? (
+        <Text style={styles.menuTrailing}>{item.trailing}</Text>
+      ) : null}
       <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
     </TouchableOpacity>
   );
@@ -104,7 +123,6 @@ export default function ProfileScreen() {
 
   const totalOrders = ordersQuery.data?.length ?? 0;
   const savedAddresses = addressesQuery.data?.length ?? 0;
-  const deliveredOrders = ordersQuery.data?.filter((o) => o.status === OrderStatus.DELIVERED).length ?? 0;
 
   function handleLogout() {
     Alert.alert('Log out', 'Are you sure you want to log out?', [
@@ -124,84 +142,55 @@ export default function ProfileScreen() {
     ]);
   }
 
-  function notImplemented(feature: string) {
-    return () => Alert.alert(feature, 'This feature will be available soon.');
-  }
-
   const sections: MenuSection[] = [
     {
-      title: 'Account',
+      title: 'My Account',
       items: [
         {
           icon: 'location-outline',
           label: 'My Addresses',
-          onPress: notImplemented('Addresses'),
+          onPress: () => router.push('/account/addresses'),
           iconBg: colors.primaryLight,
           iconColor: colors.primary,
+          trailing: savedAddresses ? `${savedAddresses}` : undefined,
         },
         {
-          icon: 'wallet-outline',
-          label: 'My Wallet',
-          onPress: notImplemented('Wallet'),
-          iconBg: colors.warningLight,
-          iconColor: '#B45309',
-        },
-        {
-          icon: 'heart-outline',
-          label: 'Favorites',
-          onPress: notImplemented('Favorites'),
-          iconBg: colors.errorLight,
-          iconColor: colors.error,
-        },
-      ],
-    },
-    {
-      title: 'Help',
-      items: [
-        {
-          icon: 'help-circle-outline',
-          label: 'Help Center',
-          onPress: notImplemented('Help Center'),
+          icon: 'person-outline',
+          label: 'Edit Profile',
+          onPress: () => router.push('/account/profile'),
           iconBg: colors.infoLight,
           iconColor: colors.info,
         },
         {
-          icon: 'document-text-outline',
-          label: 'Terms & Conditions',
-          onPress: notImplemented('Terms'),
-          iconBg: colors.gray100,
-          iconColor: colors.gray700,
-        },
-        {
-          icon: 'shield-checkmark-outline',
-          label: 'Privacy Policy',
-          onPress: notImplemented('Privacy'),
-          iconBg: colors.gray100,
-          iconColor: colors.gray700,
+          icon: 'notifications-outline',
+          label: 'Notifications',
+          onPress: () => router.push('/account/notifications'),
+          iconBg: colors.warningLight,
+          iconColor: '#B45309',
         },
       ],
     },
     {
-      title: 'App',
+      title: 'Help & More',
       items: [
         {
-          icon: 'star-outline',
-          label: 'Rate App',
-          onPress: notImplemented('Rate'),
-          iconBg: colors.warningLight,
-          iconColor: '#B45309',
+          icon: 'chatbubble-ellipses-outline',
+          label: 'Help & Support',
+          onPress: () => router.push('/account/help'),
+          iconBg: colors.successLight,
+          iconColor: colors.success,
         },
         {
-          icon: 'share-social-outline',
-          label: 'Share App',
-          onPress: notImplemented('Share'),
+          icon: 'information-circle-outline',
+          label: 'About',
+          onPress: () => router.push('/account/about'),
           iconBg: colors.purpleLight,
           iconColor: colors.purple,
         },
         {
-          icon: 'information-circle-outline',
-          label: `App version ${APP_VERSION}`,
-          onPress: () => {},
+          icon: 'document-text-outline',
+          label: 'Terms & Privacy',
+          onPress: () => router.push('/account/about'),
           iconBg: colors.gray100,
           iconColor: colors.gray700,
         },
@@ -211,33 +200,39 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.xxxl }}>
-        {/* Profile head */}
-        <View style={styles.profileHead}>
-          <Avatar name={user?.name} size={72} />
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName} numberOfLines={1}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: spacing.xxxl }}
+      >
+        {/* Hero card */}
+        <View style={styles.heroCard}>
+          <Avatar name={user?.name} size={64} />
+          <View style={styles.heroInfo}>
+            <Text style={styles.heroName} numberOfLines={1}>
               {user?.name ?? 'Customer'}
             </Text>
-            <Text style={styles.profilePhone}>{user?.phone ?? ''}</Text>
+            <Text style={styles.heroPhone}>+91 {user?.phone ?? ''}</Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push('/account/profile')}
+              style={styles.editLink}
+            >
+              <Ionicons name="pencil" size={12} color={colors.primary} />
+              <Text style={styles.editLinkText}>Edit profile</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={styles.editBtn}
-            activeOpacity={0.7}
-            onPress={notImplemented('Edit profile')}
-          >
-            <Ionicons name="pencil" size={16} color={colors.primary} />
-          </TouchableOpacity>
         </View>
 
-        {/* Stat row */}
+        {/* Stats */}
         <View style={styles.statRow}>
           <StatTile label="Orders" value={totalOrders} icon="bag-handle" color={colors.primary} />
-          <StatTile label="Delivered" value={deliveredOrders} icon="checkmark-done" color={colors.success} />
-          <StatTile label="Addresses" value={savedAddresses} icon="location" color={colors.info} />
+          <View style={styles.statDivider} />
+          <StatTile label="Saved" value={savedAddresses} icon="location" color={colors.info} />
+          <View style={styles.statDivider} />
+          <StatTile label="Rewards" value="₹0" icon="gift" color={colors.warning} />
         </View>
 
-        {/* Menu sections */}
+        {/* Sections */}
         {sections.map((section) => (
           <View key={section.title} style={styles.section}>
             <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -275,44 +270,60 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  profileHead: {
+  heroCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
+    margin: spacing.lg,
+    padding: spacing.lg,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
     gap: spacing.lg,
+    ...shadow.small,
   },
-  profileInfo: {
+  heroInfo: {
     flex: 1,
   },
-  profileName: {
-    fontSize: fontSize.xl,
+  heroName: {
+    fontSize: fontSize.lg,
     fontWeight: '800',
     color: colors.textPrimary,
   },
-  profilePhone: {
+  heroPhone: {
     marginTop: 2,
     fontSize: fontSize.sm,
     color: colors.textSecondary,
   },
-  editBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primaryLight,
+  editLink: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 4,
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  editLinkText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.primary,
   },
   statRow: {
     flexDirection: 'row',
     marginHorizontal: spacing.lg,
     backgroundColor: colors.card,
     borderRadius: radius.lg,
-    padding: spacing.md,
+    paddingVertical: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
     ...shadow.small,
+  },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
   },
   statTile: {
     flex: 1,
@@ -328,7 +339,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   statValue: {
-    fontSize: fontSize.xl,
+    fontSize: fontSize.lg,
     fontWeight: '800',
     color: colors.textPrimary,
   },
@@ -379,6 +390,16 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     color: colors.textPrimary,
     fontWeight: '600',
+  },
+  menuTrailing: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    backgroundColor: colors.gray100,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
   },
   logoutWrap: {
     marginTop: spacing.xl,

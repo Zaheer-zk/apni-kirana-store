@@ -79,7 +79,7 @@ interface ApiEnvelope<T> {
 }
 
 interface StatCardProps {
-  icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
+  icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
   tintColor?: string;

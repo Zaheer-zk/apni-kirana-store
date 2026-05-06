@@ -238,15 +238,25 @@ export default function CartScreen() {
           </View>
         </View>
 
-        {/* Address */}
+        {/* Address — entire card is tappable to switch */}
         <View style={styles.section}>
           <View style={styles.sectionHead}>
             <Text style={styles.sectionTitle}>Delivery Address</Text>
-            <TouchableOpacity activeOpacity={0.7}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push('/account/addresses')}
+              hitSlop={12}
+            >
               <Ionicons name="pencil" size={16} color={colors.primary} />
             </TouchableOpacity>
           </View>
-          <View style={styles.cardGroup}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={styles.cardGroup}
+            onPress={() =>
+              router.push(defaultAddress ? '/account/addresses' : '/onboarding/map-picker')
+            }
+          >
             <View style={styles.addressRow}>
               <View style={styles.addressIcon}>
                 <Ionicons name="location" size={18} color={colors.primary} />
@@ -260,18 +270,27 @@ export default function CartScreen() {
                         <Badge variant="success" text="Default" />
                       ) : null}
                     </View>
-                    <Text style={styles.addressText}>
+                    <Text style={styles.addressText} numberOfLines={3}>
                       {defaultAddress.street}, {defaultAddress.city} — {defaultAddress.pincode}
                     </Text>
+                    <Text style={styles.addressChange}>Tap to change</Text>
                   </>
                 ) : (
-                  <Text style={styles.addressText}>
-                    No saved address. Tap to add a delivery address.
-                  </Text>
+                  <>
+                    <Text style={styles.addressLabel}>Add a delivery address</Text>
+                    <Text style={styles.addressText}>
+                      Tap to pin your location on the map
+                    </Text>
+                  </>
                 )}
               </View>
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={colors.textMuted}
+              />
             </View>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* Payment */}
@@ -461,16 +480,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: spacing.md,
-    gap: spacing.md,
+    gap: spacing.sm,
+    flexWrap: 'nowrap',
   },
   thumb: {
-    width: 56,
-    height: 56,
+    width: 48,
+    height: 48,
     borderRadius: radius.sm,
     backgroundColor: colors.gray100,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    flexShrink: 0,
   },
   thumbImage: {
     width: '100%',
@@ -478,6 +499,7 @@ const styles = StyleSheet.create({
   },
   cartBody: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   itemName: {
@@ -544,6 +566,12 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '700',
     color: colors.textPrimary,
+  },
+  addressChange: {
+    marginTop: 6,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.primary,
   },
   addressText: {
     fontSize: fontSize.sm,

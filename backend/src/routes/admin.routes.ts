@@ -289,6 +289,104 @@ router.get('/orders', async (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /orders/:id — full detail (customer, store, driver, items, ratings) ─
+
+router.get('/orders/:id', async (req: Request, res: Response) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params['id'] },
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        store: { select: { id: true, name: true, ownerId: true, lat: true, lng: true, street: true, city: true } },
+        driver: { include: { user: { select: { id: true, name: true, phone: true } } } },
+        items: true,
+        deliveryAddress: true,
+        rating: true,
+      },
+    });
+    if (!order) return sendError(res, 'Order not found', 404);
+    return sendSuccess(res, order);
+  } catch (err) {
+    console.error('[Admin] get order detail error:', err);
+    return sendError(res, 'Failed to fetch order', 500);
+  }
+});
+
+// ─── PUT /orders/:id/assign-store — admin manually assigns/changes the store ─
+
+router.put('/orders/:id/assign-store', async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params['id']!;
+    const storeId = req.body?.storeId as string | undefined;
+    if (!storeId) return sendError(res, 'storeId required', 400);
+
+    const [order, store] = await Promise.all([
+      prisma.order.findUnique({ where: { id: orderId } }),
+      prisma.store.findUnique({ where: { id: storeId } }),
+    ]);
+    if (!order) return sendError(res, 'Order not found', 404);
+    if (!store) return sendError(res, 'Store not found', 404);
+    if (['DELIVERED', 'CANCELLED'].includes(order.status)) {
+      return sendError(res, `Cannot reassign a ${order.status} order`, 400);
+    }
+
+    const updated = await prisma.order.update({
+      where: { id: orderId },
+      data: { storeId, status: 'STORE_ACCEPTED', storeAcceptedAt: new Date() },
+      include: { store: { select: { name: true, ownerId: true } } },
+    });
+
+    // Notify store owner
+    await prisma.notification.create({
+      data: {
+        userId: store.ownerId,
+        title: 'Order assigned by admin',
+        body: `Order #${orderId.slice(-6)} has been manually assigned to your store. Please prepare it.`,
+      },
+    });
+    return sendSuccess(res, updated, 'Store assigned');
+  } catch (err) {
+    console.error('[Admin] assign-store error:', err);
+    return sendError(res, 'Failed to assign store', 500);
+  }
+});
+
+// ─── PUT /orders/:id/assign-driver — admin manually assigns/changes the driver ─
+
+router.put('/orders/:id/assign-driver', async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params['id']!;
+    const driverId = req.body?.driverId as string | undefined;
+    if (!driverId) return sendError(res, 'driverId required', 400);
+
+    const [order, driver] = await Promise.all([
+      prisma.order.findUnique({ where: { id: orderId } }),
+      prisma.driver.findUnique({ where: { id: driverId }, include: { user: true } }),
+    ]);
+    if (!order) return sendError(res, 'Order not found', 404);
+    if (!driver) return sendError(res, 'Driver not found', 404);
+    if (['DELIVERED', 'CANCELLED'].includes(order.status)) {
+      return sendError(res, `Cannot reassign a ${order.status} order`, 400);
+    }
+
+    const updated = await prisma.order.update({
+      where: { id: orderId },
+      data: { driverId, status: 'DRIVER_ASSIGNED', driverAssignedAt: new Date() },
+    });
+    await prisma.notification.create({
+      data: {
+        userId: driver.user.id,
+        title: 'Delivery assigned by admin',
+        body: `Order #${orderId.slice(-6)} has been manually assigned to you.`,
+      },
+    });
+    return sendSuccess(res, updated, 'Driver assigned');
+  } catch (err) {
+    console.error('[Admin] assign-driver error:', err);
+    return sendError(res, 'Failed to assign driver', 500);
+  }
+});
+
 // ─── GET /analytics ───────────────────────────────────────────────────────────
 
 router.get('/analytics', async (_req: Request, res: Response) => {

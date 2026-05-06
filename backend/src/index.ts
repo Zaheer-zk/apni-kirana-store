@@ -15,6 +15,7 @@ import { startWorkers } from './queues';
 import authRouter from './routes/auth.routes';
 import storesRouter from './routes/stores.routes';
 import itemsRouter from './routes/items.routes';
+import catalogRouter from './routes/catalog.routes';
 import ordersRouter from './routes/orders.routes';
 import driversRouter from './routes/drivers.routes';
 import adminRouter from './routes/admin.routes';
@@ -62,6 +63,7 @@ app.get('/health', (_req, res) => {
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/stores', storesRouter);
 app.use('/api/v1/items', itemsRouter);
+app.use('/api/v1/catalog', catalogRouter);
 app.use('/api/v1/orders', ordersRouter);
 app.use('/api/v1/drivers', driversRouter);
 app.use('/api/v1/admin', adminRouter);

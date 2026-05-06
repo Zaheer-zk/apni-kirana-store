@@ -128,30 +128,45 @@ router.get('/:id/items', async (req: Request, res: Response) => {
   try {
     const { category, search } = req.query;
     const page = Math.max(1, parseInt((req.query['page'] as string) || '1', 10));
-    const limit = Math.min(50, parseInt((req.query['limit'] as string) || '20', 10));
+    const limit = Math.min(100, parseInt((req.query['limit'] as string) || '50', 10));
     const skip = (page - 1) * limit;
 
+    const catalogWhere: Record<string, unknown> = {};
+    if (category) catalogWhere['category'] = category;
+    if (search) catalogWhere['name'] = { contains: search as string, mode: 'insensitive' };
+
+    const where = {
+      storeId: req.params['id'],
+      ...(Object.keys(catalogWhere).length ? { catalogItem: catalogWhere } : {}),
+    };
+
     const [items, total] = await prisma.$transaction([
-      prisma.item.findMany({
-        where: {
-          storeId: req.params['id'],
-          ...(category ? { category: category as never } : {}),
-          ...(search ? { name: { contains: search as string, mode: 'insensitive' } } : {}),
-        },
+      prisma.storeItem.findMany({
+        where,
+        include: { catalogItem: true },
         skip,
         take: limit,
-        orderBy: { name: 'asc' },
+        orderBy: { catalogItem: { name: 'asc' } },
       }),
-      prisma.item.count({
-        where: {
-          storeId: req.params['id'],
-          ...(category ? { category: category as never } : {}),
-          ...(search ? { name: { contains: search as string, mode: 'insensitive' } } : {}),
-        },
-      }),
+      prisma.storeItem.count({ where }),
     ]);
 
-    return sendSuccess(res, { items, total, page, limit, pages: Math.ceil(total / limit) });
+    // Flatten so customers see { id, name, category, price, unit, ... }
+    const flat = items.map((si) => ({
+      id: si.id,
+      storeId: si.storeId,
+      catalogItemId: si.catalogItemId,
+      name: si.catalogItem.name,
+      description: si.catalogItem.description,
+      category: si.catalogItem.category,
+      unit: si.catalogItem.defaultUnit,
+      imageUrl: si.catalogItem.imageUrl,
+      price: si.price,
+      stockQty: si.stockQty,
+      isAvailable: si.isAvailable,
+    }));
+
+    return sendSuccess(res, { items: flat, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (err) {
     console.error('[Stores] get items error:', err);
     return sendError(res, 'Failed to fetch store items', 500);

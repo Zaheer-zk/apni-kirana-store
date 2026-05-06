@@ -1,6 +1,7 @@
+// Store-items: store owners select catalog items into their inventory and set price/stock.
+// Catalog item CRUD lives in catalog.routes.ts (admin-only).
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { ItemCategory } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
@@ -8,70 +9,33 @@ import { sendSuccess, sendError } from '../utils/response';
 
 const router = Router();
 
-// ─── Schemas ──────────────────────────────────────────────────────────────────
-
-const createItemSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
-  category: z.nativeEnum(ItemCategory),
-  price: z.number().positive(),
-  unit: z.string().min(1).max(50),
-  stockQty: z.number().int().min(0).default(0),
-  imageUrl: z.string().url().optional(),
-});
-
-const updateItemSchema = createItemSchema.partial();
-
-const updateStockSchema = z.object({
-  stockQty: z.number().int().min(0),
-});
-
-// ─── Helper: verify store ownership ──────────────────────────────────────────
-
-async function getOwnerStore(userId: string) {
-  return prisma.store.findUnique({ where: { ownerId: userId } });
-}
-
-async function getItemWithStore(itemId: string) {
-  return prisma.item.findUnique({
-    where: { id: itemId },
-    include: { store: { select: { ownerId: true } } },
-  });
-}
-
-// ─── GET /search ──────────────────────────────────────────────────────────────
+// ─── Public search: returns store-items (price/stock) joined to catalog ───────
 
 router.get('/search', async (req: Request, res: Response) => {
   try {
-    const q = req.query['q'] as string | undefined;
-    if (!q || q.trim().length === 0) {
-      return sendError(res, 'Query parameter "q" is required', 400);
+    const q = (req.query['q'] as string) || '';
+    const category = req.query['category'] as string | undefined;
+
+    const where: Record<string, unknown> = {
+      isAvailable: true,
+      stockQty: { gt: 0 },
+      store: { status: 'ACTIVE' },
+    };
+    if (q || category) {
+      const catalogWhere: Record<string, unknown> = { isActive: true };
+      if (q) catalogWhere['name'] = { contains: q, mode: 'insensitive' };
+      if (category) catalogWhere['category'] = category;
+      where['catalogItem'] = catalogWhere;
     }
 
-    const category = req.query['category'] as ItemCategory | undefined;
-
-    const items = await prisma.item.findMany({
-      where: {
-        name: { contains: q.trim(), mode: 'insensitive' },
-        isAvailable: true,
-        stockQty: { gt: 0 },
-        store: { status: 'ACTIVE', isOpen: true },
-        ...(category ? { category } : {}),
-      },
+    const items = await prisma.storeItem.findMany({
+      where,
       include: {
-        store: {
-          select: {
-            id: true,
-            name: true,
-            lat: true,
-            lng: true,
-            rating: true,
-            category: true,
-          },
-        },
+        catalogItem: true,
+        store: { select: { id: true, name: true, lat: true, lng: true, isOpen: true } },
       },
-      take: 50,
-      orderBy: { name: 'asc' },
+      take: 100,
+      orderBy: { catalogItem: { name: 'asc' } },
     });
 
     return sendSuccess(res, items);
@@ -81,52 +45,66 @@ router.get('/search', async (req: Request, res: Response) => {
   }
 });
 
-// ─── POST / ───────────────────────────────────────────────────────────────────
+// ─── Store owner: manage their own inventory selections ──────────────────────
+
+const addItemSchema = z.object({
+  catalogItemId: z.string().min(1),
+  price: z.number().positive(),
+  stockQty: z.number().int().min(0),
+  isAvailable: z.boolean().optional(),
+});
 
 router.post(
   '/',
   authenticate,
   authorize('STORE_OWNER'),
-  validate(createItemSchema),
+  validate(addItemSchema),
   async (req: Request, res: Response) => {
     try {
-      const store = await getOwnerStore(req.user!.id);
-      if (!store) return sendError(res, 'You do not have a registered store', 404);
+      const myStore = await prisma.store.findUnique({ where: { ownerId: req.user!.id } });
+      if (!myStore) return sendError(res, 'No store found for this owner', 404);
 
-      const item = await prisma.item.create({
-        data: { ...req.body, storeId: store.id },
+      const catalogItem = await prisma.catalogItem.findUnique({
+        where: { id: req.body.catalogItemId },
       });
+      if (!catalogItem) return sendError(res, 'Catalog item not found', 404);
 
-      return sendSuccess(res, item, 'Item created successfully', 201);
-    } catch (err) {
+      const created = await prisma.storeItem.create({
+        data: {
+          storeId: myStore.id,
+          catalogItemId: req.body.catalogItemId,
+          price: req.body.price,
+          stockQty: req.body.stockQty,
+          isAvailable: req.body.isAvailable ?? true,
+        },
+        include: { catalogItem: true },
+      });
+      return sendSuccess(res, created, 'Item added to your store', 201);
+    } catch (err: unknown) {
+      const e = err as { code?: string };
+      if (e?.code === 'P2002') return sendError(res, 'Your store already carries this item', 409);
       console.error('[Items] create error:', err);
-      return sendError(res, 'Failed to create item', 500);
+      return sendError(res, 'Failed to add item', 500);
     }
   },
 );
-
-// ─── PUT /:id ─────────────────────────────────────────────────────────────────
 
 router.put(
   '/:id',
   authenticate,
   authorize('STORE_OWNER'),
-  validate(updateItemSchema),
+  validate(addItemSchema.partial().omit({ catalogItemId: true })),
   async (req: Request, res: Response) => {
     try {
-      const item = await getItemWithStore(req.params['id']!);
-      if (!item) return sendError(res, 'Item not found', 404);
-
-      if (item.store.ownerId !== req.user!.id) {
-        return sendError(res, 'You can only update items in your own store', 403);
-      }
-
-      const updated = await prisma.item.update({
-        where: { id: req.params['id'] },
-        data: req.body,
+      const item = await prisma.storeItem.findUnique({
+        where: { id: req.params['id'] }, include: { store: true },
       });
-
-      return sendSuccess(res, updated, 'Item updated successfully');
+      if (!item) return sendError(res, 'Item not found', 404);
+      if (item.store.ownerId !== req.user!.id) return sendError(res, 'Not your item', 403);
+      const updated = await prisma.storeItem.update({
+        where: { id: req.params['id'] }, data: req.body, include: { catalogItem: true },
+      });
+      return sendSuccess(res, updated, 'Item updated');
     } catch (err) {
       console.error('[Items] update error:', err);
       return sendError(res, 'Failed to update item', 500);
@@ -134,24 +112,19 @@ router.put(
   },
 );
 
-// ─── DELETE /:id ──────────────────────────────────────────────────────────────
-
 router.delete(
   '/:id',
   authenticate,
   authorize('STORE_OWNER'),
   async (req: Request, res: Response) => {
     try {
-      const item = await getItemWithStore(req.params['id']!);
+      const item = await prisma.storeItem.findUnique({
+        where: { id: req.params['id'] }, include: { store: true },
+      });
       if (!item) return sendError(res, 'Item not found', 404);
-
-      if (item.store.ownerId !== req.user!.id) {
-        return sendError(res, 'You can only delete items in your own store', 403);
-      }
-
-      await prisma.item.delete({ where: { id: req.params['id'] } });
-
-      return sendSuccess(res, null, 'Item deleted successfully');
+      if (item.store.ownerId !== req.user!.id) return sendError(res, 'Not your item', 403);
+      await prisma.storeItem.delete({ where: { id: req.params['id'] } });
+      return sendSuccess(res, null, 'Item removed from your store');
     } catch (err) {
       console.error('[Items] delete error:', err);
       return sendError(res, 'Failed to delete item', 500);
@@ -159,64 +132,47 @@ router.delete(
   },
 );
 
-// ─── PUT /:id/toggle-availability ────────────────────────────────────────────
-
 router.put(
   '/:id/toggle-availability',
   authenticate,
   authorize('STORE_OWNER'),
   async (req: Request, res: Response) => {
     try {
-      const item = await getItemWithStore(req.params['id']!);
-      if (!item) return sendError(res, 'Item not found', 404);
-
-      if (item.store.ownerId !== req.user!.id) {
-        return sendError(res, 'You can only manage items in your own store', 403);
-      }
-
-      const updated = await prisma.item.update({
-        where: { id: req.params['id'] },
-        data: { isAvailable: !item.isAvailable },
+      const item = await prisma.storeItem.findUnique({
+        where: { id: req.params['id'] }, include: { store: true },
       });
-
-      return sendSuccess(
-        res,
-        { isAvailable: updated.isAvailable },
-        `Item is now ${updated.isAvailable ? 'available' : 'unavailable'}`,
-      );
+      if (!item) return sendError(res, 'Item not found', 404);
+      if (item.store.ownerId !== req.user!.id) return sendError(res, 'Not your item', 403);
+      const updated = await prisma.storeItem.update({
+        where: { id: req.params['id'] }, data: { isAvailable: !item.isAvailable },
+      });
+      return sendSuccess(res, updated, `Item ${updated.isAvailable ? 'enabled' : 'disabled'}`);
     } catch (err) {
-      console.error('[Items] toggle-availability error:', err);
-      return sendError(res, 'Failed to toggle item availability', 500);
+      console.error('[Items] toggle error:', err);
+      return sendError(res, 'Failed to toggle availability', 500);
     }
   },
 );
 
-// ─── PUT /:id/stock ───────────────────────────────────────────────────────────
-
+const stockSchema = z.object({ stockQty: z.number().int().min(0) });
 router.put(
   '/:id/stock',
   authenticate,
   authorize('STORE_OWNER'),
-  validate(updateStockSchema),
+  validate(stockSchema),
   async (req: Request, res: Response) => {
     try {
-      const item = await getItemWithStore(req.params['id']!);
-      if (!item) return sendError(res, 'Item not found', 404);
-
-      if (item.store.ownerId !== req.user!.id) {
-        return sendError(res, 'You can only manage items in your own store', 403);
-      }
-
-      const { stockQty } = req.body as { stockQty: number };
-
-      const updated = await prisma.item.update({
-        where: { id: req.params['id'] },
-        data: { stockQty },
+      const item = await prisma.storeItem.findUnique({
+        where: { id: req.params['id'] }, include: { store: true },
       });
-
-      return sendSuccess(res, { stockQty: updated.stockQty }, 'Stock updated successfully');
+      if (!item) return sendError(res, 'Item not found', 404);
+      if (item.store.ownerId !== req.user!.id) return sendError(res, 'Not your item', 403);
+      const updated = await prisma.storeItem.update({
+        where: { id: req.params['id'] }, data: { stockQty: req.body.stockQty },
+      });
+      return sendSuccess(res, updated, 'Stock updated');
     } catch (err) {
-      console.error('[Items] update-stock error:', err);
+      console.error('[Items] stock error:', err);
       return sendError(res, 'Failed to update stock', 500);
     }
   },

@@ -282,6 +282,18 @@ router.put(
         return sendError(res, `Cannot confirm delivery for order with status ${order.status}`, 400);
       }
 
+      // Privacy verification: driver must enter the 4-digit dropoffOtp shown
+      // in the customer's app. This avoids exposing customer phone to driver.
+      const submittedOtp = (req.body?.dropoffOtp as string | undefined)?.trim();
+      if (order.dropoffOtp) {
+        if (!submittedOtp) {
+          return sendError(res, 'Dropoff OTP required to confirm delivery', 400);
+        }
+        if (submittedOtp !== order.dropoffOtp) {
+          return sendError(res, 'Incorrect dropoff OTP', 400);
+        }
+      }
+
       // Delivery fee goes to driver earnings
       const driverEarning = order.deliveryFee;
 

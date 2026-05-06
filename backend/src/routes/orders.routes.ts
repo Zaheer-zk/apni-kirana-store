@@ -16,11 +16,18 @@ const COMMISSION_RATE = 0.05; // 5%
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
+// Two ordering modes:
+//   1. STORE-DIRECT: customer browsed a store, items[] are storeItem ids
+//   2. CATALOG: customer chose catalog items, engine picks the best store(s)
 const createOrderSchema = z.object({
+  // Mode 1: store-direct order
+  storeId: z.string().cuid().optional(),
   items: z
     .array(
       z.object({
-        itemId: z.string().cuid(),
+        // Either storeItemId (mode 1) OR catalogItemId (mode 2). One required.
+        storeItemId: z.string().cuid().optional(),
+        catalogItemId: z.string().cuid().optional(),
         qty: z.number().int().positive(),
       }),
     )
@@ -65,38 +72,107 @@ router.post(
       });
       if (!address) return sendError(res, 'Delivery address not found', 404);
 
-      // Validate and load all items
-      const itemIds = items.map((i) => i.itemId);
-      const dbItems = await prisma.item.findMany({
-        where: { id: { in: itemIds }, isAvailable: true },
-        include: { store: { select: { id: true } } },
-      });
+      // Resolve items to StoreItem records.
+      // Mode 1 (store-direct): items have storeItemId — fetch them directly
+      // Mode 2 (catalog): items have catalogItemId only — pick a store via catalog match
+      const reqStoreItemIds = items
+        .map((i) => i.storeItemId)
+        .filter((x): x is string => !!x);
+      const reqCatalogItemIds = items
+        .map((i) => i.catalogItemId)
+        .filter((x): x is string => !!x);
 
-      if (dbItems.length !== itemIds.length) {
-        return sendError(res, 'One or more items are unavailable or not found', 400);
+      let resolvedItems: Array<{
+        storeItem: {
+          id: string; storeId: string; price: number; stockQty: number; isAvailable: boolean;
+          catalogItem: { name: string; defaultUnit: string; imageUrl: string | null };
+        };
+        qty: number;
+      }> = [];
+
+      if (reqStoreItemIds.length > 0) {
+        // Mode 1: load store-items directly
+        const storeItems = await prisma.storeItem.findMany({
+          where: { id: { in: reqStoreItemIds }, isAvailable: true },
+          include: { catalogItem: true },
+        });
+        if (storeItems.length !== reqStoreItemIds.length) {
+          return sendError(res, 'One or more items are unavailable or not found', 400);
+        }
+        resolvedItems = items
+          .filter((i) => i.storeItemId)
+          .map((i) => ({ storeItem: storeItems.find((si) => si.id === i.storeItemId)!, qty: i.qty }));
+      } else if (reqCatalogItemIds.length > 0) {
+        // Mode 2: catalog-only. Need a storeId hint OR the matching engine will pick.
+        // For simplest flow: if storeId provided, look up StoreItems by (storeId, catalogItemId).
+        // Otherwise: pick the closest store carrying ALL items (fallback to first store with any).
+        let candidateStoreId = req.body.storeId as string | undefined;
+
+        if (!candidateStoreId) {
+          // Find a store that carries all the requested catalog items
+          const carryingAll = await prisma.store.findMany({
+            where: {
+              status: 'ACTIVE',
+              isOpen: true,
+              items: { some: { catalogItemId: { in: reqCatalogItemIds }, isAvailable: true, stockQty: { gt: 0 } } },
+            },
+            include: {
+              items: {
+                where: { catalogItemId: { in: reqCatalogItemIds }, isAvailable: true, stockQty: { gt: 0 } },
+              },
+            },
+          });
+          // Pick store with the most matching items (majority-first); ties broken by first
+          carryingAll.sort((a, b) => b.items.length - a.items.length);
+          if (carryingAll.length === 0 || carryingAll[0]!.items.length === 0) {
+            return sendError(res, 'No nearby store has these items in stock', 404);
+          }
+          candidateStoreId = carryingAll[0]!.id;
+        }
+
+        const storeItems = await prisma.storeItem.findMany({
+          where: {
+            storeId: candidateStoreId,
+            catalogItemId: { in: reqCatalogItemIds },
+            isAvailable: true,
+          },
+          include: { catalogItem: true },
+        });
+        if (storeItems.length !== reqCatalogItemIds.length) {
+          return sendError(res, 'Selected store no longer has all requested items', 400);
+        }
+        resolvedItems = items
+          .filter((i) => i.catalogItemId)
+          .map((i) => ({
+            storeItem: storeItems.find((si) => si.catalogItemId === i.catalogItemId)!,
+            qty: i.qty,
+          }));
+      } else {
+        return sendError(res, 'Each item needs storeItemId or catalogItemId', 400);
       }
 
-      // Verify sufficient stock
-      for (const orderItem of items) {
-        const dbItem = dbItems.find((i) => i.id === orderItem.itemId)!;
-        if (dbItem.stockQty < orderItem.qty) {
-          return sendError(res, `Insufficient stock for item: ${dbItem.name}`, 400);
+      // Verify sufficient stock + all items belong to the same store
+      const storeIds = new Set(resolvedItems.map((r) => r.storeItem.storeId));
+      if (storeIds.size > 1) {
+        return sendError(res, 'Multi-store orders not yet supported (split into separate orders)', 400);
+      }
+      for (const r of resolvedItems) {
+        if (r.storeItem.stockQty < r.qty) {
+          return sendError(res, `Insufficient stock for ${r.storeItem.catalogItem.name}`, 400);
         }
       }
 
-      // Use the first item's store as the initial store (matching engine will reassign)
-      const initialStoreId = dbItems[0]!.store.id;
+      const initialStoreId = resolvedItems[0]!.storeItem.storeId;
 
-      // Calculate totals
-      const subtotal = items.reduce((sum, orderItem) => {
-        const dbItem = dbItems.find((i) => i.id === orderItem.itemId)!;
-        return sum + dbItem.price * orderItem.qty;
-      }, 0);
+      // Calculate totals (price snapshot at order time)
+      const subtotal = resolvedItems.reduce((s, r) => s + r.storeItem.price * r.qty, 0);
       const deliveryFee = DELIVERY_FEE;
       const commission = parseFloat((subtotal * COMMISSION_RATE).toFixed(2));
       const total = parseFloat((subtotal + deliveryFee).toFixed(2));
 
-      // Create order in a transaction
+      // 4-digit dropoff OTP for driver delivery handoff (privacy-preserving verification)
+      const dropoffOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
       const order = await prisma.$transaction(async (tx) => {
         const created = await tx.order.create({
           data: {
@@ -111,27 +187,23 @@ router.post(
             paymentStatus: 'PENDING',
             deliveryAddressId,
             notes,
+            dropoffOtp,
             items: {
-              create: items.map((orderItem) => {
-                const dbItem = dbItems.find((i) => i.id === orderItem.itemId)!;
-                return {
-                  itemId: orderItem.itemId,
-                  name: dbItem.name,
-                  price: dbItem.price,
-                  unit: dbItem.unit,
-                  qty: orderItem.qty,
-                  imageUrl: dbItem.imageUrl,
-                };
-              }),
+              create: resolvedItems.map((r) => ({
+                itemId: r.storeItem.id,
+                name: r.storeItem.catalogItem.name,
+                price: r.storeItem.price,
+                unit: r.storeItem.catalogItem.defaultUnit,
+                qty: r.qty,
+                imageUrl: r.storeItem.catalogItem.imageUrl,
+              })),
             },
           },
           include: { items: true },
         });
-
         return created;
       });
 
-      // Trigger store matching asynchronously via queue
       await matchingQueue.add('match-store', { orderId: order.id, excludeStoreIds: [] });
 
       return sendSuccess(res, order, 'Order placed successfully', 201);
@@ -215,6 +287,30 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
         (await prisma.driver.findFirst({ where: { id: order.driverId!, userId } })));
 
     if (!hasAccess) return sendError(res, 'Access denied', 403);
+
+    // Privacy: drivers must NOT see customer name/phone or driver-side dropoffOtp.
+    // They see: pickup store + items + dropoff coords + total + payment method.
+    if (role === 'DRIVER') {
+      const { customer, dropoffOtp: _hidden, ...rest } = order as unknown as Record<string, unknown> & {
+        customer?: unknown;
+        dropoffOtp?: unknown;
+      };
+      void customer; void _hidden;
+      return sendSuccess(res, {
+        ...rest,
+        customer: null, // PII hidden
+        deliveryAddress: order.deliveryAddress
+          ? {
+              // Coords + minimal label, no street/name
+              lat: order.deliveryAddress.lat,
+              lng: order.deliveryAddress.lng,
+              label: order.deliveryAddress.label,
+              pincode: order.deliveryAddress.pincode,
+              city: order.deliveryAddress.city,
+            }
+          : null,
+      });
+    }
 
     return sendSuccess(res, order);
   } catch (err) {

@@ -12,8 +12,8 @@
 | Metric       | Count              |
 | ------------ | ------------------ |
 | ✅ Completed | **140** items      |
-| ❌ Remaining | **65** items       |
-| **Overall**  | **~68% complete**  |
+| ❌ Remaining | **61** items       |
+| **Overall**  | **~70% complete**  |
 
 | Phase                         | Status     | Notes                                                         |
 | ----------------------------- | ---------- | ------------------------------------------------------------- |
@@ -94,29 +94,7 @@
 ### Design System & UI/UX
 
 - ✅ Define brand identity (colors, typography, logo)
-- ❌ Design UI in Figma — Customer App screens:
-  - Splash / Onboarding
-  - OTP Login
-  - Home (categories + featured items)
-  - Search / Browse
-  - Item Detail
-  - Cart
-  - Checkout
-  - Order Status / Live Tracking
-  - Order History
-  - Profile
-- ❌ Design Store Owner Portal screens:
-  - Dashboard
-  - Inventory list / add item
-  - Incoming order notification
-  - Order detail
-- ❌ Design Driver App screens:
-  - Dashboard / availability toggle
-  - Incoming request
-  - Pickup navigation
-  - Delivery confirmation
 - ✅ Create shared design system (constants/theme.ts + 8 reusable components)
-- ❌ Get design sign-off before dev starts
 
 ---
 

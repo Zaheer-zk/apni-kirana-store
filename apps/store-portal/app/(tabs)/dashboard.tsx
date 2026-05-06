@@ -69,11 +69,18 @@ export default function DashboardScreen() {
   });
 
   const toggleOpenMutation = useMutation({
-    mutationFn: (open: boolean) =>
-      api.put('/api/v1/stores/status', { isOpen: open }).then((r) => r.data),
-    onMutate: (open) => setStoreOpen(open),
-    onError: (_, open) => {
-      setStoreOpen(!open);
+    mutationFn: () => {
+      const sid = storeProfile?.id;
+      if (!sid) throw new Error('No store profile loaded');
+      return api.put(`/api/v1/stores/${sid}/toggle-open`).then((r) => r.data);
+    },
+    onMutate: () => {
+      const open = !(storeProfile?.isOpen ?? false);
+      setStoreOpen(open);
+      return { wasOpen: !open };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx) setStoreOpen(ctx.wasOpen);
       Alert.alert('Error', 'Could not update store status');
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['storeProfile'] }),
@@ -105,7 +112,7 @@ export default function DashboardScreen() {
             </Text>
             <Switch
               value={isOpen}
-              onValueChange={(val) => toggleOpenMutation.mutate(val)}
+              onValueChange={() => toggleOpenMutation.mutate()}
               trackColor={{ false: '#D1D5DB', true: '#93C5FD' }}
               thumbColor={isOpen ? '#2563EB' : '#9CA3AF'}
               disabled={toggleOpenMutation.isPending}

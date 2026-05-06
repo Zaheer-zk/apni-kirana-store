@@ -50,15 +50,24 @@ interface PromoValidateResponse {
   discountAmount: number;
 }
 
+interface BackendPromoResponse {
+  code: string;
+  description?: string;
+  discount: number; // backend uses `discount`, not `discountAmount`
+  discountType?: 'FLAT' | 'PERCENT';
+  discountValue?: number;
+}
+
 async function validatePromoRequest(payload: {
   code: string;
   subtotal: number;
 }): Promise<PromoValidateResponse> {
   const res = await apiClient.post<
-    { data: PromoValidateResponse } | PromoValidateResponse
+    { data: BackendPromoResponse } | BackendPromoResponse
   >('/api/v1/promos/validate', payload);
   const data = res.data as unknown;
-  return ((data as { data?: PromoValidateResponse }).data ?? data) as PromoValidateResponse;
+  const inner = ((data as { data?: BackendPromoResponse }).data ?? data) as BackendPromoResponse;
+  return { code: inner.code, discountAmount: inner.discount };
 }
 
 function CartItemRow({ item }: { item: CartItem }) {

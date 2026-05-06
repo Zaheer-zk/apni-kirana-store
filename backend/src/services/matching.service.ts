@@ -84,9 +84,9 @@ async function rankStores(
   const totalCatalogItems = new Set(orderCatalogItemIds).size;
   if (totalCatalogItems === 0) return null;
 
+  // Try the nearby radius first
   const box = getBoundingBox(lat, lng, SEARCH_RADIUS_KM);
-
-  const candidateStores = await prisma.store.findMany({
+  let candidateStores = await prisma.store.findMany({
     where: {
       status: 'ACTIVE',
       isOpen: true,
@@ -107,17 +107,54 @@ async function rankStores(
     },
   });
 
+  // Fallback: if no nearby store carries the items, broadcast to ALL active
+  // stores carrying any item (regardless of distance). Customer accepts the
+  // longer delivery time. This ensures orders aren't auto-cancelled when
+  // local supply is thin.
+  let isFallback = false;
+  if (candidateStores.length === 0) {
+    isFallback = true;
+    candidateStores = await prisma.store.findMany({
+      where: {
+        status: 'ACTIVE',
+        isOpen: true,
+        id: { notIn: excludeStoreIds },
+        items: {
+          some: {
+            catalogItemId: { in: orderCatalogItemIds },
+            isAvailable: true,
+            stockQty: { gt: 0 },
+          },
+        },
+      },
+      include: {
+        owner: { select: { id: true } },
+        items: { where: { catalogItemId: { in: orderCatalogItemIds }, isAvailable: true, stockQty: { gt: 0 } } },
+      },
+    });
+    if (candidateStores.length > 0) {
+      console.log(
+        `[Match] No nearby stores in ${SEARCH_RADIUS_KM}km; falling back to ${candidateStores.length} active stores city-wide for order ${orderId}`,
+      );
+    }
+  }
+
   const scored: ScoredStore[] = [];
   for (const store of candidateStores) {
     const distanceKm = haversineDistance(lat, lng, store.lat, store.lng);
-    if (distanceKm > SEARCH_RADIUS_KM) continue;
+    // In fallback mode we accept any distance; in normal mode skip > radius
+    if (!isFallback && distanceKm > SEARCH_RADIUS_KM) continue;
 
     const matchedItemCount = new Set(store.items.map((si) => si.catalogItemId)).size;
     const matchRatio = matchedItemCount / totalCatalogItems;
-    if (matchRatio < MIN_ITEM_MATCH_PERCENT) continue;
+    // Fallback mode also relaxes the match threshold so any partial match is offered
+    const minMatch = isFallback ? 0.3 : MIN_ITEM_MATCH_PERCENT;
+    if (matchRatio < minMatch) continue;
 
-    // Proximity score: bigger when closer. Normalize to 0..1 by SEARCH_RADIUS_KM.
-    const proximityScore = Math.max(0, 1 - distanceKm / SEARCH_RADIUS_KM);
+    // Proximity score: bigger when closer. Normalize over a wider scale in fallback
+    // so that a 30 km store still has some score above zero.
+    const normalizationKm = isFallback ? 50 : SEARCH_RADIUS_KM;
+    const proximityScore = Math.max(0, 1 - distanceKm / normalizationKm);
     // Rating score: 0..1 from 0..5 stars
     const ratingScore = (store.rating ?? 0) / 5;
     // Composite: majority of items first, then proximity, then small rating boost

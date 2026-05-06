@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import MapView, { Region } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/Button';
 import { Header } from '@/components/Header';
 import { Input } from '@/components/Input';
@@ -51,6 +52,7 @@ function geocodeToAddress(parts: Location.LocationGeocodedAddress | undefined): 
 export default function MapPickerScreen() {
   const params = useLocalSearchParams<{ onboarding?: string; lat?: string; lng?: string }>();
   const isOnboarding = params.onboarding === '1';
+  const queryClient = useQueryClient();
 
   const initialLat = params.lat ? parseFloat(params.lat) : null;
   const initialLng = params.lng ? parseFloat(params.lng) : null;
@@ -176,6 +178,10 @@ export default function MapPickerScreen() {
         lng: region.longitude,
         isDefault: isOnboarding,
       });
+
+      // Invalidate caches so the addresses list + me query refetch on next render
+      queryClient.invalidateQueries({ queryKey: ['addresses'] });
+      queryClient.invalidateQueries({ queryKey: ['me'] });
 
       if (isOnboarding) {
         router.replace('/(tabs)/home');

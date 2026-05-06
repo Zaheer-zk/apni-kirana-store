@@ -55,12 +55,32 @@ const STATUS_ORDER: OrderStatus[] = [
 ];
 
 async function fetchOrder(id: string): Promise<OrderDetailResponse> {
-  const res = await apiClient.get<{ data: OrderDetailResponse } | OrderDetailResponse>(
-    `/api/v1/orders/${id}`
-  );
-  const payload = res.data as unknown;
-  if ((payload as OrderDetailResponse)?.order) return payload as OrderDetailResponse;
-  return (payload as { data: OrderDetailResponse }).data;
+  const res = await apiClient.get<{ data: unknown } | unknown>(`/api/v1/orders/${id}`);
+  const root = res.data as Record<string, unknown> | undefined;
+  // Backend returns { success, data: <flat order with .store, .driver, etc.> }
+  // Older callers wrapped as { order, driver, storeLocation } — handle both.
+  const flat =
+    (root && typeof root === 'object' && 'data' in root
+      ? (root as { data: Record<string, unknown> }).data
+      : root) as Record<string, unknown> | undefined;
+  if (!flat) throw new Error('Order not found');
+
+  // Already in expected shape?
+  if ('order' in flat && (flat as { order?: unknown }).order) {
+    return flat as unknown as OrderDetailResponse;
+  }
+
+  const order = flat as unknown as Order;
+  const storeRaw = (flat as { store?: { lat?: number; lng?: number } }).store;
+  const driverRaw = (flat as { driver?: unknown }).driver;
+  return {
+    order,
+    driver: (driverRaw as DriverProfile | undefined) ?? undefined,
+    storeLocation:
+      storeRaw && storeRaw.lat != null && storeRaw.lng != null
+        ? { lat: storeRaw.lat, lng: storeRaw.lng }
+        : undefined,
+  };
 }
 
 async function cancelOrderRequest(id: string): Promise<void> {

@@ -3,6 +3,10 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function reset() {
+  await prisma.auditLog.deleteMany().catch(() => {});
+  await prisma.zone.deleteMany().catch(() => {});
+  await prisma.promoRedemption.deleteMany().catch(() => {});
+  await prisma.promo.deleteMany().catch(() => {});
   await prisma.notification.deleteMany();
   await prisma.orderRating.deleteMany();
   await prisma.orderItem.deleteMany();
@@ -256,7 +260,9 @@ async function main() {
 
   // ─── 6. CUSTOMERS ────────────────────────────────────────────────────
   const customerData = [
-    { phone: '9999966661', name: 'Test Customer', city: 'New Delhi', pin: '110001', lat: 28.6315, lng: 77.2167 },
+    // Test Customer's address is intentionally ~200m from Raju's Kirana
+    // so any order they place reaches Raju (store 9999988881) via the matching engine.
+    { phone: '9999966661', name: 'Test Customer', city: 'New Delhi', pin: '110001', lat: 28.6155, lng: 77.2105 },
     { phone: '9999966662', name: 'Anita Verma', city: 'New Delhi', pin: '110005', lat: 28.6219, lng: 77.2100 },
     { phone: '9999966663', name: 'Rohit Mehra', city: 'New Delhi', pin: '110001', lat: 28.6280, lng: 77.2150 },
     { phone: '9999966664', name: 'Kavita Iyer', city: 'New Delhi', pin: '110007', lat: 28.6400, lng: 77.2300 },
@@ -386,6 +392,171 @@ async function main() {
   for (const n of notifs) {
     await prisma.notification.create({ data: { ...n, isRead: Math.random() > 0.5 } });
   }
+
+  // ─── 10. PROMO CODES ──────────────────────────────────────────────────
+  await prisma.promo.create({
+    data: {
+      code: 'WELCOME50',
+      description: 'Flat ₹50 off — welcome offer',
+      discountType: 'FLAT',
+      discountValue: 50,
+      minOrderValue: 150,
+      perUserLimit: 1,
+      isActive: true,
+    },
+  });
+  await prisma.promo.create({
+    data: {
+      code: 'SAVE10',
+      description: '10% off — capped at ₹100',
+      discountType: 'PERCENT',
+      discountValue: 10,
+      maxDiscount: 100,
+      minOrderValue: 100,
+      isActive: true,
+    },
+  });
+  await prisma.promo.create({
+    data: {
+      code: 'KIRANA20',
+      description: '20% off — capped at ₹50, min order ₹200',
+      discountType: 'PERCENT',
+      discountValue: 20,
+      maxDiscount: 50,
+      minOrderValue: 200,
+      isActive: true,
+    },
+  });
+  console.log(`✓ 3 promo codes seeded (WELCOME50, SAVE10, KIRANA20)`);
+
+  // ─── 11. NAMED TEST TRIO — Zaheer / Baqala / Chotu ───────────────────
+  // Three closely-located entities so end-to-end testing is deterministic.
+  // Coordinates: 28.6160 / 77.2090 (Connaught Place area, ~150m apart)
+
+  // 11.1 Customer — Zaheer
+  const zaheer = await prisma.user.create({
+    data: {
+      phone: '8888888881',
+      name: 'Zaheer Khan',
+      role: 'CUSTOMER',
+      isActive: true,
+    },
+  });
+  await prisma.address.create({
+    data: {
+      userId: zaheer.id,
+      label: 'Home',
+      street: 'Flat 4B, Imperial Heights, Connaught Lane',
+      city: 'New Delhi',
+      state: 'Delhi',
+      pincode: '110001',
+      lat: 28.6160,
+      lng: 77.2090,
+      isDefault: true,
+    },
+  });
+  await prisma.address.create({
+    data: {
+      userId: zaheer.id,
+      label: 'Office',
+      street: '12 Cyber Hub, Tower B, Floor 5',
+      city: 'Gurgaon',
+      state: 'Haryana',
+      pincode: '122002',
+      lat: 28.4946,
+      lng: 77.0890,
+      isDefault: false,
+    },
+  });
+  console.log('✓ Customer "Zaheer Khan" (8888888881) with Home + Office addresses');
+
+  // 11.2 Store — Baqala (well-stocked)
+  const baqalaOwner = await prisma.user.create({
+    data: {
+      phone: '8888888882',
+      name: 'Baqala Owner',
+      role: 'STORE_OWNER',
+      isActive: true,
+    },
+  });
+  const baqalaStore = await prisma.store.create({
+    data: {
+      ownerId: baqalaOwner.id,
+      name: 'Baqala — The Corner Shop',
+      description: 'Your friendly neighbourhood kirana — open 7am to 11pm',
+      category: 'GROCERY',
+      lat: 28.6155, // ~50m from Zaheer's home
+      lng: 77.2095,
+      street: '7 Connaught Lane, Ground Floor',
+      city: 'New Delhi',
+      state: 'Delhi',
+      pincode: '110001',
+      status: 'ACTIVE',
+      isOpen: true,
+      openTime: '07:00',
+      closeTime: '23:00',
+      rating: 4.8,
+      totalRatings: 247,
+    },
+  });
+  // Stock Baqala with the entire catalog at competitive prices
+  const allCatalog = await prisma.catalogItem.findMany();
+  for (const c of allCatalog) {
+    const basePrice: Record<string, number> = {
+      'Basmati Rice Premium': 115, 'Toor Dal': 90, 'Sugar': 42, 'Sunflower Oil': 175,
+      'Britannia Bread': 32, 'Amul Butter': 54, 'Atta (Wheat Flour)': 240, 'Salt Tata': 20,
+      'Onions': 38, 'Potatoes': 28, 'Tomatoes': 24, 'Eggs (12 pcs)': 80,
+      'Tea Powder Tata': 270, 'Coffee Nescafe': 160, 'Bisleri Water': 18, 'Coca-Cola': 38,
+      'Milk Amul (1L)': 64, 'Maggi Noodles': 14, 'Parle-G Biscuits': 10, 'Lays Chips': 28,
+      'Kurkure': 18, 'Oreo Cookies': 28, 'Toothpaste Colgate': 88, 'Surf Excel Detergent': 215,
+      'Dettol Soap': 42, 'Vim Dishwash': 28, 'Harpic Toilet Cleaner': 105, 'Tissue Papers': 60,
+      'Paracetamol 500mg': 24, 'Crocin Advance': 34, 'Dolo 650': 28, 'Vicks Vaporub': 62,
+      'Band-Aid Pack': 42, 'ORS Sachets': 18,
+    };
+    await prisma.storeItem.create({
+      data: {
+        storeId: baqalaStore.id,
+        catalogItemId: c.id,
+        price: basePrice[c.name] ?? 50,
+        stockQty: 50 + Math.floor(Math.random() * 50),
+        isAvailable: true,
+      },
+    });
+  }
+  console.log(`✓ Store "Baqala" (8888888882) ACTIVE+OPEN, ~150m from Zaheer, stocking all ${allCatalog.length} catalog items`);
+
+  // 11.3 Driver — Chotu (ONLINE, near Baqala)
+  const chotuUser = await prisma.user.create({
+    data: {
+      phone: '8888888883',
+      name: 'Chotu Singh',
+      role: 'DRIVER',
+      isActive: true,
+    },
+  });
+  await prisma.driver.create({
+    data: {
+      userId: chotuUser.id,
+      vehicleType: 'BIKE',
+      vehicleNumber: 'DL-09-CH-1234',
+      licenseNumber: 'DL98765432',
+      status: 'ONLINE',
+      currentLat: 28.6158, // right next to Baqala
+      currentLng: 77.2092,
+      rating: 4.9,
+      totalRatings: 312,
+      totalEarnings: 24800,
+    },
+  });
+  console.log(`✓ Driver "Chotu Singh" (8888888883) ONLINE, BIKE, ~50m from Baqala`);
+
+  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('  END-TO-END TEST TRIO (deterministic order routing)');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('  Customer:  8888888881  Zaheer Khan');
+  console.log('  Store:     8888888882  Baqala — The Corner Shop  (150m away, ALL items)');
+  console.log('  Driver:    8888888883  Chotu Singh  (ONLINE, 50m from Baqala)');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
   // ─── SUMMARY ──────────────────────────────────────────────────────────
   console.log('\n✅ Seed complete!\n');

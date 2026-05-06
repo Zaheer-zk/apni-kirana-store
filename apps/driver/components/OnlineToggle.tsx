@@ -25,7 +25,9 @@ export function OnlineToggle() {
   const toggleMutation = useMutation<ToggleStatusResponse, Error, boolean>({
     mutationFn: (online: boolean) =>
       api
-        .put<ToggleStatusResponse>('/api/v1/drivers/status', { isOnline: online })
+        .put<ToggleStatusResponse>('/api/v1/drivers/status', {
+          status: online ? 'ONLINE' : 'OFFLINE',
+        })
         .then((r) => r.data),
     onMutate: (online) => {
       // Optimistic update

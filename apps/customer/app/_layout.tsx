@@ -120,7 +120,8 @@ export default function RootLayout() {
             {/* Top-level groups own their own headers/tabs */}
             <Stack.Screen name="(auth)" options={{ headerShown: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+            <Stack.Screen name="onboarding/location" options={{ headerShown: false }} />
+            <Stack.Screen name="onboarding/map-picker" options={{ headerShown: false }} />
             {/* Detail / modal style routes use the native header */}
             <Stack.Screen name="item/[id]" options={{ title: 'Item details' }} />
             <Stack.Screen name="catalog/index" options={{ title: 'Browse' }} />

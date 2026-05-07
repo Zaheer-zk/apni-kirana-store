@@ -4,6 +4,12 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-07 — Production hardening
+
+- [x] **Notification logout cleanup** — all 4 apps (customer/driver/store-portal/admin) now call `DELETE /notifications/fcm-token` (and admin additionally unsubscribes web push) before clearing local credentials, so a logged-out device stops receiving pushes meant for the previous user. New backend endpoint `DELETE /api/v1/notifications/fcm-token`.
+- [x] **SMS provider abstraction** — new `services/sms.service.ts` with pluggable adapters: `CONSOLE` (dev), `TWOFACTOR` (2Factor.in, 100/day free forever), `MSG91` (Indian, ~₹0.18/OTP), `TWILIO`. Switch via `SMS_PROVIDER` env var; failed sends in dev silently fall back to console so the dev flow never breaks. .env.example updated with all four sets of vars.
+- [x] **Shimmer Skeleton in driver + store-portal** — both apps now share the same animated-sweep `<Skeleton />` as customer (was a static `bg-gray-200` placeholder).
+
 ### 2026-05-07 — UX polish (continued)
 
 - [x] **Customer login → home redirect overlay** — branded full-screen "Welcome back, {name}!" + spinner stays up through navigation so there's no white flash between OTP verify and home. Commit `022c6d6`.

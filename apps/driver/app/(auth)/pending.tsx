@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
+import { api } from '@/lib/api';
 import { useDriverStore } from '@/store/driver.store';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
@@ -19,9 +20,16 @@ export default function PendingApprovalScreen() {
         text: 'Sign out',
         style: 'destructive',
         onPress: async () => {
-          await SecureStore.deleteItemAsync('accessToken');
-          await SecureStore.deleteItemAsync('user');
-          await SecureStore.deleteItemAsync('driverProfile');
+          try {
+            await api.delete('/api/v1/notifications/fcm-token');
+          } catch {
+            // ignore
+          }
+          await Promise.all([
+            SecureStore.deleteItemAsync('accessToken'),
+            SecureStore.deleteItemAsync('user'),
+            SecureStore.deleteItemAsync('driverProfile'),
+          ]);
           clearAuth();
           router.replace('/(auth)/login');
         },

@@ -107,6 +107,22 @@ router.put('/fcm-token', validate(fcmTokenSchema), async (req: Request, res: Res
   }
 });
 
+// ─── DELETE /fcm-token ────────────────────────────────────────────────────────
+// Called on logout so the device stops receiving pushes for the previous user.
+
+router.delete('/fcm-token', async (req: Request, res: Response) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { fcmToken: null },
+    });
+    return sendSuccess(res, null, 'FCM token cleared');
+  } catch (err) {
+    console.error('[Notifications] clear fcm-token error:', err);
+    return sendError(res, 'Failed to clear FCM token', 500);
+  }
+});
+
 // ─── Web Push (admin browser) ────────────────────────────────────────────────
 import { getVapidPublicKey } from '../services/web-push.service';
 

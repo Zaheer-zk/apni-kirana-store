@@ -131,9 +131,18 @@ export default function ProfileScreen() {
         text: 'Log out',
         style: 'destructive',
         onPress: async () => {
-          await SecureStore.deleteItemAsync('accessToken');
-          await SecureStore.deleteItemAsync('refreshToken');
-          await SecureStore.deleteItemAsync('user');
+          // Clear server-side push token first (while access token still valid)
+          // so this device stops getting notifications for the logged-out user.
+          try {
+            await apiClient.delete('/api/v1/notifications/fcm-token');
+          } catch {
+            // best-effort — don't block logout if it fails
+          }
+          await Promise.all([
+            SecureStore.deleteItemAsync('accessToken'),
+            SecureStore.deleteItemAsync('refreshToken'),
+            SecureStore.deleteItemAsync('user'),
+          ]);
           clearAuth();
           clearCart();
           router.replace('/(auth)/login');

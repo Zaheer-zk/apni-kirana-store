@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
 import { Avatar } from '@/components/Avatar';
 import { Badge } from '@/components/Badge';
@@ -90,9 +91,18 @@ export default function StoreProfileScreen() {
         text: 'Logout',
         style: 'destructive',
         onPress: async () => {
-          await SecureStore.deleteItemAsync('accessToken');
-          await SecureStore.deleteItemAsync('user');
-          await SecureStore.deleteItemAsync('storeProfile');
+          // Best-effort: clear server-side push token first so this device
+          // stops getting notifications meant for the logged-out store owner.
+          try {
+            await api.delete('/api/v1/notifications/fcm-token');
+          } catch {
+            // ignore
+          }
+          await Promise.all([
+            SecureStore.deleteItemAsync('accessToken'),
+            SecureStore.deleteItemAsync('user'),
+            SecureStore.deleteItemAsync('storeProfile'),
+          ]);
           clearAuth();
           router.replace('/(auth)/login');
         },

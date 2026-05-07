@@ -6,8 +6,7 @@ import { authenticate } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { generateOtp, storeOtp, verifyOtp } from '../utils/otp';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
-import { config } from '../config/env';
-import twilio from 'twilio';
+import { sendSmsOtp } from '../services/sms.service';
 
 const router = Router();
 
@@ -32,21 +31,8 @@ const refreshSchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token is required'),
 });
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function sendSmsOtp(phone: string, otp: string): Promise<void> {
-  if (config.nodeEnv === 'development') {
-    console.log(`[OTP] Phone: ${phone} | OTP: ${otp}`);
-    return;
-  }
-
-  const client = twilio(config.twilio.accountSid, config.twilio.authToken);
-  await client.messages.create({
-    body: `Your Apni Kirana Store OTP is ${otp}. Valid for 5 minutes.`,
-    from: config.twilio.phoneNumber,
-    to: `+91${phone}`,
-  });
-}
+// SMS dispatch is delegated to services/sms.service so we can swap providers
+// (Twilio / 2Factor / MSG91 / console) via the SMS_PROVIDER env var.
 
 // ─── POST /send-otp ───────────────────────────────────────────────────────────
 

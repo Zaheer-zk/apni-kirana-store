@@ -20,6 +20,8 @@ import {
   X,
 } from 'lucide-react';
 import { clearToken } from '@/lib/auth';
+import { api } from '@/lib/api';
+import { unsubscribeFromPush } from '@/lib/web-push';
 
 interface NavItem {
   href: string;
@@ -60,7 +62,17 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
     return pathname.startsWith(href);
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    // Best-effort: tear down web push subscription + clear server-side token
+    // so this browser stops receiving notifications for the logged-out admin.
+    try {
+      await Promise.allSettled([
+        unsubscribeFromPush().catch(() => undefined),
+        api.delete('/api/v1/notifications/fcm-token').catch(() => undefined),
+      ]);
+    } catch {
+      // ignore — logout should always proceed
+    }
     clearToken();
     router.replace('/login');
   }

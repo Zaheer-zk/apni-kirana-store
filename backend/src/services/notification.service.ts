@@ -113,6 +113,7 @@ export type NotificationEvent =
   // Admin-side
   | 'ADMIN_NEW_STORE_PENDING'
   | 'ADMIN_NEW_DRIVER_PENDING'
+  | 'ADMIN_ORDER_PLACED'
   // Misc
   | 'PROMO_ANNOUNCE';
 
@@ -205,6 +206,10 @@ const TEMPLATES: Record<NotificationEvent, TemplateFn> = {
     title: 'New driver awaiting approval',
     body: `${v.driverName} (${v.vehicleType}) just registered.`,
   }),
+  ADMIN_ORDER_PLACED: (v) => ({
+    title: 'New order placed',
+    body: `${v.customerName} ordered ${v.itemCount} items (₹${v.total}) — ${v.city}.`,
+  }),
 
   PROMO_ANNOUNCE: (v) => ({
     title: v.title ?? 'New offer just for you',
@@ -238,6 +243,21 @@ export async function notify(
   );
   const tpl = TEMPLATES[event](stringVars);
   await persistAndPush(userId, tpl.title, tpl.body, { event, ...stringVars });
+}
+
+/**
+ * Send the same templated notification to every admin user. Useful for
+ * platform-wide events like new orders, pending approvals, refund alerts.
+ */
+export async function notifyAdmins(
+  event: NotificationEvent,
+  vars: Record<string, string | number | undefined> = {},
+): Promise<void> {
+  const admins = await prisma.user.findMany({
+    where: { role: 'ADMIN', isActive: true },
+    select: { id: true },
+  });
+  await Promise.all(admins.map((a) => notify(event, a.id, vars)));
 }
 
 /**

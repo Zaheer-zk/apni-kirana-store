@@ -115,11 +115,18 @@ router.post('/verify-otp', validate(verifyOtpSchema), async (req: Request, res: 
     const accessToken = signAccessToken({ id: user.id, role: user.role, phone: user.phone });
     const refreshToken = signRefreshToken({ id: user.id });
 
-    // Persist refresh token (expires in 30 days)
+    // Persist refresh token (expires in 30 days) and check addresses in parallel
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    await prisma.refreshToken.create({ data: { token: refreshToken, userId: user.id, expiresAt } });
+    const [, addressCount] = await Promise.all([
+      prisma.refreshToken.create({ data: { token: refreshToken, userId: user.id, expiresAt } }),
+      prisma.address.count({ where: { userId: user.id } }),
+    ]);
 
-    return sendSuccess(res, { accessToken, refreshToken, user }, 'Login successful');
+    return sendSuccess(
+      res,
+      { accessToken, refreshToken, user, hasAddress: addressCount > 0 },
+      'Login successful',
+    );
   } catch (err) {
     console.error('[Auth] verify-otp error:', err);
     return sendError(res, 'Authentication failed', 500);

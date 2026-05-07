@@ -381,13 +381,41 @@ async function main() {
   console.log(`✓ ${ratingCount} ratings on past orders`);
 
   // ─── 9. NOTIFICATIONS ─────────────────────────────────────────────────
+  const pendingStore = stores.find((s) => s.name.includes('Sunita')) ?? stores[stores.length - 1];
+  const pendingDriver = drivers.find((d) => d.user?.name?.includes('Vikas')) ?? drivers[drivers.length - 1];
   const notifs = [
-    { userId: admin.id, title: 'New store awaiting approval', body: 'Sunita Provision Store registered.' },
-    { userId: admin.id, title: 'New driver awaiting approval', body: 'Vikas Kumar (BIKE) registered.' },
-    { userId: customers[0].user.id, title: 'Order delivered!', body: 'Your order from Raju\'s Kirana has been delivered.' },
-    { userId: customers[1].user.id, title: 'Driver assigned', body: 'Mukesh Sharma is on the way.' },
-    { userId: drivers[0].userId, title: 'New delivery request', body: 'Pickup from Raju\'s Kirana, ₹85 earnings.' },
-    { userId: stores[0].ownerId, title: 'New order received', body: 'Order awaiting acceptance — accept within 3 minutes.' },
+    {
+      userId: admin.id,
+      title: 'New store awaiting approval',
+      body: 'Sunita Provision Store registered.',
+      data: { event: 'ADMIN_NEW_STORE_PENDING', storeId: pendingStore.id },
+    },
+    {
+      userId: admin.id,
+      title: 'New driver awaiting approval',
+      body: 'Vikas Kumar (BIKE) registered.',
+      data: { event: 'ADMIN_NEW_DRIVER_PENDING', driverId: pendingDriver.id },
+    },
+    {
+      userId: customers[0].user.id,
+      title: 'Order delivered!',
+      body: 'Your order from Raju\'s Kirana has been delivered.',
+    },
+    {
+      userId: customers[1].user.id,
+      title: 'Driver assigned',
+      body: 'Mukesh Sharma is on the way.',
+    },
+    {
+      userId: drivers[0].userId,
+      title: 'New delivery request',
+      body: 'Pickup from Raju\'s Kirana, ₹85 earnings.',
+    },
+    {
+      userId: stores[0].ownerId,
+      title: 'New order received',
+      body: 'Order awaiting acceptance — accept within 3 minutes.',
+    },
   ];
   for (const n of notifs) {
     await prisma.notification.create({ data: { ...n, isRead: Math.random() > 0.5 } });

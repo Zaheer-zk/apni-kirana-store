@@ -73,6 +73,62 @@ function emptyForm(): ZoneFormState {
   };
 }
 
+// Common Indian cities — instant lookup, no network needed. Falls back to
+// OpenStreetMap Nominatim for anything not in this list (debounced).
+const CITY_CENTERS: Record<string, { lat: number; lng: number }> = {
+  delhi: { lat: 28.6315, lng: 77.2167 },
+  'new delhi': { lat: 28.6315, lng: 77.2167 },
+  mumbai: { lat: 19.076, lng: 72.8777 },
+  bangalore: { lat: 12.9716, lng: 77.5946 },
+  bengaluru: { lat: 12.9716, lng: 77.5946 },
+  chennai: { lat: 13.0827, lng: 80.2707 },
+  kolkata: { lat: 22.5726, lng: 88.3639 },
+  hyderabad: { lat: 17.385, lng: 78.4867 },
+  pune: { lat: 18.5204, lng: 73.8567 },
+  ahmedabad: { lat: 23.0225, lng: 72.5714 },
+  jaipur: { lat: 26.9124, lng: 75.7873 },
+  surat: { lat: 21.1702, lng: 72.8311 },
+  lucknow: { lat: 26.8467, lng: 80.9462 },
+  kanpur: { lat: 26.4499, lng: 80.3319 },
+  nagpur: { lat: 21.1458, lng: 79.0882 },
+  indore: { lat: 22.7196, lng: 75.8577 },
+  bhopal: { lat: 23.2599, lng: 77.4126 },
+  patna: { lat: 25.5941, lng: 85.1376 },
+  vadodara: { lat: 22.3072, lng: 73.1812 },
+  ghaziabad: { lat: 28.6692, lng: 77.4538 },
+  ludhiana: { lat: 30.901, lng: 75.8573 },
+  agra: { lat: 27.1767, lng: 78.0081 },
+  nashik: { lat: 19.9975, lng: 73.7898 },
+  faridabad: { lat: 28.4089, lng: 77.3178 },
+  meerut: { lat: 28.9845, lng: 77.7064 },
+  rajkot: { lat: 22.3039, lng: 70.8022 },
+  varanasi: { lat: 25.3176, lng: 82.9739 },
+  amritsar: { lat: 31.634, lng: 74.8723 },
+  noida: { lat: 28.5355, lng: 77.391 },
+  gurgaon: { lat: 28.4595, lng: 77.0266 },
+  gurugram: { lat: 28.4595, lng: 77.0266 },
+};
+
+async function geocodeCity(city: string): Promise<{ lat: number; lng: number } | null> {
+  // 1) Local lookup (instant)
+  const key = city.trim().toLowerCase();
+  if (CITY_CENTERS[key]) return CITY_CENTERS[key];
+
+  // 2) Nominatim (OpenStreetMap) — free, no key, ~1 req/s soft limit
+  try {
+    const url =
+      'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=' +
+      encodeURIComponent(city);
+    const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+    if (!res.ok) return null;
+    const json = (await res.json()) as Array<{ lat: string; lon: string }>;
+    if (!json[0]) return null;
+    return { lat: parseFloat(json[0].lat), lng: parseFloat(json[0].lon) };
+  } catch {
+    return null;
+  }
+}
+
 export default function ZonesPage() {
   const queryClient = useQueryClient();
 
@@ -87,6 +143,32 @@ export default function ZonesPage() {
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Auto-center the map when city changes — local lookup first, then Nominatim
+  // for anything not in the bundled list. Debounced so we don't spam on typing.
+  // Only auto-fills when the user hasn't already pinned a location.
+  useEffect(() => {
+    if (!modalOpen) return;
+    const city = form.city.trim();
+    if (city.length < 3) return;
+    // Skip if user has already pinned a location (avoid overriding manual edits)
+    if (form.centerLat && form.centerLng) return;
+    const handle = setTimeout(async () => {
+      const center = await geocodeCity(city);
+      if (!center) return;
+      setForm((f) =>
+        // Re-check inside the setter so a pin made during the await wins
+        f.centerLat || f.centerLng
+          ? f
+          : {
+              ...f,
+              centerLat: center.lat.toFixed(6),
+              centerLng: center.lng.toFixed(6),
+            },
+      );
+    }, 600);
+    return () => clearTimeout(handle);
+  }, [form.city, modalOpen, form.centerLat, form.centerLng]);
 
   const { data, isLoading, isError } = useQuery<Zone[]>({
     queryKey: ['admin-zones'],

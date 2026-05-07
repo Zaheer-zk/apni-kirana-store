@@ -2,24 +2,34 @@
 
 import './globals.css';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { isAuthenticated } from '@/lib/auth';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      retry: 1,
+function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        // Cache for 5 minutes — most admin data doesn't change second-by-second,
+        // and the bell + page-level invalidations refresh what matters.
+        staleTime: 5 * 60_000,
+        gcTime: 10 * 60_000,
+        // Don't refetch every time the user switches back to the tab — that
+        // was the biggest source of perceived slowness.
+        refetchOnWindowFocus: false,
+        retry: 1,
+      },
     },
-  },
-});
+  });
+}
 
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Stable client across re-renders / Strict Mode
+  const [queryClient] = useState(makeQueryClient);
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -39,7 +49,10 @@ export default function RootLayout({
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [checked, setChecked] = useState(false);
+  // Only show the loading spinner on the very first auth check. Subsequent
+  // navigations don't need to re-mount or flash a spinner.
+  const firstCheckDone = useRef(false);
+  const [allowRender, setAllowRender] = useState(firstCheckDone.current);
 
   useEffect(() => {
     const publicPaths = ['/login'];
@@ -47,12 +60,13 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
     if (!isPublic && !isAuthenticated()) {
       router.replace('/login');
-    } else {
-      setChecked(true);
+      return;
     }
+    firstCheckDone.current = true;
+    setAllowRender(true);
   }, [pathname, router]);
 
-  if (!checked) {
+  if (!allowRender) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />

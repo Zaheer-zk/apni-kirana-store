@@ -7,7 +7,7 @@ import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { matchingQueue } from '../queues';
 import { assignDriverForOrder } from '../services/driver.service';
-import { sendNotification } from '../services/notification.service';
+import { sendNotification, notifyAdmins, notify } from '../services/notification.service';
 import { broadcastOrderStatus } from '../services/order-events.service';
 
 const router = Router();
@@ -250,6 +250,34 @@ router.post(
       });
 
       await matchingQueue.add('match-store', { orderId: order.id, excludeStoreIds: [] });
+
+      // Best-effort: notify customer + all admins. Don't block the response.
+      Promise.all([
+        notify('ORDER_PLACED', order.customerId, {
+          orderShort: order.id.slice(-6),
+          orderId: order.id,
+        }),
+        (async () => {
+          const [customer, address] = await Promise.all([
+            prisma.user.findUnique({
+              where: { id: req.user!.id },
+              select: { name: true },
+            }),
+            prisma.address.findUnique({
+              where: { id: order.deliveryAddressId },
+              select: { city: true },
+            }),
+          ]);
+          const itemCount = order.items.reduce((sum, i) => sum + i.qty, 0);
+          await notifyAdmins('ADMIN_ORDER_PLACED', {
+            orderId: order.id,
+            customerName: customer?.name ?? 'A customer',
+            itemCount,
+            total: order.total,
+            city: address?.city ?? 'unknown area',
+          });
+        })(),
+      ]).catch((err) => console.warn('[Orders] post-create notify failed:', err));
 
       return sendSuccess(res, order, 'Order placed successfully', 201);
     } catch (err) {

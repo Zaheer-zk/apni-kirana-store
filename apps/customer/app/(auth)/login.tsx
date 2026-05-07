@@ -25,6 +25,7 @@ interface VerifyOtpResponse {
   user: UserProfile;
   accessToken: string;
   refreshToken: string;
+  hasAddress: boolean;
 }
 
 export default function LoginScreen() {
@@ -123,7 +124,7 @@ export default function LoginScreen() {
       if (!payload?.accessToken || !payload?.refreshToken || !payload?.user) {
         throw new Error(res.data?.error ?? 'Invalid response from server');
       }
-      const { user, accessToken, refreshToken } = payload;
+      const { user, accessToken, refreshToken, hasAddress } = payload;
 
       // First-time customer with no name yet → ask them to register.
       if (!user.name && !submittedName) {
@@ -132,34 +133,16 @@ export default function LoginScreen() {
         return;
       }
 
-      await SecureStore.setItemAsync('accessToken', accessToken);
-      await SecureStore.setItemAsync('refreshToken', refreshToken);
-      await SecureStore.setItemAsync('user', JSON.stringify(user));
+      // Set in-memory auth + parallel SecureStore writes (don't block on disk)
       setAuth(user, accessToken);
+      await Promise.all([
+        SecureStore.setItemAsync('accessToken', accessToken),
+        SecureStore.setItemAsync('refreshToken', refreshToken),
+        SecureStore.setItemAsync('user', JSON.stringify(user)),
+      ]);
 
-      // Check if user has any saved addresses; first-time users go through onboarding.
-      let hasAddress = false;
-      try {
-        const addrRes = await apiClient.get('/api/v1/addresses');
-        const data = addrRes.data;
-        let list: unknown[] = [];
-        if (Array.isArray(data)) {
-          list = data;
-        } else if (data && typeof data === 'object') {
-          const o = data as { data?: unknown };
-          if (Array.isArray(o.data)) list = o.data;
-        }
-        hasAddress = list.length > 0;
-      } catch {
-        // If the lookup fails, fall back to home rather than blocking the user.
-        hasAddress = true;
-      }
-
-      if (hasAddress) {
-        router.replace('/(tabs)/home');
-      } else {
-        router.replace('/onboarding/location');
-      }
+      // hasAddress comes back from verify-otp now — no separate /addresses round-trip
+      router.replace(hasAddress ? '/(tabs)/home' : '/onboarding/location');
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Invalid OTP. Please try again.';

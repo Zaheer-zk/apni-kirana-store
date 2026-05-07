@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
 import { Card } from '@/components/Card';
@@ -23,6 +23,19 @@ const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 export default function OperatingHoursScreen() {
   const { storeProfile, setStoreProfile } = useStorePortalStore();
+
+  // If the in-memory profile is missing (e.g. fresh login, SecureStore cleared),
+  // fall back to fetching from the backend so we always have a store id.
+  useQuery({
+    queryKey: ['storeProfile'],
+    enabled: !storeProfile?.id,
+    queryFn: async () => {
+      const res = await api.get<{ data?: any } | any>('/api/v1/stores/me');
+      const store = (res.data as { data?: any }).data ?? res.data;
+      if (store) setStoreProfile(store);
+      return store;
+    },
+  });
 
   const initialOpen =
     (storeProfile as any)?.openTime ??

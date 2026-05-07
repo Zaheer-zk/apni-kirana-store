@@ -30,7 +30,8 @@ interface VerifyOtpResponse {
 export default function LoginScreen() {
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
-  const [step, setStep] = useState<'phone' | 'otp'>('phone');
+  const [name, setName] = useState('');
+  const [step, setStep] = useState<'phone' | 'otp' | 'register'>('phone');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const otpRefs = useRef<Array<TextInput | null>>([]);
@@ -101,7 +102,7 @@ export default function LoginScreen() {
     }
   }
 
-  async function handleVerifyOtp() {
+  async function handleVerifyOtp(submittedName?: string) {
     if (!isValidOtp) {
       showError('Please enter the complete 6-digit OTP');
       return;
@@ -111,13 +112,26 @@ export default function LoginScreen() {
     try {
       const res = await apiClient.post<{ success: boolean; data: VerifyOtpResponse; error?: string }>(
         '/api/v1/auth/verify-otp',
-        { phone, otp: otpString }
+        {
+          phone,
+          otp: otpString,
+          role: 'CUSTOMER',
+          ...(submittedName ? { name: submittedName } : {}),
+        }
       );
       const payload = res.data?.data;
       if (!payload?.accessToken || !payload?.refreshToken || !payload?.user) {
         throw new Error(res.data?.error ?? 'Invalid response from server');
       }
       const { user, accessToken, refreshToken } = payload;
+
+      // First-time customer with no name yet → ask them to register.
+      if (!user.name && !submittedName) {
+        setStep('register');
+        setLoading(false);
+        return;
+      }
+
       await SecureStore.setItemAsync('accessToken', accessToken);
       await SecureStore.setItemAsync('refreshToken', refreshToken);
       await SecureStore.setItemAsync('user', JSON.stringify(user));
@@ -155,9 +169,19 @@ export default function LoginScreen() {
     }
   }
 
+  async function handleCompleteRegistration() {
+    const trimmed = name.trim();
+    if (trimmed.length < 2) {
+      showError('Please enter your full name');
+      return;
+    }
+    await handleVerifyOtp(trimmed);
+  }
+
   function handleChangeNumber() {
     setStep('phone');
     setOtp(['', '', '', '', '', '']);
+    setName('');
     setError(null);
   }
 
@@ -187,7 +211,44 @@ export default function LoginScreen() {
         >
           <View style={styles.handle} />
 
-          {step === 'phone' ? (
+          {step === 'register' ? (
+            <>
+              <Text style={styles.title}>Welcome aboard</Text>
+              <Text style={styles.subtitle}>
+                Tell us your name so we can personalize your experience
+              </Text>
+
+              <Input
+                label="Full name"
+                value={name}
+                onChangeText={setName}
+                placeholder="e.g. Anita Sharma"
+                autoFocus
+                autoCapitalize="words"
+                returnKeyType="done"
+                onSubmitEditing={handleCompleteRegistration}
+              />
+
+              <Button
+                title="Create my account"
+                onPress={handleCompleteRegistration}
+                loading={loading}
+                disabled={name.trim().length < 2}
+                fullWidth
+                size="lg"
+                style={{ marginTop: spacing.lg }}
+              />
+
+              <TouchableOpacity
+                style={styles.changeNumberBtn}
+                activeOpacity={0.7}
+                onPress={handleChangeNumber}
+              >
+                <Ionicons name="arrow-back" size={16} color={colors.primary} />
+                <Text style={styles.changeNumberText}>Use a different number</Text>
+              </TouchableOpacity>
+            </>
+          ) : step === 'phone' ? (
             <>
               <Text style={styles.title}>Welcome</Text>
               <Text style={styles.subtitle}>
@@ -254,7 +315,7 @@ export default function LoginScreen() {
 
               <Button
                 title="Verify & Continue"
-                onPress={handleVerifyOtp}
+                onPress={() => handleVerifyOtp()}
                 loading={loading}
                 disabled={!isValidOtp}
                 fullWidth

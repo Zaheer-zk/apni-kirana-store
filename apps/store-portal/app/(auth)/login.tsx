@@ -59,14 +59,12 @@ export default function StoreLoginScreen() {
 
       // Store owner: load their store profile (if any) so we can decide where to route
       let storeProfile = data.storeProfile;
-      if (!storeProfile) {
+      if (!storeProfile && data.user.role === 'STORE_OWNER') {
         try {
-          const meRes = await api.get<{ data?: { defaultStore?: unknown } }>('/api/v1/users/me');
-          const me = (meRes.data as { data?: Record<string, unknown> }).data ?? meRes.data;
-          // Backend doesn't currently embed the store, so fall back to a separate lookup below
-          void me;
+          const meRes = await api.get<any>('/api/v1/stores/me');
+          storeProfile = (meRes.data as { data?: any }).data ?? meRes.data;
         } catch {
-          // ignore
+          // 404 is fine — owner without a store goes to /register below
         }
       }
       if (storeProfile) {

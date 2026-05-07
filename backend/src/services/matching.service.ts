@@ -32,7 +32,7 @@
 
 import { prisma } from '../config/prisma';
 import { haversineDistance, getBoundingBox } from '../utils/geo';
-import { sendNotification } from './notification.service';
+import { notify } from './notification.service';
 import { matchingQueue } from '../queues/queues';
 import { io } from '../socket';
 
@@ -189,12 +189,12 @@ async function broadcastToStores(orderId: string, scored: ScoredStore[]): Promis
 
   await Promise.all(
     top.map(async (s) => {
-      await sendNotification(
-        s.ownerId,
-        'New order available',
-        `Order ${orderId.slice(-6)} — ${s.matchedItemCount} items match • ${s.distanceKm.toFixed(1)} km away`,
-        { orderId, score: String(s.score), distanceKm: String(s.distanceKm) },
-      );
+      await notify('STORE_ORDER_OFFERED', s.ownerId, {
+        orderShort: orderId.slice(-6),
+        itemCount: s.matchedItemCount,
+        distanceKm: s.distanceKm.toFixed(1),
+        orderId,
+      });
       // Real-time push so the store portal updates instantly
       io?.to(`user:${s.ownerId}`).emit('order:offered', {
         orderId, score: s.score, distanceKm: s.distanceKm, matchedItemCount: s.matchedItemCount,
@@ -217,12 +217,18 @@ async function broadcastToStores(orderId: string, scored: ScoredStore[]): Promis
 async function cascadeToBestStore(orderId: string, scored: ScoredStore[], excludeStoreIds: string[]): Promise<void> {
   const best = scored[0]!;
   await prisma.order.update({ where: { id: orderId }, data: { storeId: best.storeId } });
-  await sendNotification(
-    best.ownerId,
-    'New order',
-    'You have received a new order. Accept within 3 minutes.',
-    { orderId },
-  );
+  // Resolve item count + total for the templated message
+  const orderForCount = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { totalAmount: true, items: { select: { quantity: true } } },
+  });
+  const itemCount = orderForCount?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
+  await notify('STORE_NEW_ORDER', best.ownerId, {
+    orderShort: orderId.slice(-6),
+    itemCount,
+    total: orderForCount?.totalAmount ?? 0,
+    orderId,
+  });
   io?.to(`user:${best.ownerId}`).emit('order:offered', { orderId });
   await matchingQueue.add(
     'retry-store-match',
@@ -291,12 +297,10 @@ export async function rescindBroadcastOffers(
   });
   await Promise.all(
     stores.map((s) =>
-      sendNotification(
-        s.ownerId,
-        'Order taken',
-        `Order ${orderId.slice(-6)} was accepted by another store.`,
-        { orderId },
-      ).then(() => io?.to(`user:${s.ownerId}`).emit('order:rescinded', { orderId })),
+      notify('STORE_ORDER_RESCINDED', s.ownerId, {
+        orderShort: orderId.slice(-6),
+        orderId,
+      }).then(() => io?.to(`user:${s.ownerId}`).emit('order:rescinded', { orderId })),
     ),
   );
 }

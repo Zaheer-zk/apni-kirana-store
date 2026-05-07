@@ -122,6 +122,26 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /me — current store owner's store (must be before /:id) ────────────
+router.get(
+  '/me',
+  authenticate,
+  authorize('STORE_OWNER'),
+  async (req: Request, res: Response) => {
+    try {
+      const store = await prisma.store.findUnique({
+        where: { ownerId: req.user!.id },
+        include: { _count: { select: { items: true } } },
+      });
+      if (!store) return sendError(res, 'No store found for this owner', 404);
+      return sendSuccess(res, store);
+    } catch (err) {
+      console.error('[Stores] me error:', err);
+      return sendError(res, 'Failed to fetch store', 500);
+    }
+  },
+);
+
 // ─── GET /:id/items ───────────────────────────────────────────────────────────
 
 // ─── GET /orders/active — store owner's active orders (used by dashboard) ───

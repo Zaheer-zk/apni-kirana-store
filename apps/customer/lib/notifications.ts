@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { apiClient } from './api';
 
@@ -34,10 +35,27 @@ export async function registerForPushNotifications(): Promise<string | null> {
     return null;
   }
 
-  // Use Expo push token — Expo's relay forwards to FCM/APNs for free, no
-  // Firebase service account needed. Tokens look like `ExponentPushToken[xxx]`.
-  const tokenObj = await Notifications.getExpoPushTokenAsync();
-  const token = tokenObj.data;
+  // Use Expo push token — Expo's relay forwards to FCM/APNs for free.
+  // Requires an EAS projectId (free, run `npx eas init` once per app to bind one).
+  // Without it we skip gracefully so the rest of the app still works.
+  const projectId =
+    Constants.expoConfig?.extra?.eas?.projectId ??
+    (Constants.easConfig as { projectId?: string } | undefined)?.projectId;
+  if (!projectId) {
+    console.warn(
+      '[Notifications] No EAS projectId — push disabled. Run `npx eas init` ' +
+        'inside apps/customer to enable real pushes.',
+    );
+    return null;
+  }
+  let token: string;
+  try {
+    const tokenObj = await Notifications.getExpoPushTokenAsync({ projectId });
+    token = tokenObj.data;
+  } catch (err) {
+    console.warn('[Notifications] Failed to fetch Expo push token:', err);
+    return null;
+  }
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {

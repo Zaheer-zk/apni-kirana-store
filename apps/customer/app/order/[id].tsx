@@ -215,7 +215,7 @@ export default function OrderDetailScreen() {
   });
 
   const cancelMutation = useMutation({
-    mutationFn: () => cancelOrderRequest(id!),
+    mutationFn: () => cancelOrderRequest({ id: id! }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['order', id] }),
     onError: (err: unknown) => {
       const message = err instanceof Error ? err.message : 'Failed to cancel order';

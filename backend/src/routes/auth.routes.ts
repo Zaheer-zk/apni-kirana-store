@@ -20,6 +20,12 @@ const sendOtpSchema = z.object({
 const verifyOtpSchema = z.object({
   phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits'),
   otp: z.string().length(6, 'OTP must be 6 digits'),
+  // Optional. Mobile clients pass this so the backend knows which app the user
+  // is logging in from. STORE_OWNER / DRIVER must be pre-provisioned by an admin
+  // — the OTP flow refuses to auto-create those roles.
+  role: z.enum(['CUSTOMER', 'STORE_OWNER', 'DRIVER']).optional(),
+  // Optional name for first-time customer registration.
+  name: z.string().min(1).max(100).optional(),
 });
 
 const refreshSchema = z.object({
@@ -63,19 +69,42 @@ router.post('/send-otp', validate(sendOtpSchema), async (req: Request, res: Resp
 
 router.post('/verify-otp', validate(verifyOtpSchema), async (req: Request, res: Response) => {
   try {
-    const { phone, otp } = req.body as { phone: string; otp: string };
+    const { phone, otp, role, name } = req.body as {
+      phone: string;
+      otp: string;
+      role?: 'CUSTOMER' | 'STORE_OWNER' | 'DRIVER';
+      name?: string;
+    };
 
     const valid = await verifyOtp(phone, otp);
     if (!valid) {
       return sendError(res, 'Invalid or expired OTP', 400);
     }
 
-    // Find or create user
+    // Find or create user. STORE_OWNER and DRIVER must be pre-provisioned by
+    // admin — the OTP flow only auto-creates customers.
     let user = await prisma.user.findUnique({ where: { phone } });
     if (!user) {
+      if (role === 'STORE_OWNER' || role === 'DRIVER') {
+        return sendError(
+          res,
+          'Account not found. Stores and drivers must be registered by an administrator.',
+          404,
+        );
+      }
       user = await prisma.user.create({
-        data: { phone, role: 'CUSTOMER' },
+        data: { phone, role: 'CUSTOMER', ...(name ? { name } : {}) },
       });
+    } else if (role && role !== user.role) {
+      // Existing user logging in from the wrong app
+      return sendError(
+        res,
+        `This phone is registered as ${user.role}. Please use the correct app.`,
+        403,
+      );
+    } else if (name && !user.name) {
+      // First-time customer registration providing their name
+      user = await prisma.user.update({ where: { id: user.id }, data: { name } });
     }
 
     if (!user.isActive) {

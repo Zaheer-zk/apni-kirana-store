@@ -73,12 +73,17 @@ export default function OrderDetailScreen() {
 
   const { data: order, isLoading } = useQuery<OrderDetail>({
     queryKey: ['orderDetail', id],
-    queryFn: () => api.get<OrderDetail>(`/api/v1/orders/${id}`).then((r) => r.data),
+    // Backend wraps responses as { success, data } — unwrap to the inner payload
+    queryFn: () =>
+      api
+        .get<{ success: boolean; data: OrderDetail }>(`/api/v1/orders/${id}`)
+        .then((r) => r.data.data),
     enabled: !!id,
   });
 
   const acceptMutation = useMutation({
-    mutationFn: () => api.put(`/api/v1/orders/${id}/store-accept`).then((r) => r.data),
+    // Backend route is /accept (not /store-accept)
+    mutationFn: () => api.put(`/api/v1/orders/${id}/accept`).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orderDetail', id] });
       queryClient.invalidateQueries({ queryKey: ['storeOrders'] });
@@ -88,7 +93,15 @@ export default function OrderDetailScreen() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: () => api.put(`/api/v1/orders/${id}/store-reject`).then((r) => r.data),
+    // Backend route is /reject (not /store-reject) and requires a `reason`.
+    // We pass a sensible default so the simple "Reject Order" button works
+    // without an extra dialog. The store owner can use chat for nuance.
+    mutationFn: (reason?: string) =>
+      api
+        .put(`/api/v1/orders/${id}/reject`, {
+          reason: reason ?? 'Store cannot fulfill this order',
+        })
+        .then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orderDetail', id] });
       queryClient.invalidateQueries({ queryKey: ['storeOrders'] });
@@ -240,7 +253,7 @@ export default function OrderDetailScreen() {
                 {
                   text: 'Reject',
                   style: 'destructive',
-                  onPress: () => rejectMutation.mutate(),
+                  onPress: () => rejectMutation.mutate(undefined),
                 },
               ])
             }

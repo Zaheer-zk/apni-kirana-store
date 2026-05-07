@@ -36,10 +36,20 @@ router.get('/order/:orderId', async (req: Request, res: Response) => {
       return sendError(res, 'This chat has been archived', 410);
     }
 
+    // Look up the counterpart's name + role so the client can show a
+    // proper title like "Customer · Anita Verma" instead of a generic label.
+    const otherUser = await prisma.user.findUnique({
+      where: { id: pair.otherUserId },
+      select: { id: true, name: true, role: true },
+    });
+
     return sendSuccess(res, {
       id: chat.id,
       orderId,
       otherUserId: pair.otherUserId,
+      otherUser: otherUser
+        ? { id: otherUser.id, name: otherUser.name, role: otherUser.role }
+        : null,
       orderStatus: pair.orderStatus,
       canSend: isOrderLive(pair.orderStatus) && !chat.closedAt,
     });

@@ -55,8 +55,11 @@ export default function EditStoreProfileScreen() {
   const validate = (): boolean => {
     const next: { name?: string; pincode?: string; location?: string } = {};
     if (!name.trim()) next.name = 'Store name is required';
-    if (pincode && !/^\d{6}$/.test(pincode))
-      next.pincode = 'Pincode must be 6 digits';
+    // Backend's z.string().regex(/^\d{6}$/) rejects empty strings AND non-6-digit
+    // values. Surface a clear message rather than letting backend 400 us.
+    if (!/^\d{6}$/.test(pincode.trim())) {
+      next.pincode = 'Pincode must be exactly 6 digits';
+    }
     // Coordinates are required for the dispatch engine to find this store
     const latNum = parseFloat(lat);
     const lngNum = parseFloat(lng);

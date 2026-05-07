@@ -98,7 +98,12 @@ export default function StoreProfileScreen() {
             SecureStore.deleteItemAsync('storeProfile'),
           ]);
           clearAuth();
-          router.replace('/(auth)/login');
+          // Use the leaf path. Expo Router resolves /login to the (auth)
+          // group's login screen automatically. Routing via the explicit
+          // /(auth)/login path occasionally races with the AuthGate's
+          // own redirect when clearAuth() flips accessToken to null,
+          // producing "REPLACE not handled by any navigator".
+          router.replace('/login');
         },
       },
     ]);

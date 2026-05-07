@@ -23,8 +23,18 @@ interface ChatResolveResponse {
   id: string;
   orderId: string;
   otherUserId: string;
+  otherUser: { id: string; name: string | null; role: string } | null;
   orderStatus: string;
   canSend: boolean;
+}
+
+function roleLabel(role: string | undefined): string {
+  switch (role) {
+    case 'CUSTOMER':    return 'Customer';
+    case 'STORE_OWNER': return 'Store';
+    case 'DRIVER':      return 'Driver';
+    default:            return 'Order';
+  }
 }
 
 interface ChatMessage {
@@ -84,8 +94,13 @@ export default function ChatScreen() {
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: 'Chat with customer' });
-  }, [navigation]);
+    const other = chatQuery.data?.otherUser;
+    const label = roleLabel(other?.role);
+    const name = other?.name?.split(' ')[0];
+    navigation.setOptions({
+      title: name ? `${label} · ${name}` : label,
+    });
+  }, [navigation, chatQuery.data]);
 
   useEffect(() => {
     if (!accessToken || !chatId) return;

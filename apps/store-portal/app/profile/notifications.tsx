@@ -7,6 +7,7 @@ import {
   Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/Card';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
@@ -105,6 +106,8 @@ function SkeletonRow({ showDivider }: { showDivider?: boolean }) {
 
 export default function NotificationsScreen() {
   const queryClient = useQueryClient();
+  // Use real header height instead of hardcoded 100 — Android's bar height differs from iOS
+  const headerHeight = useHeaderHeight();
 
   const { data, isLoading } = useQuery<NotifPrefs>({
     queryKey: QUERY_KEY,
@@ -150,7 +153,7 @@ export default function NotificationsScreen() {
     return (
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: headerHeight + spacing.md }]}
         showsVerticalScrollIndicator={false}
       >
         <Card padding={0} style={styles.menuCard}>
@@ -166,7 +169,7 @@ export default function NotificationsScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingTop: headerHeight + spacing.md }]}
       showsVerticalScrollIndicator={false}
     >
       <Card padding={0} style={styles.menuCard}>
@@ -213,7 +216,8 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.xl, paddingTop: 100, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  // paddingTop is set dynamically (header height + spacing); was hardcoded 100 which double-stacks on Android
+  content: { padding: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.lg },
   menuCard: { overflow: 'hidden' },
   row: {
     flexDirection: 'row',

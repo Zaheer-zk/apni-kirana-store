@@ -274,7 +274,8 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   scroll: { flex: 1 },
-  content: { padding: spacing.xl, paddingBottom: spacing.xxxl },
+  // paddingBottom > xxxl so last card isn't clipped behind the absolute tab bar on Android
+  content: { padding: spacing.xl, paddingBottom: 120 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',

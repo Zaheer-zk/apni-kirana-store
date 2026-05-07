@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useDriverStore } from '@/store/driver.store';
@@ -77,6 +78,8 @@ function StarsDisplay({ value, size = 16 }: Readonly<StarsDisplayProps>) {
 
 export default function DriverRatingsScreen() {
   const { driverProfile } = useDriverStore();
+  // Android: transparent native header doesn't reserve space; offset content by header height
+  const headerHeight = useHeaderHeight();
 
   const { data: orders, isLoading } = useQuery<OrderListItem[]>({
     queryKey: ['driverOrdersForRatings'],
@@ -133,10 +136,11 @@ export default function DriverRatingsScreen() {
   }, [driverProfile, reviews]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    // Android: include left/right; native Stack header owns the top edge
+    <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: headerHeight + spacing.lg }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Hero card */}
@@ -217,8 +221,8 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1 },
   content: {
-    padding: spacing.xl,
-    paddingTop: spacing.xxxl + spacing.lg,
+    // paddingTop is set dynamically (header height + spacing) by the screen
+    paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xxl,
     gap: spacing.lg,
   },

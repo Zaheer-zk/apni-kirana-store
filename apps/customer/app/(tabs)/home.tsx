@@ -205,7 +205,8 @@ export default function HomeScreen() {
   const isLoading = storesQuery.isLoading;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    // Android: include left/right edges so the sticky header isn't clipped by display cutouts
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       {/* Sticky header */}
       <View style={styles.header}>
         <TouchableOpacity

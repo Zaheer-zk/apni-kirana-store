@@ -12,6 +12,7 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -264,6 +265,8 @@ function RowSkeleton() {
 export default function BrowseCatalogScreen() {
   const queryClient = useQueryClient();
   const storeId = useStorePortalStore((s) => s.storeProfile?.id);
+  // Use real header height instead of hardcoded 100 — Android's bar height differs from iOS
+  const headerHeight = useHeaderHeight();
 
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('ALL');
@@ -342,8 +345,8 @@ export default function BrowseCatalogScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
-      {/* Sticky search */}
-      <View style={styles.searchWrap}>
+      {/* Sticky search — paddingTop set dynamically to clear native header on both platforms */}
+      <View style={[styles.searchWrap, { paddingTop: headerHeight + spacing.sm }]}>
         <Input
           placeholder="Search catalog..."
           value={search}
@@ -431,7 +434,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   searchWrap: {
     paddingHorizontal: spacing.lg,
-    paddingTop: 100,
+    // paddingTop is set dynamically (header height + spacing) by the screen
     paddingBottom: spacing.sm,
   },
   filterBar: { maxHeight: 56, flexGrow: 0 },

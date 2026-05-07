@@ -188,7 +188,8 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.root} edges={['bottom']}>
+    // Android: include left/right; native Stack header owns the top edge
+    <SafeAreaView style={styles.root} edges={['bottom', 'left', 'right']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

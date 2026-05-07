@@ -214,7 +214,8 @@ export default function DashboardScreen() {
   const hoursOnline = (todayStats as { hoursOnline?: number } | undefined)?.hoursOnline ?? 0;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    // Android: include left/right so screen respects horizontal insets (tab bar handles bottom)
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}

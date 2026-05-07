@@ -240,7 +240,8 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '700',
   },
-  list: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.md, flexGrow: 1 },
+  // paddingBottom larger than xxxl so the last card isn't clipped behind the absolute tab bar on Android
+  list: { padding: spacing.lg, paddingBottom: 120, gap: spacing.md, flexGrow: 1 },
 
   cardTop: {
     flexDirection: 'row',

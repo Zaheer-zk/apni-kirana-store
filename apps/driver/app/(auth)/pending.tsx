@@ -34,7 +34,8 @@ export default function PendingApprovalScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    // Android: include left/right so content respects horizontal insets
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}

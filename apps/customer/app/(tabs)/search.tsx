@@ -196,7 +196,8 @@ export default function SearchScreen() {
   const isResultsLoading = isSearching ? searchQuery.isLoading : categoryQuery.isLoading;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    // Android: include left/right edges so the search header respects display cutouts
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       {/* Sticky search header */}
       <View style={styles.header}>
         <TouchableOpacity

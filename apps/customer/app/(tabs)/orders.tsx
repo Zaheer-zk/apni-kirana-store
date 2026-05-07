@@ -167,7 +167,8 @@ export default function OrdersScreen() {
   }, [orders, tab]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    // Android: include left/right edges so the header respects display cutouts
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>My Orders</Text>
         <Text style={styles.headerSubtitle}>Track your active and past orders</Text>

@@ -169,7 +169,8 @@ export default function LoginScreen() {
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
-      <SafeAreaView edges={['top']} style={styles.heroSafe}>
+      {/* Android: include left/right so hero respects horizontal insets too */}
+      <SafeAreaView edges={['top', 'left', 'right']} style={styles.heroSafe}>
         <View style={styles.hero}>
           <View style={styles.logoBadge}>
             <Ionicons name="bicycle" size={40} color={colors.white} />

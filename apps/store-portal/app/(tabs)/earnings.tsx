@@ -166,7 +166,8 @@ export default function StoreEarningsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   container: { flex: 1 },
-  content: { padding: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.md },
+  // paddingBottom > xxxl so the last row isn't clipped behind the absolute tab bar on Android
+  content: { padding: spacing.xl, paddingBottom: 120, gap: spacing.md },
   pageTitle: {
     fontSize: fontSize.xxl,
     fontWeight: '800',

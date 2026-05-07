@@ -9,6 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useMutation } from '@tanstack/react-query';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
@@ -19,6 +20,8 @@ import { colors, fontSize, radius, spacing } from '@/constants/theme';
 
 export default function EditStoreProfileScreen() {
   const { storeProfile, setStoreProfile } = useStorePortalStore();
+  // Use real header height instead of hardcoded 100 — Android's bar height differs from iOS
+  const headerHeight = useHeaderHeight();
 
   const addr = (storeProfile as any)?.address;
   const initialAddress =
@@ -148,7 +151,7 @@ export default function EditStoreProfileScreen() {
     >
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: headerHeight + spacing.md }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -280,7 +283,8 @@ export default function EditStoreProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.xl, paddingTop: 100, paddingBottom: spacing.xxxl },
+  // paddingTop is set dynamically (header height + spacing); was hardcoded 100 which double-stacks on Android
+  content: { padding: spacing.xl, paddingBottom: spacing.xxxl },
   sectionTitle: {
     fontSize: fontSize.xs,
     fontWeight: '700',

@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -23,6 +24,8 @@ const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 export default function OperatingHoursScreen() {
   const { storeProfile, setStoreProfile } = useStorePortalStore();
+  // Use real header height instead of hardcoded 100 — Android's bar height differs from iOS
+  const headerHeight = useHeaderHeight();
 
   // If the in-memory profile is missing (e.g. fresh login, SecureStore cleared),
   // fall back to fetching from the backend so we always have a store id.
@@ -109,7 +112,7 @@ export default function OperatingHoursScreen() {
     >
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: headerHeight + spacing.md }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -186,7 +189,8 @@ export default function OperatingHoursScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.xl, paddingTop: 100, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  // paddingTop is set dynamically (header height + spacing); was hardcoded 100 which double-stacks on Android
+  content: { padding: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.lg },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   rowIconWrap: {
     width: 36,

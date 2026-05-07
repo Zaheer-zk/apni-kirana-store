@@ -10,6 +10,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useMutation } from '@tanstack/react-query';
@@ -100,11 +101,13 @@ export default function StoreLoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <View style={styles.inner}>
+    // SafeAreaView prevents content rendering under Android status bar (auth has no native header)
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={styles.inner}>
         <View style={styles.header}>
           <Text style={styles.logo}>🏪</Text>
           <Text style={styles.title}>AKS Store</Text>
@@ -173,7 +176,8 @@ export default function StoreLoginScreen() {
           <Text style={styles.registerLinkText}>Register your store</Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

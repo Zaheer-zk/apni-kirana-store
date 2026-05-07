@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -252,7 +252,8 @@ export default function OrderDetailScreen() {
 
   if (isError || !data) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      // Android: native header reserves the top, so this screen owns left/right/bottom only — avoids double-header overlap
+      <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
         <Header title="Order" />
         <View style={styles.center}>
           <Text style={{ color: colors.textSecondary }}>Order not found.</Text>
@@ -300,6 +301,8 @@ export default function OrderDetailScreen() {
 
   return (
     <View style={styles.safe}>
+      {/* Android: native header would overlap the custom map back-button/badge — disable it on this screen to avoid duplicate UI */}
+      <Stack.Screen options={{ headerShown: false }} />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.xxxl }}>
         {/* Map area */}
         <View style={styles.mapWrap}>

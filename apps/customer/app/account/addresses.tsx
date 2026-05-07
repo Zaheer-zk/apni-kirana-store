@@ -163,7 +163,8 @@ export default function AddressesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    // Android: include left/right edges so the custom Header respects display cutouts
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <Header title="My Addresses" />
 
       {addressesQuery.isLoading ? (

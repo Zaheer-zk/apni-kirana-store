@@ -87,7 +87,8 @@ export default function OnboardingLocation() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    // Modal-style screen with no native header — apply all four edges so content stays inside the safe area on Android too
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.content}>
         <View style={styles.illustrationWrap}>
           <View style={styles.iconCircle}>

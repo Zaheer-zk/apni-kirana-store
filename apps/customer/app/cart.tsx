@@ -6,6 +6,8 @@ import { useMemo, useState } from 'react';
 import {
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -221,9 +223,16 @@ export default function CartScreen() {
 
   return (
     <View style={styles.safe}>
+      {/* Promo TextInput needs KAV so the sticky Place Order button isn't covered by the keyboard on iOS; Android relies on softwareKeyboardLayoutMode=pan */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
       >
         {/* Items */}
         <View style={styles.section}>
@@ -401,6 +410,7 @@ export default function CartScreen() {
           />
         </View>
       </SafeAreaView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

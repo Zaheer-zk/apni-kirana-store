@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -70,6 +71,8 @@ export default function ChatScreen() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState('');
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  // Native transparent header on Android — push the list down so the first bubble isn't hidden
+  const headerHeight = useHeaderHeight();
 
   const chatQuery = useQuery({
     queryKey: ['chat', orderId],
@@ -188,7 +191,8 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.root} edges={['bottom']}>
+    // edges include left/right so notched-Android phones don't clip the bubbles; native header handles top
+    <SafeAreaView style={styles.root} edges={['bottom', 'left', 'right']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -198,7 +202,7 @@ export default function ChatScreen() {
           ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingTop: headerHeight + spacing.md }]}
           ListEmptyComponent={
             <View style={styles.emptyBlock}>
               <Ionicons name="chatbubbles" size={36} color={colors.textMuted} />

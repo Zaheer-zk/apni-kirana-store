@@ -74,7 +74,8 @@ export default function DriverRegisterScreen() {
 
   if (submitted) {
     return (
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      // Android: full edges so success state isn't clipped by system bars
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
         <View style={styles.pendingContainer}>
           <EmptyState
             icon="time-outline"
@@ -91,7 +92,8 @@ export default function DriverRegisterScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    // Android: include left/right edges so content respects horizontal insets
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.contentContainer}

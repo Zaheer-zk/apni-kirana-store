@@ -139,7 +139,8 @@ export default function DeliveriesScreen() {
   }, [refetch]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    // Android: include left/right so list respects horizontal insets (tab bar handles bottom)
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Delivery History</Text>
         <Text style={styles.headerSubtitle}>

@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -70,6 +71,8 @@ function TimelineItem({ event, isLast }: { event: OrderStatusEvent; isLast: bool
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const queryClient = useQueryClient();
+  // Use real header height instead of hardcoded 100 — Android's bar height differs from iOS
+  const headerHeight = useHeaderHeight();
 
   const { data: order, isLoading } = useQuery<OrderDetail>({
     queryKey: ['orderDetail', id],
@@ -150,7 +153,7 @@ export default function OrderDetailScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingTop: headerHeight + spacing.md }]}
       showsVerticalScrollIndicator={false}
     >
       {/* Header */}
@@ -310,7 +313,8 @@ export default function OrderDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.xl, paddingTop: 100, paddingBottom: spacing.xxxl },
+  // paddingTop is set dynamically (header height + spacing) by the screen; avoids 100px Android overlap
+  content: { padding: spacing.xl, paddingBottom: spacing.xxxl },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',

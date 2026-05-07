@@ -72,10 +72,12 @@ export default function EditProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    // Android: include left/right edges so the custom Header respects display cutouts
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <Header title="Edit Profile" />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
+        // 'height' on Android plays nicely with windowSoftInputMode=pan; 'padding' breaks layout
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={20}
       >

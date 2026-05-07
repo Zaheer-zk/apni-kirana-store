@@ -9,7 +9,9 @@ import {
   ScrollView,
   Alert,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -82,7 +84,8 @@ export default function StoreRegisterScreen() {
 
   if (submitted) {
     return (
-      <View style={styles.pendingContainer}>
+      // SafeAreaView so the success screen respects Android status bar
+      <SafeAreaView style={styles.pendingContainer} edges={['top', 'left', 'right', 'bottom']}>
         <Text style={styles.pendingIcon}>⏳</Text>
         <Text style={styles.pendingTitle}>Store Registered!</Text>
         <Text style={styles.pendingDesc}>
@@ -92,12 +95,22 @@ export default function StoreRegisterScreen() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(auth)/login')}>
           <Text style={styles.backButtonText}>Back to Login</Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    // SafeAreaView prevents content under Android status bar; KeyboardAvoidingView uses 'height' on Android
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.contentContainer}
+          keyboardShouldPersistTaps="handled"
+        >
       <TouchableOpacity onPress={() => router.back()} style={styles.backArrow}>
         <Text style={styles.backArrowText}>← Back</Text>
       </TouchableOpacity>
@@ -209,7 +222,9 @@ export default function StoreRegisterScreen() {
           <Text style={styles.submitButtonText}>Submit Registration</Text>
         )}
       </TouchableOpacity>
-    </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -36,6 +37,8 @@ export default function EditItemScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const queryClient = useQueryClient();
   const storeId = useStorePortalStore((s) => s.storeProfile?.id);
+  // Use real header height instead of hardcoded 100 — Android's bar height differs from iOS
+  const headerHeight = useHeaderHeight();
 
   const { data: item, isLoading } = useQuery<StoreInventoryItem | null>({
     queryKey: ['inventoryItem', id],
@@ -111,7 +114,7 @@ export default function EditItemScreen() {
     >
       <ScrollView
         style={styles.container}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: headerHeight + spacing.md }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -190,7 +193,8 @@ export default function EditItemScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.xl, paddingTop: 100, paddingBottom: spacing.xxxl, gap: spacing.lg },
+  // paddingTop is set dynamically (header height + spacing); was hardcoded 100 which double-stacks on Android
+  content: { padding: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.lg },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',

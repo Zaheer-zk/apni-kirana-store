@@ -94,10 +94,27 @@ function StatCard({
 }
 
 export default function DashboardScreen() {
-  const { storeProfile, accessToken, incomingOrderId, setStoreOpen } = useStorePortalStore();
+  const { storeProfile, accessToken, incomingOrderId, setStoreOpen, setStoreProfile } =
+    useStorePortalStore();
   const queryClient = useQueryClient();
   const isOpen = storeProfile?.isOpen ?? false;
   const unreadCount = useUnreadNotificationsCount();
+
+  // If the in-memory store profile is missing (e.g. fresh login before
+  // SecureStore was populated, or first launch after the route-order bug
+  // returned a 404), lazy-fetch it from the backend. Without this the
+  // open/close toggle would throw "No store profile loaded".
+  useQuery({
+    queryKey: ['storeProfile'],
+    enabled: !!accessToken && !storeProfile?.id,
+    queryFn: async () => {
+      const res = await api.get('/api/v1/stores/me');
+      const store = (res.data as { data?: any }).data ?? res.data;
+      if (store) setStoreProfile(store);
+      return store;
+    },
+    staleTime: 60_000,
+  });
 
   const { data: stats, isLoading: statsLoading } = useQuery<StoreDashboardStats>({
     queryKey: ['storeDashboardStats'],

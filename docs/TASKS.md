@@ -4,6 +4,11 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-07 — Chat push + Postman
+
+- [x] **Chat → push notification** — recipient's phone buzzes when a new chat message arrives. Uses the `CHAT_MESSAGE` templated event ("Sender (Order #ABC123) — preview"). Smart guard: skips the push if the recipient already has the chat screen open (Socket.io `chat:<id>` room membership check via `io.in().fetchSockets()`). Tap deep-links to `/chat/<orderId>` in all 3 mobile apps.
+- [x] **Postman collection** — `docs/postman/apni-kirana-store.postman_collection.json` enumerates every endpoint (Auth/Users/Stores/Items/Catalog/Orders/Drivers/Notifications/Chats/Promos/Admin × ~70 requests) with example bodies. Test script on Verify OTP auto-captures the access token; on Place Order auto-captures the order id; on Resolve Chat auto-captures the chat id. `local.postman_environment.json` ships seed phones + baseUrl. README in the same folder.
+
 ### 2026-05-07 — Chat UI
 
 - [x] **Chat thread screen in all 3 mobile apps** — same UX in customer / driver / store-portal: bubbles, sender alignment, timestamps, optimistic send, Socket.io live delivery, auto-scroll. Composer disables when chat is read-only (order in terminal state). Plain text only — no media for v1.

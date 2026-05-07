@@ -1,0 +1,1021 @@
+{
+  "info": {
+    "name": "Apni Kirana Store",
+    "description": "Hyperlocal delivery API. Set the `baseUrl` collection variable, run **Auth → Send OTP** then **Verify OTP** — the access token is captured automatically and used for every authed request below.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "userId", "value": "", "type": "string" },
+    { "key": "phone", "value": "8888888881", "type": "string" },
+    { "key": "otp", "value": "123456", "type": "string" },
+    { "key": "orderId", "value": "", "type": "string" },
+    { "key": "storeId", "value": "", "type": "string" },
+    { "key": "driverId", "value": "", "type": "string" },
+    { "key": "addressId", "value": "", "type": "string" },
+    { "key": "itemId", "value": "", "type": "string" },
+    { "key": "catalogItemId", "value": "", "type": "string" },
+    { "key": "chatId", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Send OTP",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/auth/send-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"{{phone}}\"\n}" }
+          }
+        },
+        {
+          "name": "Verify OTP (and capture token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r && r.data) {",
+                  "  pm.collectionVariables.set('accessToken', r.data.accessToken || '');",
+                  "  pm.collectionVariables.set('refreshToken', r.data.refreshToken || '');",
+                  "  pm.collectionVariables.set('userId', r.data.user?.id || '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/auth/verify-otp",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"otp\": \"{{otp}}\",\n  \"role\": \"CUSTOMER\",\n  \"name\": \"Optional — only used if first-time signup\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Refresh access token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/auth/refresh",
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get my profile",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/users/me" }
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Zaheer Khan\"\n}" }
+          }
+        },
+        {
+          "name": "Deactivate account",
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/users/me" }
+        },
+        {
+          "name": "Get notification preferences",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/users/me/preferences" }
+        },
+        {
+          "name": "Update notification preferences",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/users/me/preferences",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderUpdates\": true,\n  \"promotional\": false,\n  \"dailySummary\": false,\n  \"driverUpdates\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Addresses",
+      "item": [
+        {
+          "name": "List my addresses",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/addresses" }
+        },
+        {
+          "name": "Create address",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/addresses",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Home\",\n  \"street\": \"7 Connaught Lane\",\n  \"city\": \"New Delhi\",\n  \"state\": \"Delhi\",\n  \"pincode\": \"110001\",\n  \"lat\": 28.616,\n  \"lng\": 77.209,\n  \"isDefault\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Update address",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/addresses/{{addressId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"label\": \"Office\"\n}" }
+          }
+        },
+        {
+          "name": "Delete address",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/addresses/{{addressId}}"
+          }
+        },
+        {
+          "name": "Set as default",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/addresses/{{addressId}}/default"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stores",
+      "item": [
+        {
+          "name": "Register a store (becomes STORE_OWNER)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/stores/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My Kirana\",\n  \"category\": \"GROCERY\",\n  \"street\": \"Main Bazaar\",\n  \"city\": \"New Delhi\",\n  \"state\": \"Delhi\",\n  \"pincode\": \"110001\",\n  \"lat\": 28.6155,\n  \"lng\": 77.2095,\n  \"openTime\": \"07:00\",\n  \"closeTime\": \"23:00\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get my store (owner-only)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/stores/me" }
+        },
+        {
+          "name": "Nearby stores",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stores/nearby?lat=28.6155&lng=77.2095&radius=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stores", "nearby"],
+              "query": [
+                { "key": "lat", "value": "28.6155" },
+                { "key": "lng", "value": "77.2095" },
+                { "key": "radius", "value": "5" },
+                { "key": "category", "value": "GROCERY", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get store by id",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/stores/{{storeId}}" }
+        },
+        {
+          "name": "Store items (paginated)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stores/{{storeId}}/items?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stores", "{{storeId}}", "items"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "50" },
+                { "key": "category", "value": "GROCERY", "disabled": true },
+                { "key": "search", "value": "milk", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Owner: my active orders",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/stores/orders/active" }
+        },
+        {
+          "name": "Owner: my orders (filterable)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stores/orders?statuses=DELIVERED,CANCELLED",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stores", "orders"],
+              "query": [{ "key": "statuses", "value": "DELIVERED,CANCELLED" }]
+            }
+          }
+        },
+        {
+          "name": "Update store",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/stores/{{storeId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"openTime\": \"08:00\",\n  \"closeTime\": \"22:00\"\n}" }
+          }
+        },
+        {
+          "name": "Toggle open/closed",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/stores/{{storeId}}/status",
+            "body": { "mode": "raw", "raw": "{\n  \"isOpen\": true\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Items (store inventory)",
+      "item": [
+        {
+          "name": "Search items",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/items/search?q=milk&lat=28.6155&lng=77.2095&radius=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "items", "search"],
+              "query": [
+                { "key": "q", "value": "milk" },
+                { "key": "lat", "value": "28.6155" },
+                { "key": "lng", "value": "77.2095" },
+                { "key": "radius", "value": "5" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add inventory item (store owner)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/items",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"catalogItemId\": \"{{catalogItemId}}\",\n  \"price\": 65,\n  \"stockQty\": 50,\n  \"isAvailable\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Update inventory item",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/items/{{itemId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"price\": 60,\n  \"stockQty\": 30\n}" }
+          }
+        },
+        {
+          "name": "Delete inventory item",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/items/{{itemId}}"
+          }
+        },
+        {
+          "name": "Toggle availability",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/items/{{itemId}}/availability",
+            "body": { "mode": "raw", "raw": "{\n  \"isAvailable\": true\n}" }
+          }
+        },
+        {
+          "name": "Update stock",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/items/{{itemId}}/stock",
+            "body": { "mode": "raw", "raw": "{\n  \"stockQty\": 100\n}" }
+          }
+        },
+        {
+          "name": "Bulk import items",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/items/bulk",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"catalogItemId\": \"...\", \"price\": 50, \"stockQty\": 20 }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog (master)",
+      "item": [
+        {
+          "name": "List catalog items",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalog?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "catalog"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "category", "value": "GROCERY", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get catalog item",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/catalog/{{catalogItemId}}" }
+        },
+        {
+          "name": "Search catalog (fuzzy)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalog/search/q?q=atta&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "catalog", "search", "q"],
+              "query": [
+                { "key": "q", "value": "atta" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin: create catalog item",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/catalog",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Aashirvaad Atta 5kg\",\n  \"category\": \"GROCERY\",\n  \"defaultUnit\": \"5kg pack\",\n  \"imageUrl\": null\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin: update catalog item",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/catalog/{{catalogItemId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"New name\"\n}" }
+          }
+        },
+        {
+          "name": "Admin: delete catalog item",
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/catalog/{{catalogItemId}}" }
+        },
+        {
+          "name": "Admin: bulk import catalog",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/catalog/bulk",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"name\": \"Amul Milk 500ml\", \"category\": \"BEVERAGES\", \"defaultUnit\": \"500ml\" }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Place order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r?.data?.id) pm.collectionVariables.set('orderId', r.data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"itemId\": \"{{itemId}}\", \"qty\": 2 }\n  ],\n  \"deliveryAddressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"CASH_ON_DELIVERY\",\n  \"notes\": \"Ring doorbell twice\",\n  \"promoCode\": null\n}"
+            }
+          }
+        },
+        {
+          "name": "List my orders",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/orders?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "orders"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "DELIVERED", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get order detail",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/orders/{{orderId}}" }
+        },
+        {
+          "name": "Store: accept order",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/orders/{{orderId}}/accept"
+          }
+        },
+        {
+          "name": "Store: reject order",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/orders/{{orderId}}/reject",
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Out of stock\"\n}" }
+          }
+        },
+        {
+          "name": "Update order status (driver flow)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/orders/{{orderId}}/status",
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"PICKED_UP\"\n}" }
+          }
+        },
+        {
+          "name": "Customer: cancel order",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/orders/{{orderId}}/cancel",
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Changed my mind\"\n}" }
+          }
+        },
+        {
+          "name": "Customer: rate order",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/orders/{{orderId}}/rate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeRating\": 5,\n  \"driverRating\": 5,\n  \"storeComment\": \"Fresh items\",\n  \"driverComment\": \"Fast delivery\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Drivers",
+      "item": [
+        {
+          "name": "Register as driver",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/drivers/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleType\": \"BIKE\",\n  \"vehicleNumber\": \"DL-09-AA-1234\",\n  \"licenseNumber\": \"DL1234567890\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Update driver status (ONLINE/OFFLINE)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/drivers/status",
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"ONLINE\"\n}" }
+          }
+        },
+        {
+          "name": "Update location",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/drivers/location",
+            "body": { "mode": "raw", "raw": "{\n  \"lat\": 28.6158,\n  \"lng\": 77.2092\n}" }
+          }
+        },
+        {
+          "name": "Earnings summary",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/drivers/earnings" }
+        },
+        {
+          "name": "Active deliveries",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/drivers/orders/active" }
+        },
+        {
+          "name": "Past deliveries",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/drivers/orders" }
+        },
+        {
+          "name": "Accept delivery offer",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/drivers/orders/{{orderId}}/accept"
+          }
+        },
+        {
+          "name": "Reject delivery offer",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/drivers/orders/{{orderId}}/reject",
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Too far\"\n}" }
+          }
+        },
+        {
+          "name": "Mark picked up",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/drivers/orders/{{orderId}}/pickup"
+          }
+        },
+        {
+          "name": "Mark delivered (with dropoff OTP)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/drivers/orders/{{orderId}}/deliver",
+            "body": { "mode": "raw", "raw": "{\n  \"dropoffOtp\": \"1234\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List notifications",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark all as read",
+          "request": { "method": "PUT", "url": "{{baseUrl}}/api/v1/notifications/read-all" }
+        },
+        {
+          "name": "Mark one as read",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/v1/notifications/:id/read"
+          }
+        },
+        {
+          "name": "Register push token (FCM/Expo)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/notifications/fcm-token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]\",\n  \"platform\": \"ios\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Unregister push token",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/fcm-token?token=ExponentPushToken[xxx]",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications", "fcm-token"],
+              "query": [{ "key": "token", "value": "ExponentPushToken[xxx]" }]
+            }
+          }
+        },
+        {
+          "name": "Web Push: VAPID public key",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/notifications/web-push/public-key"
+          }
+        },
+        {
+          "name": "Web Push: subscribe",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/notifications/web-push/subscribe",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"endpoint\": \"https://fcm.googleapis.com/...\",\n  \"keys\": {\n    \"p256dh\": \"...\",\n    \"auth\": \"...\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Web Push: unsubscribe",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/notifications/web-push/unsubscribe",
+            "body": { "mode": "raw", "raw": "{\n  \"endpoint\": \"https://fcm.googleapis.com/...\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chats",
+      "item": [
+        {
+          "name": "Resolve chat for order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r?.data?.id) pm.collectionVariables.set('chatId', r.data.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/chats/order/{{orderId}}"
+          }
+        },
+        {
+          "name": "List messages",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chats", "{{chatId}}", "messages"],
+              "query": [{ "key": "before", "value": "2026-05-07T00:00:00Z", "disabled": true }]
+            }
+          }
+        },
+        {
+          "name": "Send message",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/chats/{{chatId}}/messages",
+            "body": { "mode": "raw", "raw": "{\n  \"body\": \"Take a left after the petrol pump\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Promos",
+      "item": [
+        {
+          "name": "Validate promo code (any user)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/promos/validate",
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"WELCOME50\",\n  \"orderTotal\": 200\n}" }
+          }
+        },
+        {
+          "name": "Admin: list promos",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/promos" }
+        },
+        {
+          "name": "Admin: create promo",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/promos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"WELCOME50\",\n  \"description\": \"50 off first order\",\n  \"discountType\": \"FIXED\",\n  \"discountValue\": 50,\n  \"minOrderValue\": 200,\n  \"maxRedemptions\": 1000,\n  \"validFrom\": \"2026-05-01T00:00:00Z\",\n  \"validUntil\": \"2026-12-31T23:59:59Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin: update promo",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/promos/:id",
+            "body": { "mode": "raw", "raw": "{\n  \"discountValue\": 75\n}" }
+          }
+        },
+        {
+          "name": "Admin: delete promo",
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/promos/:id" }
+        },
+        {
+          "name": "Admin: toggle active",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/promos/:id/toggle",
+            "body": { "mode": "raw", "raw": "{\n  \"isActive\": true\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Users",
+          "item": [
+            {
+              "name": "List users",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/users?role=CUSTOMER&page=1&limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "users"],
+                  "query": [
+                    { "key": "role", "value": "CUSTOMER" },
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" },
+                    { "key": "search", "value": "Zaheer", "disabled": true }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Suspend / unsuspend user",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{baseUrl}}/api/v1/admin/users/:id/suspend",
+                "body": { "mode": "raw", "raw": "{\n  \"isActive\": false,\n  \"reason\": \"Repeated abuse\"\n}" }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stores",
+          "item": [
+            {
+              "name": "List stores",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/stores?status=ACTIVE",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "stores"],
+                  "query": [
+                    { "key": "status", "value": "ACTIVE" },
+                    { "key": "search", "value": "Baqala", "disabled": true }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Pending stores",
+              "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/admin/stores/pending" }
+            },
+            {
+              "name": "Approve store",
+              "request": {
+                "method": "PUT",
+                "url": "{{baseUrl}}/api/v1/admin/stores/{{storeId}}/approve"
+              }
+            },
+            {
+              "name": "Suspend store",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{baseUrl}}/api/v1/admin/stores/{{storeId}}/suspend",
+                "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Hygiene complaint\"\n}" }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Drivers",
+          "item": [
+            {
+              "name": "List drivers",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/drivers?status=ONLINE",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "drivers"],
+                  "query": [{ "key": "status", "value": "ONLINE" }]
+                }
+              }
+            },
+            {
+              "name": "Pending drivers",
+              "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/admin/drivers/pending" }
+            },
+            {
+              "name": "Approve driver",
+              "request": {
+                "method": "PUT",
+                "url": "{{baseUrl}}/api/v1/admin/drivers/{{driverId}}/approve"
+              }
+            },
+            {
+              "name": "Suspend driver",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{baseUrl}}/api/v1/admin/drivers/{{driverId}}/suspend",
+                "body": { "mode": "raw", "raw": "{\n  \"reason\": \"License expired\"\n}" }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Orders",
+          "item": [
+            {
+              "name": "List orders",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/orders?page=1&limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "orders"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "20" },
+                    { "key": "status", "value": "PENDING", "disabled": true }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Order detail",
+              "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/admin/orders/{{orderId}}" }
+            },
+            {
+              "name": "Eligible stores (filtered + ranked)",
+              "request": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/admin/orders/{{orderId}}/eligible-stores"
+              }
+            },
+            {
+              "name": "Eligible drivers (ranked by distance)",
+              "request": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/admin/orders/{{orderId}}/eligible-drivers"
+              }
+            },
+            {
+              "name": "Manually assign store",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{baseUrl}}/api/v1/admin/orders/{{orderId}}/assign-store",
+                "body": { "mode": "raw", "raw": "{\n  \"storeId\": \"{{storeId}}\",\n  \"reason\": \"Manual override after store rejection\"\n}" }
+              }
+            },
+            {
+              "name": "Manually assign driver",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{baseUrl}}/api/v1/admin/orders/{{orderId}}/assign-driver",
+                "body": { "mode": "raw", "raw": "{\n  \"driverId\": \"{{driverId}}\"\n}" }
+              }
+            },
+            {
+              "name": "Issue refund",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{baseUrl}}/api/v1/admin/orders/{{orderId}}/refund",
+                "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Customer reported missing items\"\n}" }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Settings & analytics",
+          "item": [
+            {
+              "name": "Get platform settings",
+              "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/admin/settings" }
+            },
+            {
+              "name": "Analytics",
+              "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/admin/analytics" }
+            },
+            {
+              "name": "Audit logs",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/admin/audit-logs?page=1&limit=50",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "v1", "admin", "audit-logs"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "50" },
+                    { "key": "action", "value": "ORDER_ASSIGN_STORE", "disabled": true }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Zones",
+          "item": [
+            {
+              "name": "List zones",
+              "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/admin/zones" }
+            },
+            {
+              "name": "Create zone",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{baseUrl}}/api/v1/admin/zones",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Connaught Place\",\n  \"city\": \"New Delhi\",\n  \"centerLat\": 28.6315,\n  \"centerLng\": 77.2167,\n  \"radiusKm\": 5,\n  \"baseDeliveryFee\": 30,\n  \"perKmFee\": 5,\n  \"commissionRate\": 0.1,\n  \"isActive\": true\n}"
+                }
+              }
+            },
+            {
+              "name": "Update zone",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "url": "{{baseUrl}}/api/v1/admin/zones/:id",
+                "body": { "mode": "raw", "raw": "{\n  \"radiusKm\": 7\n}" }
+              }
+            },
+            {
+              "name": "Delete zone",
+              "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/admin/zones/:id" }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

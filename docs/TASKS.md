@@ -4,6 +4,13 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-07 — Deployment audit + Android local-install guide
+
+- [x] **Fixed prod docker-compose build context bug** — `backend` and `admin` services had `context: ./backend` and `./apps/admin` respectively, but both Dockerfiles import from `../shared` workspace package. Production builds would fail with "shared/package.json not found". Both now correctly use `context: .` + `dockerfile: ./backend/Dockerfile` like the dev compose. **Without this fix, `docker compose -f docker-compose.prod.yml up` errors out on first build.**
+- [x] **Production "first admin user" SQL inserted into deployment guide** — production has no seed (correctly — seed creates fake test users). Added a `psql INSERT` snippet to create the bootstrap admin row right after `prisma migrate deploy`. Includes a "do NOT run prisma db seed in production" warning.
+- [x] **nginx placeholder-domain replacement step** — `nginx/conf.d/*.conf` ships with `api.yourdomain.com` / `admin.yourdomain.com` as `server_name` placeholders. Added a `sed -i` one-liner step before `init-ssl.sh` so first-time deployers don't accidentally try to issue a cert for the placeholder.
+- [x] **`docs/android-local-install.md`** — new guide with three install paths ranked by speed: (A) Expo Go QR scan for daily dev, (B) EAS Build → APK link → sideload (real install + working push), (C) local dev build for custom natives. Per-app folder/port/bundle-ID table. Test users to log in with. Per-app workflow recommendation. Troubleshooting table covering the 6 most-common failure modes. Cross-linked from `getting-started.md` and `deployment.md`.
+
 ### 2026-05-07 — HostLelo deployment guide (own provider)
 
 - [x] **HostLelo product matrix** — every product they sell mapped to "runs our stack? yes/no". Cloud VPS / VDS / Dedicated all OK; Shared / WordPress / UAE Web Hosting all explicitly NO (cPanel, no Docker).

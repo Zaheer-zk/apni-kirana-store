@@ -283,5 +283,7 @@ Mobile dev servers stop with `Ctrl+C` in their terminal.
 - [Architecture](./architecture.md) — how the pieces fit together
 - [Notifications](./notifications.md) — Expo Push, web push, and the templated `notify()` system
 - [Docker Setup](./docker-setup.md) — deeper dive into the container setup
+- [Android local install](./android-local-install.md) — sideload the apps on your own phone for testing
+- [Deployment](./deployment.md) — go to production on HostLelo (or any Ubuntu VPS)
 - [Postman collection](./postman/) — every API endpoint, importable
 - [Troubleshooting](./troubleshooting.md) — when things go wrong

@@ -147,6 +147,18 @@ nano .env.prod    # see [Environment](#environment) below for what to fill
 chmod 600 .env.prod
 ```
 
+**Replace the placeholder domain in the nginx configs.** The committed nginx
+files use `api.yourdomain.com` / `admin.yourdomain.com` as placeholders:
+
+```bash
+# One-shot rewrite — substitute YOUR domain everywhere
+sed -i 's/api\.yourdomain\.com/api.YOURDOMAIN.com/g'   nginx/conf.d/*.conf
+sed -i 's/admin\.yourdomain\.com/admin.YOURDOMAIN.com/g' nginx/conf.d/*.conf
+
+# Verify
+grep -h "server_name" nginx/conf.d/*.conf
+```
+
 ### 5. SSL + first start + smoke test
 
 ```bash
@@ -160,12 +172,28 @@ bash scripts/init-ssl.sh \
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml exec backend npx prisma migrate deploy
 
-# 5.3 Smoke test
+# 5.3 Create the first admin user (production has NO seed — by design)
+docker compose -f docker-compose.prod.yml exec postgres psql -U postgres \
+  -d apni_kirana_store -c \
+  "INSERT INTO \"User\" (id, name, phone, role, \"isActive\", \"createdAt\", \"updatedAt\")
+   VALUES ('cl' || md5(random()::text || clock_timestamp()::text), 'Admin User',
+           '9999999999', 'ADMIN', true, NOW(), NOW())
+   ON CONFLICT (phone) DO NOTHING;"
+
+# 5.4 Smoke test
 curl https://api.yourdomain.com/health     # → { "status": "ok" }
 open https://admin.yourdomain.com          # → admin login screen
 ```
 
-You're live. Test the full order flow from the customer app pointed at this API to confirm matching/notifications/chat all work in production mode.
+> ⚠️ **Do NOT run `prisma db seed` in production.** The seed file creates 11
+> fake users (Zaheer / Baqala / Chotu / etc. with `8888888881`-style phone
+> numbers) — useful in dev, dangerous in prod.
+
+You're live. Log in to admin via the phone you just inserted (replace the
+`9999999999` placeholder above with **your real phone**). The OTP arrives via
+your configured `SMS_PROVIDER` (or in backend logs if `CONSOLE`). Test the
+full order flow from the customer app pointed at this API to confirm
+matching / notifications / chat all work in production mode.
 
 ### 6. Day-2 operations
 
@@ -393,6 +421,8 @@ Once you have users, plug in:
 ## Mobile apps — store submission
 
 Mobile apps (customer / driver / store-portal) ship via the **EAS Build** service (free tier covers ~30 builds/month — enough for early-stage iteration).
+
+> 🧪 **For testing the apps on your own Android phone before going live**, see [docs/android-local-install.md](./android-local-install.md). It covers Expo Go (fastest), EAS Build APKs (real install with working push), and local dev builds.
 
 ### One-time setup
 

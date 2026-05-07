@@ -30,7 +30,11 @@ services:
 
   backend:
     build:
-      context: ./backend
+      # Backend Dockerfile imports from ../shared, so we MUST build from
+      # the monorepo root (not ./backend). Dockerfile path is relative to
+      # the build context.
+      context: .
+      dockerfile: ./backend/Dockerfile
       target: production
     env_file:
       - .env.prod
@@ -51,7 +55,10 @@ services:
 
   admin:
     build:
-      context: ./apps/admin
+      # Admin shares workspace deps with the rest of the monorepo, so build
+      # context must be the repo root.
+      context: .
+      dockerfile: ./apps/admin/Dockerfile
       target: production
     restart: unless-stopped
     environment:

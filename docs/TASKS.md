@@ -4,6 +4,11 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-07 — Admin chat read-only view
+
+- [x] **Admin can read chat threads on order detail** — new `GET /admin/orders/:id/chats` returns every Chat row for the order (could be 0–3) with full message history, participant names + roles + phones, message count, and Active/Closed/Archived state. Used for fraud / support investigation.
+- [x] **Read-only chat panel on `/orders/[id]`** — new "Conversations" card lists each thread as a collapsible `<details>` block. Header shows participant labels (Customer ↔ Store / Customer ↔ Driver / Store ↔ Driver) plus an Active/Closed/Archived badge. Body shows each message with sender name, phone/role, timestamp, and the body in a chat-bubble style. 30s polling. No send UI — admin observes only.
+
 ### 2026-05-07 — Chat push + Postman
 
 - [x] **Chat → push notification** — recipient's phone buzzes when a new chat message arrives. Uses the `CHAT_MESSAGE` templated event ("Sender (Order #ABC123) — preview"). Smart guard: skips the push if the recipient already has the chat screen open (Socket.io `chat:<id>` room membership check via `io.in().fetchSockets()`). Tap deep-links to `/chat/<orderId>` in all 3 mobile apps.

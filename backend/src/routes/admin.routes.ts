@@ -385,6 +385,64 @@ router.get('/orders/:id/eligible-stores', async (req: Request, res: Response) =>
   }
 });
 
+// ─── GET /orders/:id/chats — all conversations on this order, read-only ─────
+// Returns every Chat row for the order (could be 0–3: customer↔store,
+// customer↔driver, store↔driver) with full message history and participant
+// names. Used by admin for fraud / support investigation.
+
+router.get('/orders/:id/chats', async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params['id']!;
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: { select: { id: true, name: true, phone: true, role: true } },
+        store: {
+          select: {
+            ownerId: true,
+            owner: { select: { id: true, name: true, phone: true, role: true } },
+          },
+        },
+        driver: {
+          select: { user: { select: { id: true, name: true, phone: true, role: true } } },
+        },
+      },
+    });
+    if (!order) return sendError(res, 'Order not found', 404);
+
+    // Build a userId → display info map so each chat can label its participants
+    type Participant = { id: string; name: string | null; phone: string; role: string };
+    const participants = new Map<string, Participant>();
+    if (order.customer) participants.set(order.customer.id, { ...order.customer });
+    if (order.store?.owner) participants.set(order.store.owner.id, { ...order.store.owner });
+    if (order.driver?.user) participants.set(order.driver.user.id, { ...order.driver.user });
+
+    const chats = await prisma.chat.findMany({
+      where: { orderId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        messages: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+
+    const enriched = chats.map((c) => ({
+      id: c.id,
+      userA: participants.get(c.userAId) ?? { id: c.userAId, name: null, phone: '', role: '?' },
+      userB: participants.get(c.userBId) ?? { id: c.userBId, name: null, phone: '', role: '?' },
+      closedAt: c.closedAt,
+      deletedAt: c.deletedAt,
+      createdAt: c.createdAt,
+      messageCount: c.messages.length,
+      messages: c.messages,
+    }));
+
+    return sendSuccess(res, enriched);
+  } catch (err) {
+    console.error('[Admin] order chats error:', err);
+    return sendError(res, 'Failed to fetch chats', 500);
+  }
+});
+
 // ─── GET /orders/:id/eligible-drivers ───────────────────────────────────────
 // Returns active drivers ranked by distance from the assigned store (or
 // delivery address if no store yet). Includes user contact details.

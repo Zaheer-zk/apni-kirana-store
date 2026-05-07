@@ -22,6 +22,8 @@ import {
   RefreshCcw,
   Phone,
   MapPin,
+  MessageSquare,
+  Archive,
 } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -143,6 +145,33 @@ interface EligibleDriver {
   user: { id: string; name: string | null; phone: string };
 }
 
+interface ChatParticipant {
+  id: string;
+  name: string | null;
+  phone: string;
+  role: string;
+}
+
+interface AdminChatMessage {
+  id: string;
+  chatId: string;
+  senderId: string;
+  body: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
+interface AdminChatThread {
+  id: string;
+  userA: ChatParticipant;
+  userB: ChatParticipant;
+  closedAt: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  messageCount: number;
+  messages: AdminChatMessage[];
+}
+
 function SectionCard({
   title,
   icon,
@@ -226,6 +255,18 @@ export default function OrderDetailPage({
       );
       return res.data.data ?? [];
     },
+  });
+
+  // Read-only chat threads for fraud / support investigation
+  const { data: chatThreads } = useQuery<AdminChatThread[]>({
+    queryKey: ['admin-order-chats', id],
+    queryFn: async () => {
+      const res = await api.get<{ success: boolean; data: AdminChatThread[] }>(
+        `/api/v1/admin/orders/${id}/chats`,
+      );
+      return res.data.data ?? [];
+    },
+    refetchInterval: 30_000,
   });
 
   const assignStoreMutation = useMutation({
@@ -696,6 +737,109 @@ export default function OrderDetailPage({
             )}
           </div>
         )}
+
+      {/* Read-only chat threads for fraud / support investigation */}
+      {chatThreads && chatThreads.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-4 sm:px-6">
+            <MessageSquare className="h-4 w-4 text-primary" />
+            <h3 className="text-base font-semibold text-gray-900">
+              Conversations ({chatThreads.length})
+            </h3>
+            <span className="text-xs text-gray-400">
+              Read-only · auto-archived 30 days after order ends
+            </span>
+          </div>
+
+          <div className="divide-y divide-gray-100">
+            {chatThreads.map((thread) => {
+              const labelFor = (p: ChatParticipant) => {
+                const role =
+                  p.role === 'CUSTOMER'
+                    ? 'Customer'
+                    : p.role === 'STORE_OWNER'
+                      ? 'Store'
+                      : p.role === 'DRIVER'
+                        ? 'Driver'
+                        : p.role;
+                return `${role}: ${p.name ?? 'Unknown'}`;
+              };
+              const isClosed = !!thread.closedAt;
+              const isArchived = !!thread.deletedAt;
+
+              return (
+                <details
+                  key={thread.id}
+                  className="group"
+                  open={!isArchived && thread.messages.length > 0}
+                >
+                  <summary className="flex cursor-pointer items-center justify-between px-4 py-3 hover:bg-gray-50 sm:px-6">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900">
+                        {labelFor(thread.userA)} ↔ {labelFor(thread.userB)}
+                      </span>
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                        {thread.messageCount}{' '}
+                        {thread.messageCount === 1 ? 'message' : 'messages'}
+                      </span>
+                      {isArchived ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                          <Archive className="h-3 w-3" /> Archived
+                        </span>
+                      ) : isClosed ? (
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                          Closed
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-400 transition group-open:rotate-180">
+                      ▾
+                    </span>
+                  </summary>
+
+                  <div className="space-y-2 bg-gray-50 px-4 py-4 sm:px-6">
+                    {thread.messages.length === 0 ? (
+                      <p className="text-center text-xs text-gray-400">
+                        No messages yet.
+                      </p>
+                    ) : (
+                      thread.messages.map((m) => {
+                        const isUserA = m.senderId === thread.userA.id;
+                        const sender = isUserA ? thread.userA : thread.userB;
+                        return (
+                          <div key={m.id} className="flex flex-col gap-0.5">
+                            <div className="flex items-baseline justify-between gap-2 text-xs">
+                              <span className="font-medium text-gray-700">
+                                {sender.name ?? 'Unknown'}{' '}
+                                <span className="font-normal text-gray-400">
+                                  ({sender.phone || sender.role})
+                                </span>
+                              </span>
+                              <time className="text-gray-400">
+                                {new Date(m.createdAt).toLocaleString('en-IN', {
+                                  dateStyle: 'short',
+                                  timeStyle: 'short',
+                                })}
+                              </time>
+                            </div>
+                            <p className="rounded-md bg-white px-3 py-2 text-sm text-gray-800 shadow-sm">
+                              {m.body}
+                            </p>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Items */}
       <div className="card overflow-hidden">

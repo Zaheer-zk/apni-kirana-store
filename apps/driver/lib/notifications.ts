@@ -6,16 +6,19 @@ import { api } from '@/lib/api';
 // Expo SDK 53 removed Android push notification support from Expo Go entirely.
 // `import 'expo-notifications'` THROWS at module evaluation in Expo Go on
 // SDK 53+, so we lazy-load it only when we know we're not in Expo Go.
+//
+// We avoid `typeof import('expo-notifications')` for the type — Babel/Metro
+// doesn't always handle type-only dynamic imports cleanly, so we use `any`
+// for the module reference. Real type-checking still happens via tsc against
+// the actual import in app code that uses the helpers below.
 const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
 
-type NotificationsModule = typeof import('expo-notifications');
-type Notification = import('expo-notifications').Notification;
-
-let Notifications: NotificationsModule | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Notifications: any = null;
 if (!IS_EXPO_GO) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   Notifications = require('expo-notifications');
-  Notifications!.setNotificationHandler({
+  Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
@@ -122,7 +125,8 @@ export async function unregisterPushNotifications(): Promise<void> {
  * Returns a cleanup function. No-op in Expo Go.
  */
 export function attachNotificationListeners(opts: {
-  onReceive?: (n: Notification) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onReceive?: (n: any) => void;
   onTap?: (data: Record<string, unknown>) => void;
 }): () => void {
   if (!Notifications) return () => {};

@@ -8,14 +8,12 @@ import { api } from '@/lib/api';
 // SDK 53+, so we lazy-load it only when we know we're not in Expo Go.
 const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
 
-type NotificationsModule = typeof import('expo-notifications');
-type Notification = import('expo-notifications').Notification;
-
-let Notifications: NotificationsModule | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Notifications: any = null;
 if (!IS_EXPO_GO) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   Notifications = require('expo-notifications');
-  Notifications!.setNotificationHandler({
+  Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
@@ -122,7 +120,8 @@ export async function unregisterPushNotifications(): Promise<void> {
  * Returns a cleanup function. No-op in Expo Go.
  */
 export function attachNotificationListeners(opts: {
-  onReceive?: (n: Notification) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onReceive?: (n: any) => void;
   onTap?: (data: Record<string, unknown>) => void;
 }): () => void {
   if (!Notifications) return () => {};

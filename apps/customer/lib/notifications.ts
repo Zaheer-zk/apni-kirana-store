@@ -6,20 +6,17 @@ import { apiClient } from './api';
 // Expo SDK 53 removed Android push notification support from Expo Go entirely.
 // `import 'expo-notifications'` THROWS at module evaluation in Expo Go on
 // SDK 53+, so we lazy-load it only when we know we're not in Expo Go.
-// Constants.executionEnvironment === 'storeClient' is Expo's official way to
-// detect "I'm running inside Expo Go" vs a dev/preview/production build.
+// We use `any` for the module type because Babel/Metro doesn't always handle
+// `typeof import('...')` cleanly when the underlying module is broken at load.
 const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
 
-// Type-only import — erased at compile time, doesn't trigger runtime load.
-type NotificationsModule = typeof import('expo-notifications');
-type Notification = import('expo-notifications').Notification;
-
-let Notifications: NotificationsModule | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Notifications: any = null;
 if (!IS_EXPO_GO) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   Notifications = require('expo-notifications');
   // Configure foreground delivery once at load
-  Notifications!.setNotificationHandler({
+  Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
@@ -134,7 +131,8 @@ export async function unregisterPushNotifications(): Promise<void> {
  * Returns a cleanup function. No-op in Expo Go.
  */
 export function attachNotificationListeners(opts: {
-  onReceive?: (n: Notification) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onReceive?: (n: any) => void;
   onTap?: (data: Record<string, unknown>) => void;
 }): () => void {
   if (!Notifications) return () => {};

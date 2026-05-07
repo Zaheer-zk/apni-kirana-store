@@ -18,6 +18,7 @@ import {
   History,
   Bell,
   LifeBuoy,
+  Activity,
   X,
 } from 'lucide-react';
 import { clearToken } from '@/lib/auth';
@@ -43,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/users', label: 'Users', icon: <Users className="h-4 w-4" /> },
   { href: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
   { href: '/audit-logs', label: 'Audit Logs', icon: <History className="h-4 w-4" /> },
+  { href: '/system', label: 'System', icon: <Activity className="h-4 w-4" /> },
 ];
 
 interface SidebarProps {

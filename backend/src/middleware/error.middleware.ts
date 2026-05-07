@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { config } from '../config/env';
+import { recordError } from '../utils/error-log';
 
 /**
  * Application-level error class for known operational errors.
@@ -34,6 +35,19 @@ export function errorHandler(
 
   if (config.nodeEnv === 'development') {
     console.error('[Error]', err.stack);
+  }
+
+  // Only ring-buffer 5xx — 4xx are client mistakes, not server faults
+  if (statusCode >= 500) {
+    recordError({
+      source: 'request',
+      message: err.message || message,
+      stack: err.stack,
+      method: req.method,
+      path: req.originalUrl,
+      statusCode,
+      userId: req.user?.id,
+    });
   }
 
   res.status(statusCode).json({

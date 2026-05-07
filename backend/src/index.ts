@@ -26,6 +26,8 @@ import usersRouter from './routes/users.routes';
 import promosRouter from './routes/promos.routes';
 import chatsRouter from './routes/chats.routes';
 import supportRouter from './routes/support.routes';
+import systemRouter from './routes/system.routes';
+import { recordError } from './utils/error-log';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
@@ -77,6 +79,7 @@ app.use('/api/v1/users', usersRouter);
 app.use('/api/v1/promos', promosRouter);
 app.use('/api/v1/chats', chatsRouter);
 app.use('/api/v1/support', supportRouter);
+app.use('/api/v1/system', systemRouter);
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 
@@ -87,6 +90,29 @@ app.use((_req, res) => {
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 
 app.use(errorHandler);
+
+// ─── Process-level error capture ──────────────────────────────────────────────
+// Surface async crashes in the admin "App errors" view and keep the process
+// alive — alternative is silent death + restart loops.
+
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  console.error('[unhandledRejection]', err);
+  recordError({
+    source: 'unhandledRejection',
+    message: err.message,
+    stack: err.stack,
+  });
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+  recordError({
+    source: 'uncaughtException',
+    message: err.message,
+    stack: err.stack,
+  });
+});
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Menu, ShoppingBasket } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import NotificationBell from '@/components/NotificationBell';
 import EnableNotificationsBanner from '@/components/EnableNotificationsBanner';
+import NavProgressBar from '@/components/NavProgressBar';
 
 export default function DashboardLayout({
   children,
@@ -15,6 +16,9 @@ export default function DashboardLayout({
 
   return (
     <div className="flex min-h-screen bg-gray-50">
+      <Suspense fallback={null}>
+        <NavProgressBar />
+      </Suspense>
       {/* Sidebar — always rendered. On mobile it's a slide-in drawer; on lg+ it's fixed. */}
       <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
 

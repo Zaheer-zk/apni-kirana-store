@@ -71,4 +71,29 @@
   .card {
     @apply bg-white rounded-xl border border-gray-200 shadow-sm;
   }
+
+  /* Shimmer skeleton — gradient sweeps across the placeholder bar.
+     Apply to any block-level placeholder: <div className="h-3 w-40 shimmer" /> */
+  .shimmer {
+    @apply relative overflow-hidden bg-gray-200;
+  }
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.55) 50%,
+      transparent 100%
+    );
+    animation: shimmer-sweep 1.4s infinite;
+  }
+
+  @keyframes shimmer-sweep {
+    100% {
+      transform: translateX(100%);
+    }
+  }
 }

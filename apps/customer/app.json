@@ -24,7 +24,14 @@
         "backgroundColor": "#16A34A"
       },
       "package": "com.apnikirana.customer",
-      "useNextNotificationsApi": true
+      "useNextNotificationsApi": true,
+      "edgeToEdgeEnabled": false,
+      "statusBar": {
+        "translucent": false,
+        "backgroundColor": "#FFFFFF",
+        "barStyle": "dark-content"
+      },
+      "softwareKeyboardLayoutMode": "pan"
     },
     "plugins": [
       "expo-router",

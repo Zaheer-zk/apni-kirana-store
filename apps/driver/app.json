@@ -40,7 +40,14 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE"
-      ]
+      ],
+      "edgeToEdgeEnabled": false,
+      "statusBar": {
+        "translucent": false,
+        "backgroundColor": "#FFFFFF",
+        "barStyle": "dark-content"
+      },
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "favicon": "./assets/favicon.png",

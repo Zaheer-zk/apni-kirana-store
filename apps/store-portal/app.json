@@ -35,7 +35,14 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE"
       ],
-      "useNextNotificationsApi": true
+      "useNextNotificationsApi": true,
+      "edgeToEdgeEnabled": false,
+      "statusBar": {
+        "translucent": false,
+        "backgroundColor": "#FFFFFF",
+        "barStyle": "dark-content"
+      },
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "favicon": "./assets/favicon.png",

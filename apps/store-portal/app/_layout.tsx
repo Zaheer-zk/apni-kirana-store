@@ -97,6 +97,7 @@ function RootLayoutNav() {
       <Stack.Screen name="profile/edit" options={{ title: 'Edit store profile' }} />
       <Stack.Screen name="profile/notifications" options={{ title: 'Notification preferences' }} />
       <Stack.Screen name="notifications/index" options={{ title: 'Notifications' }} />
+      <Stack.Screen name="chat/[orderId]" options={{ title: 'Chat' }} />
     </Stack>
   );
 }

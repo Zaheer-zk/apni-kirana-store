@@ -409,6 +409,16 @@ export default function DashboardScreen() {
               style={styles.actionGap}
             />
 
+            <Button
+              variant="primary"
+              size="md"
+              icon="chatbubbles-outline"
+              title="Chat with customer"
+              fullWidth
+              onPress={() => router.push(`/chat/${activeOrder.id}`)}
+              style={styles.actionGap}
+            />
+
             {/* Items list */}
             {activeOrder.items?.length ? (
               <View style={styles.itemsBlock}>

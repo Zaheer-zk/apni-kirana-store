@@ -517,6 +517,21 @@ export default function OrderDetailScreen() {
           </View>
         </View>
 
+        {[OrderStatus.STORE_ACCEPTED, OrderStatus.DRIVER_ASSIGNED, OrderStatus.PICKED_UP].includes(
+          status,
+        ) ? (
+          <View style={styles.section}>
+            <Button
+              variant="primary"
+              title={status === OrderStatus.PICKED_UP ? 'Chat with driver' : 'Chat with store'}
+              icon="chatbubbles-outline"
+              onPress={() => router.push(`/chat/${id}`)}
+              fullWidth
+              size="lg"
+            />
+          </View>
+        ) : null}
+
         {canCancel ? (
           <View style={styles.section}>
             <Button

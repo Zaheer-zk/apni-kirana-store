@@ -128,6 +128,7 @@ export default function RootLayout() {
             <Stack.Screen name="catalog/[id]" options={{ title: '' }} />
             <Stack.Screen name="cart" options={{ title: 'Cart' }} />
             <Stack.Screen name="order/[id]" options={{ title: 'Order tracking' }} />
+            <Stack.Screen name="chat/[orderId]" options={{ title: 'Chat' }} />
             <Stack.Screen name="notifications/index" options={{ title: 'Notifications' }} />
             <Stack.Screen name="account/profile" options={{ headerShown: false }} />
             <Stack.Screen name="account/addresses" options={{ headerShown: false }} />

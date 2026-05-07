@@ -277,6 +277,20 @@ export default function OrderDetailScreen() {
           disabled={isBusy}
         />
       )}
+
+      {['STORE_ACCEPTED', 'DRIVER_ASSIGNED', 'PICKED_UP'].includes(order.status) && (
+        <Button
+          variant="outline"
+          title={
+            order.status === 'PICKED_UP' ? 'Chat with driver' : 'Chat with customer'
+          }
+          icon="chatbubbles-outline"
+          fullWidth
+          size="lg"
+          style={{ marginTop: 12 }}
+          onPress={() => router.push(`/chat/${order.id}`)}
+        />
+      )}
     </ScrollView>
   );
 }

@@ -134,6 +134,7 @@ function RootLayoutNav() {
       <Stack.Screen name="profile/ratings" options={{ title: 'My Ratings' }} />
       <Stack.Screen name="profile/help" options={{ title: 'Help & Support' }} />
       <Stack.Screen name="notifications/index" options={{ title: 'Notifications' }} />
+      <Stack.Screen name="chat/[orderId]" options={{ title: 'Chat' }} />
       <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
     </Stack>
   );

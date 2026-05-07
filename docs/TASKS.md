@@ -4,6 +4,12 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-07 — Chat UI
+
+- [x] **Chat thread screen in all 3 mobile apps** — same UX in customer / driver / store-portal: bubbles, sender alignment, timestamps, optimistic send, Socket.io live delivery, auto-scroll. Composer disables when chat is read-only (order in terminal state). Plain text only — no media for v1.
+- [x] **"Chat with…" buttons** wired up: customer order screen → "Chat with store" / "Chat with driver" depending on PICKED_UP. Driver active-delivery card → "Chat with customer". Store-portal order detail → "Chat with customer/driver".
+- [x] **Real-time fan-out verified** — backend `chat:message` socket event reaches the other party instantly; bell-style `chat:new` on `user:<recipient>` so the message lands even if the chat screen isn't open.
+
 ### 2026-05-07 — Chat + multi-device + SMS docs
 
 - [x] **Multi-device push tokens** — new `Device` table + per-device fan-out. `notify()` reads `Device.findMany` instead of single `User.fcmToken`; failed tokens delete just that device row (not the user). Logout removes only the current device's token (other phones stay subscribed). Migration backfills existing tokens. Commit `31a9062`.
@@ -43,7 +49,7 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## In progress
 
-- [ ] **Chat UI in customer/driver/store-portal** — backend is live; need a "Chat with {customer/store/driver}" button on the active-order screen that opens a thread (Socket.io powered; backend already broadcasts `chat:message`).
+_Nothing in progress right now._
 
 ## Backlog (not started)
 

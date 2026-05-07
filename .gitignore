@@ -15,6 +15,9 @@ out/
 .env.*.local
 !.env.example
 
+# Local working notes (Claude's scratchpad — not for the repo)
+CLAUDE.md
+
 # Logs
 logs/
 *.log

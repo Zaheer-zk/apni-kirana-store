@@ -2,15 +2,117 @@
 
 Production deployment to a single Ubuntu 22.04 VPS using Docker Compose, Nginx, and Let's Encrypt.
 
+## Pre-deployment checklist
+
+Before you `ssh` to the VPS, gather these. The deploy script won't run without most of them.
+
+| ✓ | Item | Where to get it |
+| --- | --- | --- |
+| ☐ | A domain (any registrar, e.g. Hostinger / Namecheap / GoDaddy) | ~₹100-1000/yr |
+| ☐ | A VPS — see [Recommended VPS](#recommended-vps); for India use **Hostinger KVM 2** | ~₹500/mo |
+| ☐ | SMS provider account — **2Factor.in** (free 100/day) is the easiest start | <https://2factor.in> |
+| ☐ | Cloudinary account for image uploads (free tier OK) | <https://cloudinary.com> |
+| ☐ | Razorpay account for payments (Indian businesses) | <https://razorpay.com> |
+| ☐ | VAPID keys (admin web push) — generate locally: `npx web-push generate-vapid-keys --json` | local |
+| ☐ | (Optional) Firebase project — only if you need raw FCM tokens; Expo Push doesn't need this | <https://console.firebase.google.com> |
+| ☐ | (Optional) Apple Developer account for iOS production push | $99/yr — only at App Store submission |
+| ☐ | (Optional) Sentry account for error tracking | <https://sentry.io> free tier |
+
+The mobile apps (customer/driver/store-portal) are not deployed to a VPS — they ship to **Apple App Store** + **Google Play** via [EAS Build](https://docs.expo.dev/build/introduction/). Build commands at the bottom of this doc.
+
 ## Recommended VPS
 
 | Provider | Plan | RAM / CPU / SSD | Price | Notes |
 | --- | --- | --- | --- | --- |
-| Hetzner | CX22 | 4 GB / 2 vCPU / 40 GB | €4 / mo | Best value; EU + US locations |
-| DigitalOcean | Basic Droplet | 1 GB / 1 vCPU / 25 GB | $6 / mo | Easy onboarding; many regions |
+| **Hostinger** | **KVM 2** | **8 GB / 2 vCPU / 100 GB** | **₹499 / mo** | **India location (Mumbai). Best for Indian users — see [Hostinger setup](#hostinger-vps-setup-india) below.** |
+| Hetzner | CX22 | 4 GB / 2 vCPU / 40 GB | €4 (~₹360) / mo | Best value globally; EU + US locations |
+| DigitalOcean | Basic Droplet | 1 GB / 1 vCPU / 25 GB | $6 / mo | Easy onboarding; Bangalore region available |
 | Contabo | VPS S | 8 GB / 4 vCPU / 200 GB | ~$5 / mo | Big specs, slower IO, EU/US/Asia |
 
-For the early launch, Hetzner CX22 is the sweet spot. Scale vertically (CX32, CX42) before reaching for a load balancer.
+For an India-only launch, **Hostinger KVM 2 (Mumbai)** gives you the lowest customer-side latency at ~₹500/mo. Hetzner is cheaper globally but its closest region (Singapore add-on) adds ~150ms RTT for Indian customers. Scale vertically (KVM 4, KVM 8) before reaching for a load balancer.
+
+> ⚠️ **Hostinger "Web Hosting" (cPanel/PHP) plans will NOT work** — those don't allow Docker. You must pick a **VPS** or **Cloud Hosting** plan (anything that gives you root SSH on Ubuntu/Debian).
+
+## Hostinger VPS setup (India)
+
+If you're using Hostinger's KVM VPS plans, here's the exact path from order → running stack.
+
+### 1. Buy the right plan
+
+- Go to <https://www.hostinger.in/vps-hosting>
+- Choose **KVM 2** (8 GB RAM, 2 vCPU, 100 GB NVMe) at ~₹499/mo
+- **OS:** Ubuntu 22.04 with Docker — Hostinger has a one-click "Docker" template that includes Docker + Compose pre-installed. Pick that to skip half the bootstrap.
+- **Region:** Mumbai (closest to Indian users)
+- **Hostname:** `aks-prod-1` (or anything memorable)
+
+After purchase, Hostinger emails the root password and IP within ~2 minutes.
+
+### 2. Initial SSH login
+
+```bash
+ssh root@<your-vps-ip>
+# Hostinger root password from the order email
+```
+
+First-login checklist:
+
+```bash
+# Update OS packages
+apt update && apt upgrade -y
+
+# Verify Docker (already installed if you picked the Docker template)
+docker --version
+docker compose version
+
+# If Docker isn't there, install it via the official script:
+curl -fsSL https://get.docker.com | sh
+```
+
+### 3. Point your domain
+
+Hostinger lets you buy a domain in the same dashboard, but any registrar works. In your DNS panel add **two A records** pointing at your VPS IP:
+
+| Host | Type | Value | TTL |
+| --- | --- | --- | --- |
+| `api.yourdomain.com` | A | `<vps-ip>` | 300 |
+| `admin.yourdomain.com` | A | `<vps-ip>` | 300 |
+
+If you bought the domain on Hostinger:
+- hPanel → Domain → DNS / Nameservers → Manage DNS records → Add record (×2)
+
+Wait ~5-15 minutes, then verify:
+```bash
+dig api.yourdomain.com +short
+# Should print your VPS IP
+```
+
+### 4. Open firewall ports
+
+Hostinger VPSes have a panel firewall. From hPanel → VPS → your-server → Firewall:
+- Allow `22/tcp` (SSH) from your IP if possible (else `Anywhere`)
+- Allow `80/tcp` (HTTP — Let's Encrypt cert challenge)
+- Allow `443/tcp` (HTTPS)
+- Block everything else
+
+Inside the VPS, also:
+```bash
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw enable
+```
+
+### 5. Continue with the standard bootstrap
+
+The rest of the deployment matches the generic flow below — start at [VPS bootstrap](#vps-bootstrap), substituting Hostinger's IP for `203.0.113.10` in examples.
+
+### Hostinger gotchas to know
+
+- **Backups**: Hostinger includes weekly snapshots on KVM 2+. Enable them in hPanel → VPS → Backups. Don't rely on this alone — keep `pg_dump` running too (see [Backups](#backups)).
+- **Reverse DNS / PTR**: needed for SMTP. hPanel → VPS → DNS Setup → set PTR to your domain. Skip if you're not sending email yourself.
+- **Bandwidth**: KVM plans bundle 8 TB/month. At MVP scale you'll use < 50 GB/mo. Hostinger throttles to 100 Mbps after the cap, doesn't charge overage.
+- **Country-specific blocks**: certain ports (e.g. 25 outgoing) are blocked by default for spam prevention. SMTP must use 587 + auth.
+- **VPS support**: Hostinger's KVM tier includes 24/7 chat. They generally only help with infra (booting, networking) — not your app.
 
 ## DNS setup
 
@@ -213,16 +315,89 @@ Once you have users, plug in:
 - **Uptime Kuma** on the VPS pinging `/health` every minute.
 - **Grafana + Prometheus** for container metrics (heavier; add when scaling).
 
+## Mobile apps — store submission
+
+Mobile apps (customer / driver / store-portal) ship via the **EAS Build** service (free tier covers ~30 builds/month — enough for early-stage iteration).
+
+### One-time setup
+
+```bash
+npm install -g eas-cli
+eas login                            # creates a free Expo account if needed
+cd apps/customer && eas init         # binds an EAS projectId — writes it to app.json
+cd apps/driver    && eas init
+cd apps/store-portal && eas init
+```
+
+The `projectId` written to each `app.json`'s `extra.eas` is what unlocks **real Expo Push notifications** in production builds. Without it, the apps degrade gracefully (push registration logs a warning and continues).
+
+### Build for testing (internal)
+
+```bash
+cd apps/customer
+eas build --platform ios --profile preview      # internal TestFlight
+eas build --platform android --profile preview  # APK download
+```
+
+### Build for store submission
+
+Configure `eas.json` (one-time):
+
+```jsonc
+{
+  "build": {
+    "production": {
+      "ios":     { "autoIncrement": true },
+      "android": { "buildType": "app-bundle", "autoIncrement": true }
+    }
+  }
+}
+```
+
+Then:
+
+```bash
+eas build --platform all --profile production
+eas submit --platform ios     --latest          # to App Store Connect
+eas submit --platform android --latest          # to Play Console
+```
+
+iOS submission requires an **Apple Developer account ($99/yr)**. Android submission is a one-time **$25 Play Console** fee.
+
+Repeat per app (customer / driver / store-portal). Use distinct bundle IDs:
+- `com.apnikiranastore.customer`
+- `com.apnikiranastore.driver`
+- `com.apnikiranastore.store`
+
+### Production push (iOS)
+
+After your Apple Developer account is approved:
+
+1. Apple Developer → Certificates, IDs & Profiles → Keys → "+" → check "Apple Push Notifications service" → download `.p8`
+2. `eas credentials --platform ios` → upload the `.p8` + Key ID + Team ID
+3. EAS forwards pushes through APNs automatically — no code changes needed
+
+Android works out of the box without any extra setup; Expo Push relays through Google's FCM behind the scenes.
+
 ## Cost estimate (monthly, INR equivalents in brackets)
 
 | Item | Cost |
 | --- | --- |
-| Hetzner CX22 | €4 (~₹360) |
-| Twilio SMS | ~₹0.30 per OTP, batch credit ~₹500 |
+| Hostinger KVM 2 (Mumbai) | ~₹500 |
+| _or_ Hetzner CX22 (global) | €4 (~₹360) |
+| 2Factor.in SMS (free tier) | ₹0 (up to 100 OTP/day) |
+| _or_ MSG91 SMS | ~₹0.18 per OTP |
 | Cloudinary | Free tier (25 GB storage, 25 GB bandwidth) |
-| Firebase FCM | Free |
+| Expo Push (mobile) | Free |
+| Web Push for admin (VAPID) | Free |
 | Razorpay | per-transaction fee (~2% UPI/cards) |
 | Domain | ~₹100 |
-| **Total fixed** | **~₹1000–1500/mo** at low volume |
+| **Total fixed** | **~₹600–₹1000/mo** at low volume |
 
-Variable costs (Twilio, Razorpay) scale with revenue, so unit economics stay healthy.
+Variable costs (SMS, Razorpay) scale with revenue, so unit economics stay healthy.
+
+One-time launch costs:
+- Apple Developer account: **$99/yr (~₹8000)** — required for iOS App Store
+- Google Play Console: **$25 once (~₹2000)** — required for Play Store
+
+If you're launching Android-only first, you can defer the Apple cost by 6+ months without losing functionality.

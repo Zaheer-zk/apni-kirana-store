@@ -738,18 +738,33 @@ export default function OrderDetailPage({
           </div>
         )}
 
-      {/* Read-only chat threads for fraud / support investigation */}
-      {chatThreads && chatThreads.length > 0 && (
-        <div className="card overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-4 sm:px-6">
-            <MessageSquare className="h-4 w-4 text-primary" />
-            <h3 className="text-base font-semibold text-gray-900">
-              Conversations ({chatThreads.length})
-            </h3>
-            <span className="text-xs text-gray-400">
-              Read-only · auto-archived 30 days after order ends
-            </span>
+      {/* Read-only chat threads for fraud / support investigation. Always
+          rendered so admins know the feature exists, with an empty state when
+          no conversation has happened yet. */}
+      <div className="card overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-4 sm:px-6">
+          <MessageSquare className="h-4 w-4 text-primary" />
+          <h3 className="text-base font-semibold text-gray-900">
+            Conversations ({chatThreads?.length ?? 0})
+          </h3>
+          <span className="text-xs text-gray-400">
+            Read-only · auto-archived 30 days after order ends
+          </span>
+        </div>
+        {!chatThreads || chatThreads.length === 0 ? (
+          <div className="px-4 py-10 text-center sm:px-6">
+            <MessageSquare className="mx-auto mb-2 h-8 w-8 text-gray-300" />
+            <p className="text-sm text-gray-500">
+              No conversations yet for this order.
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              Customer ↔ Store and Customer ↔ Driver chats appear here as soon
+              as either side sends the first message.
+            </p>
           </div>
+        ) : null}
+        {chatThreads && chatThreads.length > 0 && (
+          <>
 
           <div className="divide-y divide-gray-100">
             {chatThreads.map((thread) => {
@@ -838,8 +853,9 @@ export default function OrderDetailPage({
               );
             })}
           </div>
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       {/* Items */}
       <div className="card overflow-hidden">

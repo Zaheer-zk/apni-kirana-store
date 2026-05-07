@@ -4,6 +4,18 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-07 — Next.js 16 + Hostinger deployment docs
+
+- [x] **Upgraded admin to Next.js 16.2.5** (was 15.1.0). Risk audit found our codebase already uses async `params: Promise<{id: string}>` patterns expected by 16.x; no `middleware.ts`, no `next/image`, no parallel routes — clean upgrade. Admin compiles + serves in 1.6s on Turbopack.
+- [x] **Fixed admin NavProgressBar `useInsertionEffect must not schedule updates` error** — patched `history.pushState` was firing setState during React's commit phase. `queueMicrotask` wasn't enough (microtasks still inside commit window); switched to `setTimeout(0)` macrotask.
+- [x] **Always-visible admin chat panel on order detail** — now shows an empty state ("No conversations yet for this order") when no chat exists, so admins know the feature is there. Was hidden entirely before.
+- [x] **Customer transition overlay lifted to root layout** — was inside `login.tsx` so it disappeared when login unmounted. New `TransitionOverlay` + Zustand `transition.store` survive across navigation; auto-hides 2s after the next screen mounts.
+- [x] **Hostinger VPS deployment guide** — new section in `docs/deployment.md` with step-by-step for KVM 2 Mumbai (₹499/mo): right plan to buy, Docker template, DNS records, firewall, gotchas. Recommended VPS table now lists Hostinger first for India.
+- [x] **Pre-deployment checklist** — every account / asset you need before you `ssh` to the VPS, with sign-up links.
+- [x] **Mobile app store submission guide** — EAS Build setup, internal TestFlight builds, production submission to App Store Connect / Play Console, iOS APNs key upload via `eas credentials`. Distinct bundle IDs spelled out.
+- [x] **`.env.prod.example` updated** — adds SMS_PROVIDER + 2Factor/MSG91/Twilio creds, VAPID keys for web push, organized comments. Deployment doc references match.
+- [x] **Cost estimate refreshed** — reflects Hostinger pricing, free Expo Push (was Twilio + Firebase). New low-volume floor: **~₹600/mo** total fixed.
+
 ### 2026-05-07 — Admin chat read-only view
 
 - [x] **Admin can read chat threads on order detail** — new `GET /admin/orders/:id/chats` returns every Chat row for the order (could be 0–3) with full message history, participant names + roles + phones, message count, and Active/Closed/Archived state. Used for fraud / support investigation.

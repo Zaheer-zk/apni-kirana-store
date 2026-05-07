@@ -26,7 +26,7 @@ export default function NavProgressBar() {
     const origPush = window.history.pushState;
     const origReplace = window.history.replaceState;
 
-    function start() {
+    function startNow() {
       if (completionTimer.current) {
         clearTimeout(completionTimer.current);
         completionTimer.current = null;
@@ -38,11 +38,18 @@ export default function NavProgressBar() {
         setProgress((p) => {
           if (p == null) return null;
           if (p >= 80) return p; // park at 80 until route resolves
-          // Slower as we approach 80
           const remaining = 80 - p;
           return Math.min(80, p + Math.max(1, remaining * 0.15));
         });
       }, 200);
+    }
+
+    // Defer to a macrotask so setState doesn't fire inside React's commit
+    // phase. Next.js calls history.pushState synchronously during commit, and
+    // microtasks run before yielding to the browser (still inside the commit
+    // window), so we use setTimeout(0) which definitely runs afterwards.
+    function start() {
+      setTimeout(startNow, 0);
     }
 
     window.history.pushState = function (...args) {

@@ -12,6 +12,7 @@ import {
   attachNotificationListeners,
   registerForPushNotifications,
 } from '@/lib/notifications';
+import { TransitionOverlay } from '@/components/TransitionOverlay';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -144,6 +145,8 @@ export default function RootLayout() {
             <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
           </Stack>
         </AuthGate>
+        {/* Lives outside AuthGate so it covers everything during route changes. */}
+        <TransitionOverlay />
       </SafeAreaProvider>
     </QueryClientProvider>
   );

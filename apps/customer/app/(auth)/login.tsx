@@ -4,7 +4,6 @@ import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -19,6 +18,7 @@ import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
+import { useTransitionStore } from '@/store/transition.store';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 import type { UserProfile } from '@aks/shared';
 
@@ -35,10 +35,6 @@ export default function LoginScreen() {
   const [name, setName] = useState('');
   const [step, setStep] = useState<'phone' | 'otp' | 'register'>('phone');
   const [loading, setLoading] = useState(false);
-  // While true, a full-screen overlay covers the login form. We keep it up
-  // through the navigation + home screen mount so the user never sees an
-  // unstyled gap between OTP-verify and home.
-  const [redirectingMessage, setRedirectingMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const otpRefs = useRef<Array<TextInput | null>>([]);
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -138,18 +134,18 @@ export default function LoginScreen() {
         return;
       }
 
-      // Show the redirect overlay BEFORE we navigate so there's no gap.
-      // Pick the message based on where we're going.
+      // Show the global redirect overlay BEFORE we navigate. Lives at the
+      // root layout, so it survives across the route change and stays up
+      // until the destination screen has had time to mount.
       const friendlyName = (user.name ?? submittedName ?? '').split(' ')[0];
-      setRedirectingMessage(
-        hasAddress
-          ? friendlyName
-            ? `Welcome back, ${friendlyName}!`
-            : 'Welcome back!'
-          : friendlyName
-            ? `Welcome aboard, ${friendlyName}!`
-            : 'Setting up your account…',
-      );
+      const message = hasAddress
+        ? friendlyName
+          ? `Welcome back, ${friendlyName}!`
+          : 'Welcome back!'
+        : friendlyName
+          ? `Welcome aboard, ${friendlyName}!`
+          : 'Setting up your account…';
+      useTransitionStore.getState().showTransition(message, 2000);
 
       // Set in-memory auth + parallel SecureStore writes (don't block on disk)
       setAuth(user, accessToken);
@@ -162,8 +158,8 @@ export default function LoginScreen() {
       // hasAddress comes back from verify-otp now — no separate /addresses round-trip
       router.replace(hasAddress ? '/(tabs)/home' : '/onboarding/location');
     } catch (err: unknown) {
-      // Roll back the overlay if something blew up after we showed it
-      setRedirectingMessage(null);
+      // Roll back the global overlay if something blew up after we showed it
+      useTransitionStore.getState().hideTransition();
       const message =
         err instanceof Error ? err.message : 'Invalid OTP. Please try again.';
       showError(message);
@@ -186,10 +182,6 @@ export default function LoginScreen() {
     setOtp(['', '', '', '', '', '']);
     setName('');
     setError(null);
-  }
-
-  if (redirectingMessage) {
-    return <RedirectOverlay message={redirectingMessage} />;
   }
 
   return (
@@ -353,24 +345,6 @@ export default function LoginScreen() {
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
-    </View>
-  );
-}
-
-function RedirectOverlay({ message }: { message: string }) {
-  return (
-    <View style={styles.overlayRoot}>
-      <StatusBar style="light" />
-      <View style={styles.overlayLogoBadge}>
-        <Ionicons name="basket" size={56} color={colors.white} />
-      </View>
-      <Text style={styles.overlayBrand}>Apni Kirana Store</Text>
-      <Text style={styles.overlayMessage}>{message}</Text>
-      <ActivityIndicator
-        size="large"
-        color={colors.white}
-        style={{ marginTop: spacing.xl }}
-      />
     </View>
   );
 }
@@ -539,35 +513,5 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.textMuted,
     lineHeight: 18,
-  },
-  overlayRoot: {
-    flex: 1,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xxl,
-  },
-  overlayLogoBadge: {
-    width: 104,
-    height: 104,
-    borderRadius: radius.xl,
-    backgroundColor: colors.primaryDark,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xl,
-    ...shadow.large,
-  },
-  overlayBrand: {
-    color: colors.white,
-    fontSize: fontSize.xxl,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    marginBottom: spacing.sm,
-  },
-  overlayMessage: {
-    color: colors.primaryLight,
-    fontSize: fontSize.md,
-    textAlign: 'center',
-    fontWeight: '500',
   },
 });

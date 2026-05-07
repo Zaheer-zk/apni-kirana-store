@@ -4,11 +4,16 @@ Three ways, ranked by speed-to-first-test (fastest first). Pick the path that ma
 
 | Method | Build time | Cost | Push notifications work? | Best for |
 |---|---|---|---|---|
-| **A. Expo Go** | < 1 min | free | ⚠️ partial | Daily dev iteration. Hot reload. Recommended for first install. |
-| **B. EAS Build (preview APK)** | ~10 min | free* | ✅ yes | Sharing the app with someone else. Or testing on a phone without Expo Go. |
+| **A. Expo Go** | < 1 min | free | ❌ **no** (SDK 53+ removed it) | Everything BUT push — UI, navigation, chat, sockets, login, ordering. Daily dev iteration. |
+| **B. EAS Build (preview APK)** | ~10 min | free* | ✅ yes | **Required if you're testing push notifications.** Real install with launcher icon. |
 | **C. Local dev build** | ~5–15 min | free | ✅ yes | When you need a custom native module not in Expo Go (we don't currently). |
 
 \* Expo's free tier covers ~30 builds/month — plenty for an MVP.
+
+> 🚨 **Expo Go can't deliver push notifications** since SDK 53. Our `lib/notifications.ts`
+> detects Expo Go (`Constants.executionEnvironment === 'storeClient'`) and short-circuits
+> push registration — no error, just a console log. **Everything else in the apps works
+> identically in Expo Go.** Reach for Path B only when you need to verify push delivery.
 
 ---
 

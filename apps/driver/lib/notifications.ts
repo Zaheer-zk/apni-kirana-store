@@ -1,18 +1,21 @@
-import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { api } from '@/lib/api';
 
-// Expo SDK 53 removed push notification support from Expo Go. Running in
-// Expo Go is fine for the rest of the app, but any call into the push API
-// throws. We detect the host app early so callers can short-circuit.
+// Expo SDK 53 removed Android push notification support from Expo Go entirely.
+// `import 'expo-notifications'` THROWS at module evaluation in Expo Go on
+// SDK 53+, so we lazy-load it only when we know we're not in Expo Go.
 const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
 
+type NotificationsModule = typeof import('expo-notifications');
+type Notification = import('expo-notifications').Notification;
+
+let Notifications: NotificationsModule | null = null;
 if (!IS_EXPO_GO) {
-  // Configure how notifications appear when app is foregrounded.
-  // Skipped in Expo Go because the underlying native module isn't loaded.
-  Notifications.setNotificationHandler({
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  Notifications = require('expo-notifications');
+  Notifications!.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
@@ -28,7 +31,7 @@ if (!IS_EXPO_GO) {
  * Returns the token (or null if Expo Go / simulator / permission denied).
  */
 export async function registerForPushNotifications(): Promise<string | null> {
-  if (IS_EXPO_GO) {
+  if (!Notifications) {
     console.log(
       '[Notifications] Push disabled in Expo Go (SDK 53+). Build a dev client ' +
         'with `eas build --profile development` for real push testing.',
@@ -89,7 +92,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
 }
 
 export async function getCurrentPushToken(): Promise<string | null> {
-  if (IS_EXPO_GO || !Device.isDevice) return null;
+  if (!Notifications || !Device.isDevice) return null;
   const projectId =
     Constants.expoConfig?.extra?.eas?.projectId ??
     (Constants.easConfig as { projectId?: string } | undefined)?.projectId;
@@ -103,7 +106,7 @@ export async function getCurrentPushToken(): Promise<string | null> {
 }
 
 export async function unregisterPushNotifications(): Promise<void> {
-  if (IS_EXPO_GO) return;
+  if (!Notifications) return;
   const token = await getCurrentPushToken();
   try {
     await api.delete('/api/v1/notifications/fcm-token', {
@@ -119,10 +122,10 @@ export async function unregisterPushNotifications(): Promise<void> {
  * Returns a cleanup function. No-op in Expo Go.
  */
 export function attachNotificationListeners(opts: {
-  onReceive?: (n: Notifications.Notification) => void;
+  onReceive?: (n: Notification) => void;
   onTap?: (data: Record<string, unknown>) => void;
 }): () => void {
-  if (IS_EXPO_GO) return () => {};
+  if (!Notifications) return () => {};
   const recv = Notifications.addNotificationReceivedListener((n) => {
     opts.onReceive?.(n);
   });

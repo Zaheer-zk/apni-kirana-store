@@ -93,6 +93,7 @@ interface OrderDetail {
   pickedUpAt?: string | null;
   deliveredAt?: string | null;
   cancelledAt?: string | null;
+  cancelReason?: string | null;
   customer: Customer;
   store: OrderStore | null;
   driver: OrderDriver | null;
@@ -428,6 +429,24 @@ export default function OrderDetailPage({
         </div>
       </div>
 
+      {/* Rescue banner — shown when an order was auto-cancelled by the
+          matching engine (e.g. no store accepted in time). Admin can fix it
+          by manually assigning a store from the list further down. */}
+      {data.status === OrderStatus.CANCELLED && data.cancelReason && (
+        <div className="card flex items-start gap-3 border-amber-300 bg-amber-50 p-4 sm:p-5">
+          <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+          <div className="flex-1">
+            <p className="font-semibold text-amber-900">Order is on hold</p>
+            <p className="mt-0.5 text-sm text-amber-800">{data.cancelReason}</p>
+            <p className="mt-2 text-xs text-amber-700">
+              Scroll down to <strong>Assign to a store</strong> — picking any
+              eligible store will resume this order from STORE_ACCEPTED.
+              You can also call the customer or store from their cards above.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Status banner */}
       <div className="card flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-3">
@@ -562,7 +581,7 @@ export default function OrderDetailPage({
       </div>
 
       {/* Manual assign — eligible stores */}
-      {data.status !== OrderStatus.DELIVERED && data.status !== OrderStatus.CANCELLED && (
+      {data.status !== OrderStatus.DELIVERED && (
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6">
             <div className="flex items-center gap-2">
@@ -672,8 +691,43 @@ export default function OrderDetailPage({
             {!eligibleDrivers ? (
               <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
             ) : eligibleDrivers.length === 0 ? (
-              <div className="p-6 text-center text-sm text-gray-400">
-                No driver is online right now.
+              <div className="space-y-3 px-4 py-6 sm:px-6">
+                <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <div>
+                    <p className="font-medium">No driver is online right now.</p>
+                    <p className="text-xs">
+                      Contact the customer or store directly to coordinate
+                      delivery, or wait for a driver to come online.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {data.customer?.phone && (
+                    <a
+                      href={`tel:${data.customer.phone}`}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      Call customer
+                      <span className="ml-1 text-gray-400">
+                        {data.customer.phone}
+                      </span>
+                    </a>
+                  )}
+                  {data.store?.owner?.phone && (
+                    <a
+                      href={`tel:${data.store.owner.phone}`}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      Call store
+                      <span className="ml-1 text-gray-400">
+                        {data.store.owner.phone}
+                      </span>
+                    </a>
+                  )}
+                </div>
               </div>
             ) : (
               <ul className="divide-y divide-gray-50">

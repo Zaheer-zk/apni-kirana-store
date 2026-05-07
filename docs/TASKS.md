@@ -4,6 +4,20 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-07 — Cancelled-order rescue + Android stability + driver/store fixes
+
+- [x] **Admin can rescue auto-cancelled orders** — when the matching engine cancels an order (no store accepts in 3 min), admin can now manually assign a store from the order detail page. The assign-store endpoint clears `cancelReason` and flips status to STORE_ACCEPTED. Frontend shows a yellow rescue banner explaining the situation. Same for driver assignment.
+- [x] **Distinct cancel reasons** — matching service now writes "No store currently carries these items" (zero candidates) vs "No store accepted your order in time" (broadcast retry exhausted). Easier to know what actually went wrong.
+- [x] **"No drivers online" empty state with contact CTAs** — when admin tries to assign a driver and nobody is online, shows a yellow "No driver is online right now" alert with one-tap call-customer / call-store buttons.
+- [x] **Driver app crash fix (final)** — `import 'expo-notifications'` was being statically analyzed by Metro and bundled regardless of runtime guards, throwing in Expo Go. Now `require()` lives inside a `loadNotifications()` helper called per-function-entry. Detection broadened to also check `Constants.appOwnership`.
+- [x] **Store-portal location picker** — store owners can finally set their lat/lng (was missing from profile/edit). Without coordinates, the matching engine can't find the store. UI: "Use current location" button via expo-location, plus manual lat/lng inputs with India-bounds validation (lat 6-38, lng 68-98).
+- [x] **Driver "Active" tab fix** — backend `GET /admin/drivers?status=ACTIVE` now translates to `status IN ('OFFLINE','ONLINE')` since there's no actual ACTIVE enum value. After approval drivers go to OFFLINE; this finally makes them visible.
+- [x] **Admin nav progress bar reliability** — old version patched `history.pushState` and tripped React's commit-phase setState rule. Replaced with a simpler pathname-watcher + CSS `.nav-progress` keyframe sweep. Fires on every navigation now.
+- [x] **Android status bar overlap** — `app.json` for all 3 mobile apps now sets `android.statusBar: { translucent: false }` so headers don't render under the signal/battery icons.
+- [x] **Bootstrap admin user docs** — production has no seed (correctly). Added a `psql INSERT` snippet to the deployment guide for the first admin user.
+- [x] **Prod compose build context bug fix** — backend and admin Dockerfiles import from `../shared`, but compose had `context: ./backend` / `./apps/admin`. Now uses repo root with explicit `dockerfile:` paths.
+- [x] **CLAUDE.md** — working notes file at repo root capturing the gotchas, conventions, and where-to-look pointers for future sessions.
+
 ### 2026-05-07 — Deployment audit + Android local-install guide
 
 - [x] **Fixed prod docker-compose build context bug** — `backend` and `admin` services had `context: ./backend` and `./apps/admin` respectively, but both Dockerfiles import from `../shared` workspace package. Production builds would fail with "shared/package.json not found". Both now correctly use `context: .` + `dockerfile: ./backend/Dockerfile` like the dev compose. **Without this fix, `docker compose -f docker-compose.prod.yml up` errors out on first build.**

@@ -513,13 +513,21 @@ router.put('/orders/:id/assign-store', async (req: Request, res: Response) => {
     ]);
     if (!order) return sendError(res, 'Order not found', 404);
     if (!store) return sendError(res, 'Store not found', 404);
-    if (['DELIVERED', 'CANCELLED'].includes(order.status)) {
-      return sendError(res, `Cannot reassign a ${order.status} order`, 400);
+    if (order.status === 'DELIVERED') {
+      return sendError(res, 'Cannot reassign a delivered order', 400);
     }
+    // CANCELLED orders are intentionally still rescuable: admin can assign a
+    // store to un-cancel and resume the order. cancelReason is cleared so the
+    // customer / store don't see the stale reason once it's live again.
 
     const updated = await prisma.order.update({
       where: { id: orderId },
-      data: { storeId, status: 'STORE_ACCEPTED', storeAcceptedAt: new Date() },
+      data: {
+        storeId,
+        status: 'STORE_ACCEPTED',
+        storeAcceptedAt: new Date(),
+        cancelReason: null, // wipe the auto-cancel reason on rescue
+      },
       include: { store: { select: { name: true, ownerId: true } } },
     });
 
@@ -569,13 +577,21 @@ router.put('/orders/:id/assign-driver', async (req: Request, res: Response) => {
     ]);
     if (!order) return sendError(res, 'Order not found', 404);
     if (!driver) return sendError(res, 'Driver not found', 404);
-    if (['DELIVERED', 'CANCELLED'].includes(order.status)) {
-      return sendError(res, `Cannot reassign a ${order.status} order`, 400);
+    if (order.status === 'DELIVERED') {
+      return sendError(res, 'Cannot reassign a delivered order', 400);
+    }
+    if (!order.storeId) {
+      return sendError(res, 'Order has no store yet — assign a store first', 400);
     }
 
     const updated = await prisma.order.update({
       where: { id: orderId },
-      data: { driverId, status: 'DRIVER_ASSIGNED', driverAssignedAt: new Date() },
+      data: {
+        driverId,
+        status: 'DRIVER_ASSIGNED',
+        driverAssignedAt: new Date(),
+        cancelReason: null, // wipe auto-cancel reason if we're rescuing
+      },
     });
 
     await broadcastOrderStatus(orderId, 'DRIVER_ASSIGNED', { byAdmin: true, driverId });

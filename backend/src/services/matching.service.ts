@@ -250,18 +250,27 @@ export async function matchStoreForOrder(
   const { scored, customerId } = ranked;
 
   if (scored.length === 0) {
-    // No candidate store can fulfill — cancel + notify customer
+    // Distinguish two failure modes so the admin / customer can read what
+    // actually went wrong from the cancelReason field:
+    //   - First attempt with empty exclude list → no store carries these
+    //     items at all (or none are open + within fallback distance)
+    //   - Retry with exclude list → stores were notified but none accepted
+    //     within the broadcast timeout window
+    const isRetry = excludeStoreIds.length > 0;
+    const reason = isRetry
+      ? 'No store accepted your order in time. An admin can manually assign a store from the dashboard.'
+      : 'No store currently carries these items. An admin can manually assign a store from the dashboard.';
+
     await prisma.order.update({
       where: { id: orderId },
-      data: {
-        status: 'CANCELLED',
-        cancelReason: 'No nearby store can fulfill your order at this time',
-      },
+      data: { status: 'CANCELLED', cancelReason: reason },
     });
     await sendNotification(
       customerId,
-      'Order cancelled',
-      'No nearby store could fulfill your order. Please try again later.',
+      'Order on hold',
+      isRetry
+        ? "No store accepted your order yet — we're sorting it out."
+        : 'Your order was cancelled. Please try again later.',
       { orderId },
     );
     return;

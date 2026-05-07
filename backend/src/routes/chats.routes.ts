@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { getOrCreateChat, isOrderLive, resolveChatPair } from '../services/chat.service';
+import { notify } from '../services/notification.service';
 import { io } from '../socket';
 
 const router = Router();
@@ -128,6 +129,36 @@ router.post(
       // Wake up the recipient even if they don't have the chat screen open
       const recipientId = chat.userAId === userId ? chat.userBId : chat.userAId;
       io?.to(`user:${recipientId}`).emit('chat:new', { chatId: id, orderId: chat.orderId, message });
+
+      // Push notification — best-effort, only if the recipient isn't already
+      // looking at this chat room. Avoids buzzing the phone when the user is
+      // staring at the bubble that just appeared via socket.
+      void (async () => {
+        try {
+          let recipientHasChatOpen = false;
+          if (io) {
+            const sockets = await io.in(`chat:${id}`).fetchSockets();
+            recipientHasChatOpen = sockets.some(
+              (s) => (s.data as { userId?: string }).userId === recipientId,
+            );
+          }
+          if (recipientHasChatOpen) return;
+
+          const sender = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { name: true },
+          });
+          await notify('CHAT_MESSAGE', recipientId, {
+            senderName: sender?.name ?? 'Someone',
+            orderShort: chat.orderId.slice(-6),
+            preview: body.length > 80 ? body.slice(0, 77) + '…' : body,
+            chatId: id,
+            orderId: chat.orderId,
+          });
+        } catch (err) {
+          console.warn('[Chats] push notify failed:', err);
+        }
+      })();
 
       return sendSuccess(res, message, 'Message sent', 201);
     } catch (err) {

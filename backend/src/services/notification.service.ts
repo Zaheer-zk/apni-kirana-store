@@ -115,7 +115,8 @@ export type NotificationEvent =
   | 'ADMIN_NEW_DRIVER_PENDING'
   | 'ADMIN_ORDER_PLACED'
   // Misc
-  | 'PROMO_ANNOUNCE';
+  | 'PROMO_ANNOUNCE'
+  | 'CHAT_MESSAGE';
 
 interface Template {
   title: string;
@@ -214,6 +215,11 @@ const TEMPLATES: Record<NotificationEvent, TemplateFn> = {
   PROMO_ANNOUNCE: (v) => ({
     title: v.title ?? 'New offer just for you',
     body: v.body ?? `Use code ${v.code} for an exclusive discount.`,
+  }),
+
+  CHAT_MESSAGE: (v) => ({
+    title: v.senderName ? `${v.senderName} (Order #${v.orderShort})` : 'New message',
+    body: v.preview ?? 'You have a new message.',
   }),
 };
 

@@ -72,6 +72,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     registerForPushNotifications();
     const detach = attachNotificationListeners({
       onTap: (data) => {
+        // Chat message → open the chat thread for that order
+        if (data?.event === 'CHAT_MESSAGE' && typeof data?.orderId === 'string') {
+          router.push(`/chat/${data.orderId}`);
+          return;
+        }
         if (typeof data?.orderId === 'string') {
           router.push(`/order/${data.orderId}`);
         }

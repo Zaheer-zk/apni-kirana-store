@@ -59,6 +59,10 @@ function RootLayoutNav() {
     registerForPushNotifications();
     const detach = attachNotificationListeners({
       onTap: (data) => {
+        if (data?.event === 'CHAT_MESSAGE' && typeof data?.orderId === 'string') {
+          router.push(`/chat/${data.orderId}`);
+          return;
+        }
         if (typeof data?.orderId === 'string') {
           router.push(`/order/${data.orderId}`);
         }

@@ -9,7 +9,7 @@ Before you `ssh` to the VPS, gather these. The deploy script won't run without m
 | ✓ | Item | Where to get it |
 | --- | --- | --- |
 | ☐ | A domain (any registrar, e.g. Hostinger / Namecheap / GoDaddy) | ~₹100-1000/yr |
-| ☐ | A VPS — see [Recommended VPS](#recommended-vps); for India use **Hostinger KVM 2** | ~₹500/mo |
+| ☐ | A VPS — see [HostLelo product matrix](#hostlelo--picking-the-right-product); for India MVP use **HostLelo Multi-Region Cloud VPS (Mumbai)** | ~₹1,450/mo |
 | ☐ | SMS provider account — **2Factor.in** (free 100/day) is the easiest start | <https://2factor.in> |
 | ☐ | Cloudinary account for image uploads (free tier OK) | <https://cloudinary.com> |
 | ☐ | Razorpay account for payments (Indian businesses) | <https://razorpay.com> |
@@ -20,99 +20,174 @@ Before you `ssh` to the VPS, gather these. The deploy script won't run without m
 
 The mobile apps (customer/driver/store-portal) are not deployed to a VPS — they ship to **Apple App Store** + **Google Play** via [EAS Build](https://docs.expo.dev/build/introduction/). Build commands at the bottom of this doc.
 
-## Recommended VPS
+## HostLelo — picking the right product
 
-| Provider | Plan | RAM / CPU / SSD | Price | Notes |
-| --- | --- | --- | --- | --- |
-| **Hostinger** | **KVM 2** | **8 GB / 2 vCPU / 100 GB** | **₹499 / mo** | **India location (Mumbai). Best for Indian users — see [Hostinger setup](#hostinger-vps-setup-india) below.** |
-| Hetzner | CX22 | 4 GB / 2 vCPU / 40 GB | €4 (~₹360) / mo | Best value globally; EU + US locations |
-| DigitalOcean | Basic Droplet | 1 GB / 1 vCPU / 25 GB | $6 / mo | Easy onboarding; Bangalore region available |
-| Contabo | VPS S | 8 GB / 4 vCPU / 200 GB | ~$5 / mo | Big specs, slower IO, EU/US/Asia |
+HostLelo (<https://www.hostlelo.com>) is the chosen hosting provider. This section covers every product they sell, which ones can run our stack, and which exact plan to pick for each phase.
 
-For an India-only launch, **Hostinger KVM 2 (Mumbai)** gives you the lowest customer-side latency at ~₹500/mo. Hetzner is cheaper globally but its closest region (Singapore add-on) adds ~150ms RTT for Indian customers. Scale vertically (KVM 4, KVM 8) before reaching for a load balancer.
+### Product matrix — what runs Apni Kirana Store
 
-> ⚠️ **Hostinger "Web Hosting" (cPanel/PHP) plans will NOT work** — those don't allow Docker. You must pick a **VPS** or **Cloud Hosting** plan (anything that gives you root SSH on Ubuntu/Debian).
+| Product | URL | Runs our stack? | Why / Why not |
+|---|---|---|---|
+| **Multi-Region Cloud VPS** | [/cloud-vps](https://www.hostlelo.com/cloud-vps) | ✅ **Yes — recommended for MVP** | Root SSH, NVMe, Mumbai region, Ubuntu support |
+| **AMD EPYC VDS** | [/vds](https://www.hostlelo.com/vds) | ✅ **Yes — recommended for production** | Dedicated CPU cores, up to 64 vCPU / 512 GB RAM, 24/7 fully-managed support included |
+| **Dedicated Servers** | [/dedicated-hosting](https://www.hostlelo.com/dedicated-hosting) | ✅ Yes (overkill for v1) | Bare metal, full hardware control. Pick once you scale past one VDS |
+| **VPS Hosting** (legacy) | listed on homepage | ⚠️ Avoid for new orders | 1 GB RAM / 1 core for $18.91 — Cloud VPS gives 4× the resources for similar price |
+| **UAE VPS / UAE Dedicated** | [/uae-vps](https://www.hostlelo.com/uae-vps), [/uae-dedicated](https://www.hostlelo.com/uae-dedicated) | ✅ Yes | Pick only if you launch in UAE — adds ~80 ms RTT for Indian users |
+| **Premium Shared Hosting** | [/shared-hosting](https://www.hostlelo.com/shared-hosting) | ❌ **No** | cPanel-style, no Docker, no Node.js/Postgres — **don't buy this for AKS** |
+| **WordPress Hosting** | [/wordpress-hosting](https://www.hostlelo.com/wordpress-hosting) | ❌ **No** | Same as shared — runs only WordPress, not arbitrary Docker stacks |
+| UAE Web Hosting | [/uae-hosting](https://www.hostlelo.com/uae-hosting) | ❌ **No** | Same as shared, just UAE region |
+| Software Development | [/development](https://www.hostlelo.com/development) | n/a | A service offering, not a hosting product |
+| Bash Scripting | [/bash-script-development](https://www.hostlelo.com/bash-script-development) | n/a | DevOps service offering |
 
-## Hostinger VPS setup (India)
+> ⚠️ **Do not buy "Shared", "WordPress", or any cPanel-only plan.** They cannot run our Docker stack (Postgres + Redis + Node + Next.js need root SSH and arbitrary process control).
 
-If you're using Hostinger's KVM VPS plans, here's the exact path from order → running stack.
+### Resource sizing for Apni Kirana Store
 
-### 1. Buy the right plan
+What our 4-container stack actually uses at idle and under MVP load (~50 stores, ~500 customers, ~10 orders/min peak):
 
-- Go to <https://www.hostinger.in/vps-hosting>
-- Choose **KVM 2** (8 GB RAM, 2 vCPU, 100 GB NVMe) at ~₹499/mo
-- **OS:** Ubuntu 22.04 with Docker — Hostinger has a one-click "Docker" template that includes Docker + Compose pre-installed. Pick that to skip half the bootstrap.
-- **Region:** Mumbai (closest to Indian users)
-- **Hostname:** `aks-prod-1` (or anything memorable)
+| Container | Idle RAM | Peak RAM | CPU | Disk |
+|---|---|---|---|---|
+| `backend` (Node + Express + tsx) | ~250 MB | ~450 MB | bursty | minimal |
+| `admin` (Next.js prod) | ~200 MB | ~400 MB | bursty | minimal |
+| `postgres` | ~150 MB | ~600 MB | low-moderate | grows with order volume |
+| `redis` | ~50 MB | ~150 MB | low | minimal |
+| **Headroom** (OS, snapshots, bursts) | — | ~600 MB | — | logs + DB backups |
+| **TOTAL** | **~650 MB** | **~2.2 GB** | **~2 vCPU** | **30–50 GB** |
 
-After purchase, Hostinger emails the root password and IP within ~2 minutes.
+So **4 GB RAM / 2 vCPU / 100 GB NVMe is the comfortable MVP floor**. 8 GB / 4 vCPU is the production target. Beyond that you're either separating Postgres to its own box or sharding by city.
 
-### 2. Initial SSH login
+### Recommended plan by phase
+
+| Phase | Customers | Plan | Approx cost | Why |
+|---|---|---|---|---|
+| **Beta / pilot** | 0–500, 1 city | **Multi-Region Cloud VPS — 4 vCPU / 4 GB / 100 GB NVMe** ([/cloud-vps](https://www.hostlelo.com/cloud-vps), Mumbai) | $16.52 (~₹1,450) / mo | Smallest plan that fits the stack with headroom. Self-managed |
+| **Public launch** | 500–10K, 2-3 cities | **AMD EPYC VDS — ~6 vCPU / 12 GB / 360 GB NVMe** ([/vds](https://www.hostlelo.com/vds), India) | ~$50–60 (~₹4,500) / mo | Dedicated CPU cores prevent noisy-neighbor lag during dispatch matching. **Includes 24/7 fully-managed support** — your in-house ops time goes near-zero |
+| **Scale** | 10K+, 5+ cities | Dedicated Server (Ryzen 5950X, 128 GB) ([/dedicated-hosting](https://www.hostlelo.com/dedicated-hosting)) | ~$50/mo + $49/mo semi-managed | Move Postgres to separate dedicated box; backend/admin still on VDS. Add CDN |
+
+For most launches, **start at Cloud VPS, upgrade to VDS when paid orders hit ~₹50K/day**. Both keep the same Docker Compose setup — only the box underneath changes.
+
+## HostLelo deployment — step-by-step
+
+End-to-end from "I just bought the plan" → "stack running on https://api.yourdomain.com".
+
+### 1. Buy + provision
+
+1. Sign in / create account at <https://www.hostlelo.com>
+2. Order page → pick the plan from the table above. Choose:
+   - **Region:** **India (Mumbai)** — 45 ms latency to most Indian users
+   - **OS:** **Ubuntu 22.04 LTS** (or 24.04 if offered — both work). NOT CentOS, NOT Windows
+   - **Hostname:** `aks-prod-1` (any memorable name)
+   - **Add-ons:** skip extra IPs, cPanel, billing add-ons. We don't need them
+3. After payment, the dashboard shows the public IPv4 + initial root password (also emailed)
+
+If you picked the **VDS or Dedicated** plan, your account also includes 24/7 fully-managed support — note their ticket queue / chat link in the welcome email; that's who you call if the server itself misbehaves.
+
+### 2. First SSH
 
 ```bash
-ssh root@<your-vps-ip>
-# Hostinger root password from the order email
+ssh root@<public-ip>
+# Use the password from the welcome email
+# You'll be prompted to change it on first login — pick a strong one or
+# move straight to key-based auth (recommended below)
 ```
 
-First-login checklist:
+Once in:
 
 ```bash
-# Update OS packages
+# 2.1 Update everything
 apt update && apt upgrade -y
 
-# Verify Docker (already installed if you picked the Docker template)
-docker --version
-docker compose version
+# 2.2 Install Docker if it isn't already
+docker --version 2>/dev/null || curl -fsSL https://get.docker.com | sh
+docker compose version || apt install -y docker-compose-plugin
 
-# If Docker isn't there, install it via the official script:
-curl -fsSL https://get.docker.com | sh
-```
+# 2.3 Set up SSH key auth (kills password attacks)
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+# Paste your laptop's id_ed25519.pub into ~/.ssh/authorized_keys, then:
+sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+systemctl reload sshd
 
-### 3. Point your domain
-
-Hostinger lets you buy a domain in the same dashboard, but any registrar works. In your DNS panel add **two A records** pointing at your VPS IP:
-
-| Host | Type | Value | TTL |
-| --- | --- | --- | --- |
-| `api.yourdomain.com` | A | `<vps-ip>` | 300 |
-| `admin.yourdomain.com` | A | `<vps-ip>` | 300 |
-
-If you bought the domain on Hostinger:
-- hPanel → Domain → DNS / Nameservers → Manage DNS records → Add record (×2)
-
-Wait ~5-15 minutes, then verify:
-```bash
-dig api.yourdomain.com +short
-# Should print your VPS IP
-```
-
-### 4. Open firewall ports
-
-Hostinger VPSes have a panel firewall. From hPanel → VPS → your-server → Firewall:
-- Allow `22/tcp` (SSH) from your IP if possible (else `Anywhere`)
-- Allow `80/tcp` (HTTP — Let's Encrypt cert challenge)
-- Allow `443/tcp` (HTTPS)
-- Block everything else
-
-Inside the VPS, also:
-```bash
+# 2.4 Firewall — open only what we need
 ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
-ufw enable
+ufw --force enable
 ```
 
-### 5. Continue with the standard bootstrap
+### 3. Domain + DNS
 
-The rest of the deployment matches the generic flow below — start at [VPS bootstrap](#vps-bootstrap), substituting Hostinger's IP for `203.0.113.10` in examples.
+In your domain registrar's DNS panel (HostLelo's, GoDaddy, Namecheap, whoever) add **two A records** pointing at the VPS IP:
 
-### Hostinger gotchas to know
+| Host | Type | Value | TTL |
+|---|---|---|---|
+| `api.yourdomain.com` | A | `<your-vps-ip>` | 300 |
+| `admin.yourdomain.com` | A | `<your-vps-ip>` | 300 |
 
-- **Backups**: Hostinger includes weekly snapshots on KVM 2+. Enable them in hPanel → VPS → Backups. Don't rely on this alone — keep `pg_dump` running too (see [Backups](#backups)).
-- **Reverse DNS / PTR**: needed for SMTP. hPanel → VPS → DNS Setup → set PTR to your domain. Skip if you're not sending email yourself.
-- **Bandwidth**: KVM plans bundle 8 TB/month. At MVP scale you'll use < 50 GB/mo. Hostinger throttles to 100 Mbps after the cap, doesn't charge overage.
-- **Country-specific blocks**: certain ports (e.g. 25 outgoing) are blocked by default for spam prevention. SMTP must use 587 + auth.
-- **VPS support**: Hostinger's KVM tier includes 24/7 chat. They generally only help with infra (booting, networking) — not your app.
+Verify after a few minutes:
+
+```bash
+dig api.yourdomain.com +short    # should print your VPS IP
+dig admin.yourdomain.com +short  # same
+```
+
+Don't issue the SSL cert until both records resolve.
+
+### 4. Clone + configure the project
+
+```bash
+git clone https://github.com/your-org/apni-kirana-store.git /opt/apni-kirana-store
+cd /opt/apni-kirana-store
+
+# Optional one-shot bootstrap — installs UFW rules, fail2ban, deploy user
+bash scripts/setup-vps.sh
+
+# Production env
+cp .env.prod.example .env.prod
+nano .env.prod    # see [Environment](#environment) below for what to fill
+chmod 600 .env.prod
+```
+
+### 5. SSL + first start + smoke test
+
+```bash
+# 5.1 Issue Let's Encrypt cert (uses certbot inside the nginx container)
+bash scripts/init-ssl.sh \
+  api.yourdomain.com \
+  admin.yourdomain.com \
+  you@yourdomain.com
+
+# 5.2 Boot the stack
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml exec backend npx prisma migrate deploy
+
+# 5.3 Smoke test
+curl https://api.yourdomain.com/health     # → { "status": "ok" }
+open https://admin.yourdomain.com          # → admin login screen
+```
+
+You're live. Test the full order flow from the customer app pointed at this API to confirm matching/notifications/chat all work in production mode.
+
+### 6. Day-2 operations
+
+| Task | Command |
+|---|---|
+| View live logs | `docker compose -f docker-compose.prod.yml logs -f --tail=200` |
+| Deploy a new commit | `bash scripts/deploy.sh` (auto-backs up DB → git pull → rebuild → migrate → rolling restart) |
+| Restart one service | `docker compose -f docker-compose.prod.yml restart backend` |
+| psql shell | `docker compose -f docker-compose.prod.yml exec postgres psql -U postgres -d apni_kirana_store` |
+| Manual DB backup | `docker compose -f docker-compose.prod.yml exec postgres pg_dumpall -U postgres \| gzip > /opt/backups/$(date +%F).sql.gz` |
+| Tail just OTPs | `docker compose -f docker-compose.prod.yml logs -f backend \| grep OTP` |
+
+### HostLelo-specific gotchas
+
+- **Mumbai latency is real**: pick India region for India users. UAE region adds ~80 ms RTT — only meaningful if you actually serve UAE customers
+- **Snapshots**: Cloud VPS plans include "1 free snapshot". Use it before any risky upgrade. Set up daily `pg_dump` separately — snapshots are point-in-time of the whole disk, slow to restore item-level
+- **Bandwidth**: VDS plans bundle ~32 TB/mo, Cloud VPS varies — at MVP scale you'll use <100 GB/mo. Don't worry about it
+- **DDoS protection**: included at all data centers per HostLelo's homepage. No extra config needed for the basic level
+- **Managed support tiers**: VDS/Dedicated plans optionally upgrade to **Semi-Managed (+$49/mo)** or **Fully-Managed (+$149/mo)**. Skip these for MVP — you don't need someone managing the box for 5 containers. Reach for them when you have multiple servers
+- **Reverse DNS / PTR**: only matters if you send email directly from the VPS (we don't — email goes via 2Factor / MSG91 / Twilio APIs). Skip
+- **Outgoing port 25**: blocked by default on most providers including HostLelo. Doesn't affect us — we don't send mail
+- **Their support tagline**: "2 min average response" via 24/7 live chat. Useful when the box itself misbehaves; not for app-level help. Phone: +91 9892278936, email: support@hostlelo.com
 
 ## DNS setup
 
@@ -381,18 +456,39 @@ Android works out of the box without any extra setup; Expo Push relays through G
 
 ## Cost estimate (monthly, INR equivalents in brackets)
 
+### Beta / pilot (~0–500 users, 1 city)
+
 | Item | Cost |
 | --- | --- |
-| Hostinger KVM 2 (Mumbai) | ~₹500 |
-| _or_ Hetzner CX22 (global) | €4 (~₹360) |
+| HostLelo Multi-Region Cloud VPS (4 vCPU / 4 GB / 100 GB, Mumbai) | $16.52 (~₹1,450) |
 | 2Factor.in SMS (free tier) | ₹0 (up to 100 OTP/day) |
-| _or_ MSG91 SMS | ~₹0.18 per OTP |
 | Cloudinary | Free tier (25 GB storage, 25 GB bandwidth) |
 | Expo Push (mobile) | Free |
 | Web Push for admin (VAPID) | Free |
 | Razorpay | per-transaction fee (~2% UPI/cards) |
 | Domain | ~₹100 |
-| **Total fixed** | **~₹600–₹1000/mo** at low volume |
+| **Total fixed** | **~₹1,550 / mo** |
+
+### Public launch (~500–10K users, 2-3 cities)
+
+| Item | Cost |
+| --- | --- |
+| HostLelo AMD EPYC VDS (~6 vCPU / 12 GB, India) | ~$50–60 (~₹4,500) |
+| MSG91 SMS (~₹0.18 / OTP × ~3K OTPs/mo) | ~₹540 |
+| Cloudinary Pro (if free tier exceeded) | $89 (~₹7,800) |
+| Razorpay | per-transaction fee (~2%) |
+| Domain | ~₹100 |
+| **Total fixed** | **~₹5,200–₹13,000 / mo** depending on Cloudinary tier |
+
+### Scale (10K+ users, 5+ cities)
+
+| Item | Cost |
+| --- | --- |
+| HostLelo Dedicated Server (Ryzen 5950X, 128 GB) | $50.12 (~₹4,360) |
+| Semi-managed support add-on | $49 (~₹4,260) |
+| Separate Postgres VDS | ~$30 (~₹2,600) |
+| Cloudinary, MSG91, Razorpay | as above + linear with volume |
+| **Total fixed** | **~₹15,000+ / mo** before transaction fees |
 
 Variable costs (SMS, Razorpay) scale with revenue, so unit economics stay healthy.
 

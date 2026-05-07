@@ -4,6 +4,15 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-07 — HostLelo deployment guide (own provider)
+
+- [x] **HostLelo product matrix** — every product they sell mapped to "runs our stack? yes/no". Cloud VPS / VDS / Dedicated all OK; Shared / WordPress / UAE Web Hosting all explicitly NO (cPanel, no Docker).
+- [x] **Resource sizing for AKS** — measured idle + peak RAM per container; 4GB/2vCPU is the documented MVP floor, 8GB/4vCPU the launch target.
+- [x] **Phase-aligned plan recommendations** — Beta (Cloud VPS 4GB ~$16.52/mo), Public launch (EPYC VDS 12GB ~$50/mo with managed support), Scale (Dedicated + separate Postgres box).
+- [x] **End-to-end deployment walkthrough** for HostLelo: order → SSH → Docker check → SSH key auth → UFW → DNS → clone → .env.prod → SSL → first start → smoke test. Day-2 ops table included.
+- [x] **Tiered cost estimates** in INR — Beta ~₹1,550/mo, Public launch ~₹5,200/mo, Scale ~₹15,000/mo. Replaces the flat estimate.
+- [x] **HostLelo-specific gotchas** documented: Mumbai vs UAE region trade-off, snapshot vs pg_dump, managed-support tier when to skip vs buy, port 25 / PTR / DDoS protection notes.
+
 ### 2026-05-07 — Next.js 16 + Hostinger deployment docs
 
 - [x] **Upgraded admin to Next.js 16.2.5** (was 15.1.0). Risk audit found our codebase already uses async `params: Promise<{id: string}>` patterns expected by 16.x; no `middleware.ts`, no `next/image`, no parallel routes — clean upgrade. Admin compiles + serves in 1.6s on Turbopack.

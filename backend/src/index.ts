@@ -10,6 +10,7 @@ import { config } from './config/env';
 import { errorHandler } from './middleware/error.middleware';
 import { setupSocket } from './socket';
 import { startWorkers } from './queues';
+import { runChatRetention } from './services/chat.service';
 
 // ─── Route Imports ─────────────────────────────────────────────────────────────
 import authRouter from './routes/auth.routes';
@@ -23,6 +24,7 @@ import notificationsRouter from './routes/notifications.routes';
 import addressesRouter from './routes/addresses.routes';
 import usersRouter from './routes/users.routes';
 import promosRouter from './routes/promos.routes';
+import chatsRouter from './routes/chats.routes';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
@@ -72,6 +74,7 @@ app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/addresses', addressesRouter);
 app.use('/api/v1/users', usersRouter);
 app.use('/api/v1/promos', promosRouter);
+app.use('/api/v1/chats', chatsRouter);
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 
@@ -90,6 +93,16 @@ server.listen(config.port, () => {
 
   // Start BullMQ workers
   startWorkers();
+
+  // Chat retention sweep — soft-delete chats 30d after order close, hard-
+  // delete after 90d. Runs once at startup, then every 6 hours. Idempotent.
+  if (config.nodeEnv !== 'test') {
+    runChatRetention().catch((err) => console.warn('[Chat retention] failed:', err));
+    setInterval(
+      () => runChatRetention().catch((err) => console.warn('[Chat retention] failed:', err)),
+      6 * 60 * 60 * 1000,
+    );
+  }
 });
 
 export default app;

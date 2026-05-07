@@ -57,7 +57,10 @@ Required values:
 | `POSTGRES_PASSWORD` | Generate with `openssl rand -base64 24` |
 | `JWT_ACCESS_SECRET` | `openssl rand -base64 48` |
 | `JWT_REFRESH_SECRET` | `openssl rand -base64 48` |
-| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | Twilio console |
+| `SMS_PROVIDER` | `CONSOLE` (dev), `TWOFACTOR` (free 100/day, India), `MSG91` (~₹0.18/OTP, India), `TWILIO` (international) — see [SMS OTP setup](#sms-otp-setup) below |
+| `TWOFACTOR_API_KEY` | 2Factor.in dashboard (only when SMS_PROVIDER=TWOFACTOR) |
+| `MSG91_AUTH_KEY` / `MSG91_TEMPLATE_ID` | MSG91 dashboard (only when SMS_PROVIDER=MSG91) |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | Twilio console (only when SMS_PROVIDER=TWILIO) |
 | `CLOUDINARY_URL` | Cloudinary dashboard |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase console → Project settings → Service accounts (paste full JSON) |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Razorpay dashboard |
@@ -65,6 +68,82 @@ Required values:
 | `API_PUBLIC_URL` | `https://api.yourdomain.com` |
 
 Permissions: `chmod 600 .env.prod`.
+
+## SMS OTP setup
+
+Pick a provider and set `SMS_PROVIDER=<KEY>` in `.env.prod` plus that
+provider's credentials. The backend's `services/sms.service.ts` does the rest.
+
+### Option A — 2Factor.in (free 100 OTP/day, India)
+
+Best for early stage / beta. Genuinely free up to 100 OTP/day, no credit card.
+
+1. Sign up at <https://2factor.in> (Indian mobile + email; takes ~3 minutes)
+2. Verify your email — they'll auto-create a "Free Trial" plan with 100 OTP/day
+3. Dashboard → "API Key" — copy the 36-char UUID (looks like `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee`)
+4. (Optional, for branded sender) Get a DLT-approved template approved on
+   the dashboard. Until then, use the default `OTP1` template — works
+   immediately but the SMS reads "Your OTP is XXXXXX from 2FACTOR".
+5. Set in `.env.prod`:
+   ```
+   SMS_PROVIDER=TWOFACTOR
+   TWOFACTOR_API_KEY=<your-uuid>
+   TWOFACTOR_TEMPLATE=OTP1   # or your DLT template name
+   ```
+6. Restart backend: `docker compose -f docker-compose.prod.yml restart backend`
+7. Test: hit `POST /api/v1/auth/send-otp` with your real phone — you'll get
+   the SMS within ~5 seconds.
+
+### Option B — MSG91 (no daily cap, ~₹0.18/OTP)
+
+Best when you outgrow the free 100/day. DLT-compliant, used widely in India.
+
+1. Sign up at <https://msg91.com> + complete KYC (business name, GST, ~1 day)
+2. Apply for a DLT principal entity ID + sender ID via your TRAI registrar
+   (Vilpower / Videocon / etc.) — required by Indian regulation; takes ~3
+   business days. MSG91 has a guide.
+3. Once DLT-approved, create an OTP template inside MSG91 dashboard and
+   note its template ID (a 24-char hex)
+4. Dashboard → API → "Auth Key" — copy
+5. Set in `.env.prod`:
+   ```
+   SMS_PROVIDER=MSG91
+   MSG91_AUTH_KEY=<auth-key>
+   MSG91_TEMPLATE_ID=<template-id>
+   ```
+6. Restart backend; test as above
+
+### Option C — Twilio (international, expensive in India)
+
+Use only if shipping outside India. Per-SMS cost in India is ~₹3.30/OTP.
+
+1. Sign up at <https://twilio.com> ($15 trial credit)
+2. Buy a verified Indian sender or use a US long-code
+3. Set in `.env.prod`:
+   ```
+   SMS_PROVIDER=TWILIO
+   TWILIO_ACCOUNT_SID=ACxxxx
+   TWILIO_AUTH_TOKEN=xxxxx
+   TWILIO_PHONE_NUMBER=+1234567890
+   ```
+
+### Option D — CONSOLE (development only)
+
+Default. OTP is logged to backend stdout — never sent over the network. Use
+this for local dev / staging when you don't want to spend SMS credits.
+
+```
+SMS_PROVIDER=CONSOLE
+```
+
+Watch with `docker compose logs -f backend | grep OTP`.
+
+### What if SMS sending fails?
+
+- **Production:** the route returns `500 Failed to send OTP`. Check backend
+  logs for `[SMS] <PROVIDER> send failed:` and verify your API key + template.
+- **Dev (`NODE_ENV=development`):** failures silently fall back to console
+  so the local dev flow never breaks.
 
 ## TLS certificates
 

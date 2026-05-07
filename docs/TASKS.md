@@ -4,6 +4,12 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-07 — Chat + multi-device + SMS docs
+
+- [x] **Multi-device push tokens** — new `Device` table + per-device fan-out. `notify()` reads `Device.findMany` instead of single `User.fcmToken`; failed tokens delete just that device row (not the user). Logout removes only the current device's token (other phones stay subscribed). Migration backfills existing tokens. Commit `31a9062`.
+- [x] **Chat backend** — `Chat` + `ChatMessage` Prisma models, routes (`GET /chats/order/:orderId`, `GET /chats/:id/messages`, `POST /chats/:id/messages`), Socket.io `chat:join` / `chat:message` events. Gating: send-blocked unless order is `STORE_ACCEPTED`/`DRIVER_ASSIGNED`/`PICKED_UP`. Auto-closes chats when order ends. Plain-text storage (intentional, for fraud review). Retention sweep on backend startup + every 6h: soft-delete 30d after order close, hard-delete after 90d.
+- [x] **SMS OTP setup docs** — `docs/deployment.md` now has a step-by-step guide for 2Factor.in (free 100/day), MSG91, Twilio and the dev CONSOLE fallback, with sign-up links and exact env keys.
+
 ### 2026-05-07 — Production hardening
 
 - [x] **Notification logout cleanup** — all 4 apps (customer/driver/store-portal/admin) now call `DELETE /notifications/fcm-token` (and admin additionally unsubscribes web push) before clearing local credentials, so a logged-out device stops receiving pushes meant for the previous user. New backend endpoint `DELETE /api/v1/notifications/fcm-token`.
@@ -37,14 +43,14 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## In progress
 
-_Nothing in progress right now._
+- [ ] **Chat UI in customer/driver/store-portal** — backend is live; need a "Chat with {customer/store/driver}" button on the active-order screen that opens a thread (Socket.io powered; backend already broadcasts `chat:message`).
 
 ## Backlog (not started)
 
 - [ ] **Customer order placement → live store-portal/driver lighting up** — verify e2e on real devices once Zaheer's default address is switched to a Delhi one (Baqala won't match Jaipur address, fallback runs but distance shows ~230 km).
 - [ ] **Push notifications in production iOS** — needs Apple Developer account + APNs key uploaded to Expo.
-- [ ] **Multi-device push tokens** — currently only one token per user; add a Devices table for users on multiple phones.
-- [ ] **Notification logout cleanup** — clear FCM token / unsubscribe web push on logout to stop pushes to logged-out devices.
+- [ ] **Real OTP delivery** — set `SMS_PROVIDER=TWOFACTOR` + `TWOFACTOR_API_KEY` in `backend/.env` to switch from console-log to real SMS. Free 100/day forever. Step-by-step in `docs/deployment.md` § SMS OTP setup.
+- [ ] **Number masking** — deferred in favor of in-app chat. Re-evaluate once chat is shipped; if still needed, Exotel/Knowlarity at ~₹0.50/min is the path.
 
 ## How this file is maintained
 

@@ -371,6 +371,49 @@ model NotificationPreferences {
   updatedAt           DateTime @updatedAt
 }
 
+// In-app chat between order participants (customer ↔ store, customer ↔ driver,
+// store ↔ driver). One Chat row per (orderId, participant pair).
+//
+// Retention: when the order reaches DELIVERED/CANCELLED/REJECTED we record
+// `closedAt`. A scheduled job soft-deletes (sets `deletedAt`) 30 days after
+// `closedAt` and hard-deletes 90 days after. Messages are stored in plain
+// text (no encryption) so support / fraud-investigation can review.
+model Chat {
+  id          String        @id @default(cuid())
+  orderId     String
+  // The two participants — sorted alphabetically by id at insert time so the
+  // unique constraint catches duplicates regardless of who sent the first
+  // message. We don't enforce specific roles at the schema level — any pair
+  // out of (customer, storeOwner, driverUser) is allowed.
+  userAId     String
+  userBId     String
+  closedAt    DateTime?     // set when the order reaches a terminal state
+  deletedAt   DateTime?     // soft-delete marker (30d after closedAt)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  messages    ChatMessage[]
+
+  @@unique([orderId, userAId, userBId])
+  @@index([orderId])
+  @@index([userAId])
+  @@index([userBId])
+  @@index([deletedAt])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  senderId  String
+  body      String   @db.Text
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, createdAt])
+}
+
 // One row per device a user has installed the app on. We fan out mobile
 // pushes to every Device for the recipient, so a user receives notifications
 // on their phone + tablet etc. Token-dead errors delete just that one row.

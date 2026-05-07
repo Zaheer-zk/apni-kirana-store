@@ -68,6 +68,23 @@ export function setupSocket(io: Server): void {
       }
     });
 
+    // ── Subscribe to a chat room (must be a participant) ────────────────────
+    socket.on('chat:join', async (chatId: string) => {
+      const chat = await prisma.chat.findFirst({
+        where: {
+          id: chatId,
+          OR: [{ userAId: userId }, { userBId: userId }],
+        },
+        select: { id: true, deletedAt: true },
+      });
+      if (chat && !chat.deletedAt) {
+        socket.join(`chat:${chatId}`);
+      }
+    });
+    socket.on('chat:leave', (chatId: string) => {
+      socket.leave(`chat:${chatId}`);
+    });
+
     // ── Driver location updates ──────────────────────────────────────────────
     socket.on('location:update', async (payload: LocationUpdatePayload) => {
       const { lat, lng, orderId } = payload;

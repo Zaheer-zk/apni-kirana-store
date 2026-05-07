@@ -9,12 +9,22 @@
 //   user:<driverU>  — driver's user channel (drives "delivered" UI flash etc.)
 import { io } from '../socket';
 import { prisma } from '../config/prisma';
+import { closeChatsForOrder, isOrderClosed } from './chat.service';
+import { OrderStatus } from '@prisma/client';
 
 export async function broadcastOrderStatus(
   orderId: string,
   status: string,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
+  // Close any chat threads for this order once the order ends so participants
+  // can no longer send messages (read still works until the retention sweep).
+  if (isOrderClosed(status as OrderStatus)) {
+    closeChatsForOrder(orderId).catch((err) =>
+      console.warn('[order-events] close chats failed:', err),
+    );
+  }
+
   if (!io) return;
 
   // Always broadcast on the order room (subscribers join via 'order:subscribe')

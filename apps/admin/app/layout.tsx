@@ -2,9 +2,10 @@
 
 import './globals.css';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { isAuthenticated } from '@/lib/auth';
+import TopLoader from '@/components/TopLoader';
 
 function makeQueryClient() {
   return new QueryClient({
@@ -39,6 +40,9 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <QueryClientProvider client={queryClient}>
+          <Suspense fallback={null}>
+            <TopLoader />
+          </Suspense>
           <AuthGuard>{children}</AuthGuard>
         </QueryClientProvider>
       </body>

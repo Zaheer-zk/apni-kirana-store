@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { apiClient } from '@/lib/api';
+import { unregisterPushNotifications } from '@/lib/notifications';
 import { useAuthStore } from '@/store/auth.store';
 import { useCartStore } from '@/store/cart.store';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
@@ -131,13 +132,10 @@ export default function ProfileScreen() {
         text: 'Log out',
         style: 'destructive',
         onPress: async () => {
-          // Clear server-side push token first (while access token still valid)
-          // so this device stops getting notifications for the logged-out user.
-          try {
-            await apiClient.delete('/api/v1/notifications/fcm-token');
-          } catch {
-            // best-effort — don't block logout if it fails
-          }
+          // Best-effort: remove THIS device's push token from the backend so
+          // the previous user's notifications stop arriving here. Other devices
+          // they're logged in on stay subscribed.
+          await unregisterPushNotifications();
           await Promise.all([
             SecureStore.deleteItemAsync('accessToken'),
             SecureStore.deleteItemAsync('refreshToken'),

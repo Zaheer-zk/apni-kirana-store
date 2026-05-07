@@ -282,18 +282,23 @@ async function persistAndPush(
     data: { userId, title, body, data: data ?? null },
   });
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { fcmToken: true },
+  // Fan out the push to every device the user has registered. Older code
+  // paths kept just User.fcmToken; we still consult it as a fallback so
+  // upgrades don't lose the token they had before the Device table existed.
+  const devices = await prisma.device.findMany({
+    where: { userId },
+    select: { id: true, token: true },
   });
 
-  if (user?.fcmToken) {
-    // Route by token shape: ExponentPushToken[xxx] → Expo Push (free, no
-    // Firebase project). Anything else is treated as a raw FCM token.
-    if (Expo.isExpoPushToken(user.fcmToken)) {
-      sendExpoPush(userId, user.fcmToken, title, body, data).catch(() => {});
-    } else {
-      sendFcmPush(userId, user.fcmToken, title, body, data).catch(() => {});
+  if (devices.length > 0) {
+    for (const d of devices) {
+      // Route by token shape: ExponentPushToken[xxx] → Expo Push (free, no
+      // Firebase project). Anything else is treated as a raw FCM token.
+      if (Expo.isExpoPushToken(d.token)) {
+        sendExpoPush(d.id, d.token, title, body, data).catch(() => {});
+      } else {
+        sendFcmPush(d.id, d.token, title, body, data).catch(() => {});
+      }
     }
   } else if (process.env.NODE_ENV !== 'test') {
     console.log(`[Notify] (in-app only — no push token) [${title}] ${body}`);
@@ -316,8 +321,12 @@ async function persistAndPush(
 
 const expo = new Expo();
 
+async function deleteDeadDevice(deviceId: string): Promise<void> {
+  await prisma.device.delete({ where: { id: deviceId } }).catch(() => {});
+}
+
 async function sendExpoPush(
-  userId: string,
+  deviceId: string,
   token: string,
   title: string,
   body: string,
@@ -341,15 +350,12 @@ async function sendExpoPush(
     const ticket = tickets[0];
     if (ticket?.status === 'error') {
       const code = ticket.details?.error;
-      // Token is dead → clear so we don't keep retrying
       if (code === 'DeviceNotRegistered') {
-        await prisma.user
-          .update({ where: { id: userId }, data: { fcmToken: null } })
-          .catch(() => {});
-        console.log(`[Expo] Cleared invalid token for user ${userId}`);
+        await deleteDeadDevice(deviceId);
+        console.log(`[Expo] Removed dead device ${deviceId}`);
         return;
       }
-      console.warn(`[Expo] push error for user ${userId}:`, ticket.message, code);
+      console.warn(`[Expo] push error for device ${deviceId}:`, ticket.message, code);
     }
   } catch (err) {
     console.error('[Expo] send error:', err);
@@ -357,7 +363,7 @@ async function sendExpoPush(
 }
 
 async function sendFcmPush(
-  userId: string,
+  deviceId: string,
   fcmToken: string,
   title: string,
   body: string,
@@ -382,9 +388,8 @@ async function sendFcmPush(
       e?.code === 'messaging/registration-token-not-registered' ||
       e?.code === 'messaging/invalid-registration-token'
     ) {
-      // Token is dead — clear it so we don't retry
-      await prisma.user.update({ where: { id: userId }, data: { fcmToken: null } }).catch(() => {});
-      console.log(`[FCM] Cleared invalid token for user ${userId}`);
+      await deleteDeadDevice(deviceId);
+      console.log(`[FCM] Removed dead device ${deviceId}`);
       return;
     }
     console.error('[FCM] send error:', err);

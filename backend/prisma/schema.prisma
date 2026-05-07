@@ -371,6 +371,24 @@ model NotificationPreferences {
   updatedAt           DateTime @updatedAt
 }
 
+// One row per device a user has installed the app on. We fan out mobile
+// pushes to every Device for the recipient, so a user receives notifications
+// on their phone + tablet etc. Token-dead errors delete just that one row.
+//
+// User.fcmToken is preserved as a denormalized "most-recent token" for
+// backward compatibility with existing code paths; new code should read
+// from Device.
+model Device {
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
+  platform   String?  // 'ios' | 'android' | 'web' — free-form for now
+  lastSeenAt DateTime @default(now()) @updatedAt
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
 // Web push subscriptions for the admin browser (PushManager / service worker).
 // Different from FCM — used by admin web app only.
 model WebPushSubscription {

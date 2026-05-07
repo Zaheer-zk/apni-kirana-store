@@ -77,6 +77,39 @@ export async function registerForPushNotifications(): Promise<string | null> {
 }
 
 /**
+ * Read the current device's Expo push token without re-prompting the user.
+ * Returns null on simulator / no projectId / no permission.
+ */
+export async function getCurrentPushToken(): Promise<string | null> {
+  if (!Device.isDevice) return null;
+  const projectId =
+    Constants.expoConfig?.extra?.eas?.projectId ??
+    (Constants.easConfig as { projectId?: string } | undefined)?.projectId;
+  if (!projectId) return null;
+  try {
+    const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best-effort: tell the backend to remove this device's token. Called on
+ * logout so the previous user's notifications stop arriving here.
+ */
+export async function unregisterPushNotifications(): Promise<void> {
+  const token = await getCurrentPushToken();
+  try {
+    await apiClient.delete('/api/v1/notifications/fcm-token', {
+      params: token ? { token } : undefined,
+    });
+  } catch {
+    // best-effort — never block logout
+  }
+}
+
+/**
  * Hook up foreground / background tap response listeners.
  * Returns a cleanup function.
  */

@@ -93,33 +93,58 @@ router.put('/:id/read', async (req: Request, res: Response) => {
 
 router.put('/fcm-token', validate(fcmTokenSchema), async (req: Request, res: Response) => {
   try {
-    const { token } = req.body as { token: string };
+    const { token } = req.body as { token: string; platform?: string };
+    const platform = (req.body as { platform?: string }).platform;
+    const userId = req.user!.id;
 
-    await prisma.user.update({
-      where: { id: req.user!.id },
-      data: { fcmToken: token },
-    });
+    // Upsert one Device row per token. If this token already exists for
+    // someone (e.g. user logged in on this phone before logging in again),
+    // re-bind it to the current user. Backfill User.fcmToken with the latest
+    // token for backward compat with any code still reading that column.
+    await prisma.$transaction([
+      prisma.device.upsert({
+        where: { token },
+        create: { userId, token, platform: platform ?? null },
+        update: { userId, platform: platform ?? null },
+      }),
+      prisma.user.update({
+        where: { id: userId },
+        data: { fcmToken: token },
+      }),
+    ]);
 
-    return sendSuccess(res, null, 'FCM token updated successfully');
+    return sendSuccess(res, null, 'Device push token registered');
   } catch (err) {
     console.error('[Notifications] fcm-token error:', err);
-    return sendError(res, 'Failed to update FCM token', 500);
+    return sendError(res, 'Failed to register push token', 500);
   }
 });
 
 // ─── DELETE /fcm-token ────────────────────────────────────────────────────────
-// Called on logout so the device stops receiving pushes for the previous user.
+// Called on logout. Pass `?token=...` to remove just this device. Without it,
+// removes every device the user has registered (defensive — e.g. forced
+// logout from admin).
 
 router.delete('/fcm-token', async (req: Request, res: Response) => {
   try {
-    await prisma.user.update({
-      where: { id: req.user!.id },
-      data: { fcmToken: null },
-    });
-    return sendSuccess(res, null, 'FCM token cleared');
+    const userId = req.user!.id;
+    const token = (req.query['token'] as string | undefined) ?? undefined;
+
+    if (token) {
+      await prisma.device.deleteMany({ where: { userId, token } });
+    } else {
+      await prisma.device.deleteMany({ where: { userId } });
+    }
+    // Keep User.fcmToken in sync — clear it if no devices remain
+    const remaining = await prisma.device.count({ where: { userId } });
+    if (remaining === 0) {
+      await prisma.user.update({ where: { id: userId }, data: { fcmToken: null } });
+    }
+
+    return sendSuccess(res, null, 'Device push token removed');
   } catch (err) {
     console.error('[Notifications] clear fcm-token error:', err);
-    return sendError(res, 'Failed to clear FCM token', 500);
+    return sendError(res, 'Failed to remove push token', 500);
   }
 });
 

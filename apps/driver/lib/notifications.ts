@@ -73,6 +73,31 @@ export async function registerForPushNotifications(): Promise<string | null> {
   return token;
 }
 
+export async function getCurrentPushToken(): Promise<string | null> {
+  if (!Device.isDevice) return null;
+  const projectId =
+    Constants.expoConfig?.extra?.eas?.projectId ??
+    (Constants.easConfig as { projectId?: string } | undefined)?.projectId;
+  if (!projectId) return null;
+  try {
+    const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export async function unregisterPushNotifications(): Promise<void> {
+  const token = await getCurrentPushToken();
+  try {
+    await api.delete('/api/v1/notifications/fcm-token', {
+      params: token ? { token } : undefined,
+    });
+  } catch {
+    // best-effort
+  }
+}
+
 /**
  * Hook up foreground / background tap response listeners.
  * Returns a cleanup function.

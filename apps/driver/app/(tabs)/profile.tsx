@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
-import { api } from '@/lib/api';
+import { unregisterPushNotifications } from '@/lib/notifications';
 import { useDriverStore } from '@/store/driver.store';
 import { stopLocationTracking } from '@/lib/location';
 import { Avatar } from '@/components/Avatar';
@@ -117,13 +117,9 @@ export default function ProfileScreen() {
         text: 'Logout',
         style: 'destructive',
         onPress: async () => {
-          // Best-effort: clear server-side push token first so this device
-          // stops getting notifications meant for the logged-out driver.
-          try {
-            await api.delete('/api/v1/notifications/fcm-token');
-          } catch {
-            // ignore
-          }
+          // Best-effort: remove THIS device's push token so logged-out driver
+          // stops getting notifications here. Other devices stay subscribed.
+          await unregisterPushNotifications();
           await stopLocationTracking();
           await Promise.all([
             SecureStore.deleteItemAsync('accessToken'),

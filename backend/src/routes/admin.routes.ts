@@ -3,6 +3,8 @@ import { prisma } from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { broadcastOrderStatus } from '../services/order-events.service';
+import { haversineDistance } from '../utils/geo';
+import { notify } from '../services/notification.service';
 
 const router = Router();
 
@@ -313,6 +315,125 @@ router.get('/orders/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /orders/:id/eligible-stores ────────────────────────────────────────
+// Returns active stores that carry at least one of the items in the order,
+// ranked by match% then distance from delivery address. Includes owner
+// contact details so the admin can call the store before reassigning.
+
+router.get('/orders/:id/eligible-stores', async (req: Request, res: Response) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params['id'] },
+      include: { items: true, deliveryAddress: { select: { lat: true, lng: true } } },
+    });
+    if (!order) return sendError(res, 'Order not found', 404);
+
+    const orderStoreItems = await prisma.storeItem.findMany({
+      where: { id: { in: order.items.map((i) => i.itemId).filter((id): id is string => !!id) } },
+      select: { catalogItemId: true },
+    });
+    const orderCatalogIds = orderStoreItems.map((si) => si.catalogItemId);
+    const totalItems = new Set(orderCatalogIds).size;
+    if (totalItems === 0) return sendSuccess(res, []);
+
+    const stores = await prisma.store.findMany({
+      where: {
+        status: 'ACTIVE',
+        items: {
+          some: {
+            catalogItemId: { in: orderCatalogIds },
+            isAvailable: true,
+            stockQty: { gt: 0 },
+          },
+        },
+      },
+      include: {
+        owner: { select: { id: true, name: true, phone: true } },
+        items: {
+          where: { catalogItemId: { in: orderCatalogIds }, isAvailable: true, stockQty: { gt: 0 } },
+          select: { catalogItemId: true },
+        },
+      },
+    });
+
+    const { lat, lng } = order.deliveryAddress;
+    const ranked = stores
+      .map((s) => {
+        const matchedItems = new Set(s.items.map((i) => i.catalogItemId)).size;
+        return {
+          id: s.id,
+          name: s.name,
+          isOpen: s.isOpen,
+          rating: s.rating,
+          openTime: s.openTime,
+          closeTime: s.closeTime,
+          street: s.street,
+          city: s.city,
+          owner: s.owner,
+          distanceKm: Number(haversineDistance(lat, lng, s.lat, s.lng).toFixed(2)),
+          matchedItems,
+          totalItems,
+          matchPercent: Math.round((matchedItems / totalItems) * 100),
+        };
+      })
+      .sort((a, b) => b.matchPercent - a.matchPercent || a.distanceKm - b.distanceKm);
+
+    return sendSuccess(res, ranked);
+  } catch (err) {
+    console.error('[Admin] eligible-stores error:', err);
+    return sendError(res, 'Failed to fetch eligible stores', 500);
+  }
+});
+
+// ─── GET /orders/:id/eligible-drivers ───────────────────────────────────────
+// Returns active drivers ranked by distance from the assigned store (or
+// delivery address if no store yet). Includes user contact details.
+
+router.get('/orders/:id/eligible-drivers', async (req: Request, res: Response) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params['id'] },
+      include: {
+        store: { select: { lat: true, lng: true } },
+        deliveryAddress: { select: { lat: true, lng: true } },
+      },
+    });
+    if (!order) return sendError(res, 'Order not found', 404);
+
+    const origin = order.store ?? order.deliveryAddress;
+    const drivers = await prisma.driver.findMany({
+      where: {
+        status: 'ONLINE',
+        currentLat: { not: null },
+        currentLng: { not: null },
+      },
+      include: { user: { select: { id: true, name: true, phone: true } } },
+    });
+
+    const ranked = drivers
+      .map((d) => ({
+        id: d.id,
+        vehicleType: d.vehicleType,
+        vehicleNumber: d.vehicleNumber,
+        rating: d.rating,
+        totalRatings: d.totalRatings,
+        currentLat: d.currentLat,
+        currentLng: d.currentLng,
+        user: d.user,
+        distanceKm:
+          d.currentLat != null && d.currentLng != null
+            ? Number(haversineDistance(origin.lat, origin.lng, d.currentLat, d.currentLng).toFixed(2))
+            : null,
+      }))
+      .sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999));
+
+    return sendSuccess(res, ranked);
+  } catch (err) {
+    console.error('[Admin] eligible-drivers error:', err);
+    return sendError(res, 'Failed to fetch eligible drivers', 500);
+  }
+});
+
 // ─── PUT /orders/:id/assign-store — admin manually assigns/changes the store ─
 
 router.put('/orders/:id/assign-store', async (req: Request, res: Response) => {
@@ -339,13 +460,17 @@ router.put('/orders/:id/assign-store', async (req: Request, res: Response) => {
 
     await broadcastOrderStatus(orderId, 'STORE_ACCEPTED', { byAdmin: true });
 
-    // Notify store owner
-    await prisma.notification.create({
-      data: {
-        userId: store.ownerId,
-        title: 'Order assigned by admin',
-        body: `Order #${orderId.slice(-6)} has been manually assigned to your store. Please prepare it.`,
-      },
+    // Notify store owner via templated push (honors prefs)
+    const orderForCount = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { totalAmount: true, items: { select: { quantity: true } } },
+    });
+    const itemCount = orderForCount?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
+    await notify('STORE_NEW_ORDER', store.ownerId, {
+      orderShort: orderId.slice(-6),
+      itemCount,
+      total: orderForCount?.totalAmount ?? 0,
+      orderId,
     });
     await prisma.auditLog.create({
       data: {
@@ -390,12 +515,25 @@ router.put('/orders/:id/assign-driver', async (req: Request, res: Response) => {
 
     await broadcastOrderStatus(orderId, 'DRIVER_ASSIGNED', { byAdmin: true, driverId });
 
-    await prisma.notification.create({
-      data: {
-        userId: driver.user.id,
-        title: 'Delivery assigned by admin',
-        body: `Order #${orderId.slice(-6)} has been manually assigned to you.`,
-      },
+    // Compute pickup distance for the driver template
+    const orderForDistance = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { store: { select: { lat: true, lng: true } } },
+    });
+    const pickupDistance =
+      orderForDistance?.store && driver.currentLat != null && driver.currentLng != null
+        ? haversineDistance(
+            orderForDistance.store.lat,
+            orderForDistance.store.lng,
+            driver.currentLat,
+            driver.currentLng,
+          ).toFixed(1)
+        : '?';
+    await notify('DRIVER_NEW_DELIVERY', driver.user.id, {
+      orderShort: orderId.slice(-6),
+      distanceKm: pickupDistance,
+      earning: 50, // TODO: wire actual estimated earnings
+      orderId,
     });
     await prisma.auditLog.create({
       data: {

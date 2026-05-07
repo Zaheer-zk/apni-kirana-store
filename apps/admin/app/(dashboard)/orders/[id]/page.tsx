@@ -20,6 +20,8 @@ import {
   KeyRound,
   Star,
   RefreshCcw,
+  Phone,
+  MapPin,
 } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -113,19 +115,32 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   [OrderStatus.REJECTED]: 'Rejected',
 };
 
-interface AdminStore {
+interface EligibleStore {
   id: string;
   name: string;
+  isOpen: boolean;
+  rating: number;
+  openTime?: string;
+  closeTime?: string;
+  street?: string;
   city?: string;
-  status: string;
+  distanceKm: number;
+  matchedItems: number;
+  totalItems: number;
+  matchPercent: number;
+  owner: { id: string; name: string | null; phone: string };
 }
 
-interface AdminDriver {
+interface EligibleDriver {
   id: string;
-  status: string;
   vehicleType?: string | null;
   vehicleNumber?: string | null;
-  user?: { name: string | null; phone?: string };
+  rating: number;
+  totalRatings: number;
+  currentLat: number | null;
+  currentLng: number | null;
+  distanceKm: number | null;
+  user: { id: string; name: string | null; phone: string };
 }
 
 function SectionCard({
@@ -170,8 +185,6 @@ export default function OrderDetailPage({
   const { id } = use(params);
   const queryClient = useQueryClient();
 
-  const [storeChoice, setStoreChoice] = useState('');
-  const [driverChoice, setDriverChoice] = useState('');
   const [toast, setToast] = useState<ToastState | null>(null);
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundReason, setRefundReason] = useState('');
@@ -193,46 +206,27 @@ export default function OrderDetailPage({
     },
   });
 
-  const { data: storeOptions } = useQuery<AdminStore[]>({
-    queryKey: ['admin-stores-active-options'],
+  // Eligibility-filtered options: only stores that carry the order's items,
+  // ranked by match% then distance. Drivers ranked by distance from store.
+  const { data: eligibleStores } = useQuery<EligibleStore[]>({
+    queryKey: ['admin-order-eligible-stores', id],
     queryFn: async () => {
-      const res = await api.get<{
-        success: boolean;
-        data: { stores: AdminStore[] };
-      }>('/api/v1/admin/stores?status=ACTIVE');
-      return res.data.data?.stores ?? [];
+      const res = await api.get<{ success: boolean; data: EligibleStore[] }>(
+        `/api/v1/admin/orders/${id}/eligible-stores`,
+      );
+      return res.data.data ?? [];
     },
   });
 
-  const { data: driverOptionsOnline } = useQuery<AdminDriver[]>({
-    queryKey: ['admin-drivers-online-options'],
+  const { data: eligibleDrivers } = useQuery<EligibleDriver[]>({
+    queryKey: ['admin-order-eligible-drivers', id],
     queryFn: async () => {
-      const res = await api.get<{
-        success: boolean;
-        data: { drivers: AdminDriver[] };
-      }>('/api/v1/admin/drivers?status=ONLINE');
-      return res.data.data?.drivers ?? [];
+      const res = await api.get<{ success: boolean; data: EligibleDriver[] }>(
+        `/api/v1/admin/orders/${id}/eligible-drivers`,
+      );
+      return res.data.data ?? [];
     },
   });
-
-  const { data: driverOptionsActive } = useQuery<AdminDriver[]>({
-    queryKey: ['admin-drivers-active-options'],
-    queryFn: async () => {
-      const res = await api.get<{
-        success: boolean;
-        data: { drivers: AdminDriver[] };
-      }>('/api/v1/admin/drivers?status=ACTIVE');
-      return res.data.data?.drivers ?? [];
-    },
-  });
-
-  const driverOptions: AdminDriver[] = (() => {
-    const map = new Map<string, AdminDriver>();
-    [...(driverOptionsOnline ?? []), ...(driverOptionsActive ?? [])].forEach((d) => {
-      map.set(d.id, d);
-    });
-    return Array.from(map.values());
-  })();
 
   const assignStoreMutation = useMutation({
     mutationFn: async (storeId: string) => {
@@ -244,8 +238,9 @@ export default function OrderDetailPage({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-order', id] });
-      setStoreChoice('');
-      setToast({ id: Date.now(), type: 'success', message: 'Store reassigned successfully.' });
+      queryClient.invalidateQueries({ queryKey: ['admin-order-eligible-stores', id] });
+      queryClient.invalidateQueries({ queryKey: ['admin-order-eligible-drivers', id] });
+      setToast({ id: Date.now(), type: 'success', message: 'Store assigned and notified.' });
     },
     onError: (err: unknown) => {
       const e = err as { response?: { data?: { error?: { message?: string } } } };
@@ -267,8 +262,8 @@ export default function OrderDetailPage({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-order', id] });
-      setDriverChoice('');
-      setToast({ id: Date.now(), type: 'success', message: 'Driver assigned successfully.' });
+      queryClient.invalidateQueries({ queryKey: ['admin-order-eligible-drivers', id] });
+      setToast({ id: Date.now(), type: 'success', message: 'Driver assigned and notified.' });
     },
     onError: (err: unknown) => {
       const e = err as { response?: { data?: { error?: { message?: string } } } };
@@ -460,6 +455,18 @@ export default function OrderDetailPage({
             <div className="space-y-2">
               <InfoLine label="Name" value={data.store.name} />
               <InfoLine label="Owner" value={data.store.owner?.name ?? '—'} />
+              {data.store.owner?.phone && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-500">Owner phone</span>
+                  <a
+                    href={`tel:${data.store.owner.phone}`}
+                    className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
+                  >
+                    <Phone className="h-3.5 w-3.5" />
+                    {data.store.owner.phone}
+                  </a>
+                </div>
+              )}
               <InfoLine
                 label="Address"
                 value={
@@ -470,43 +477,8 @@ export default function OrderDetailPage({
               />
             </div>
           ) : (
-            <p className="text-sm text-gray-400">No store linked.</p>
+            <p className="text-sm text-gray-400">No store assigned yet.</p>
           )}
-
-          <div className="mt-4 border-t border-gray-100 pt-4">
-            <label className="mb-1 block text-xs font-medium text-gray-600">
-              Reassign to…
-            </label>
-            <div className="flex gap-2">
-              <select
-                value={storeChoice}
-                onChange={(e) => setStoreChoice(e.target.value)}
-                className="input flex-1"
-                disabled={assignStoreMutation.isPending}
-              >
-                <option value="">Select an active store…</option>
-                {(storeOptions ?? [])
-                  .filter((s) => s.id !== data.store?.id)
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                      {s.city ? ` — ${s.city}` : ''}
-                    </option>
-                  ))}
-              </select>
-              <button
-                onClick={() => storeChoice && assignStoreMutation.mutate(storeChoice)}
-                disabled={!storeChoice || assignStoreMutation.isPending}
-                className="btn-primary"
-              >
-                {assignStoreMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  'Assign'
-                )}
-              </button>
-            </div>
-          </div>
         </SectionCard>
 
         {/* Driver */}
@@ -514,7 +486,18 @@ export default function OrderDetailPage({
           {data.driver ? (
             <div className="space-y-2">
               <InfoLine label="Name" value={data.driver.user?.name ?? '—'} />
-              <InfoLine label="Phone" value={data.driver.user?.phone ?? '—'} />
+              {data.driver.user?.phone && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-500">Phone</span>
+                  <a
+                    href={`tel:${data.driver.user.phone}`}
+                    className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
+                  >
+                    <Phone className="h-3.5 w-3.5" />
+                    {data.driver.user.phone}
+                  </a>
+                </div>
+              )}
               <InfoLine
                 label="Vehicle"
                 value={
@@ -532,47 +515,187 @@ export default function OrderDetailPage({
               </div>
             </div>
           ) : (
-            <p className="text-sm text-gray-400">Not assigned.</p>
+            <p className="text-sm text-gray-400">No driver assigned yet.</p>
           )}
-
-          <div className="mt-4 border-t border-gray-100 pt-4">
-            <label className="mb-1 block text-xs font-medium text-gray-600">
-              {data.driver ? 'Reassign driver…' : 'Assign driver…'}
-            </label>
-            <div className="flex gap-2">
-              <select
-                value={driverChoice}
-                onChange={(e) => setDriverChoice(e.target.value)}
-                className="input flex-1"
-                disabled={assignDriverMutation.isPending}
-              >
-                <option value="">Select a driver…</option>
-                {driverOptions
-                  .filter((d) => d.id !== data.driver?.id)
-                  .map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.user?.name ?? 'Driver'} • {d.status}
-                      {d.vehicleNumber ? ` • ${d.vehicleNumber}` : ''}
-                    </option>
-                  ))}
-              </select>
-              <button
-                onClick={() =>
-                  driverChoice && assignDriverMutation.mutate(driverChoice)
-                }
-                disabled={!driverChoice || assignDriverMutation.isPending}
-                className="btn-primary"
-              >
-                {assignDriverMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  'Assign'
-                )}
-              </button>
-            </div>
-          </div>
         </SectionCard>
       </div>
+
+      {/* Manual assign — eligible stores */}
+      {data.status !== OrderStatus.DELIVERED && data.status !== OrderStatus.CANCELLED && (
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6">
+            <div className="flex items-center gap-2">
+              <StoreIcon className="h-4 w-4 text-primary" />
+              <h3 className="text-base font-semibold text-gray-900">
+                {data.store ? 'Reassign to another store' : 'Assign to a store'}
+              </h3>
+              <span className="text-xs text-gray-400">
+                Filtered to stores carrying the items in this order
+              </span>
+            </div>
+          </div>
+          {!eligibleStores ? (
+            <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
+          ) : eligibleStores.length === 0 ? (
+            <div className="p-6 text-center text-sm text-gray-400">
+              No active store carries these items right now.
+            </div>
+          ) : (
+            <ul className="divide-y divide-gray-50">
+              {eligibleStores
+                .filter((s) => s.id !== data.store?.id)
+                .map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-gray-900">{s.name}</p>
+                        {!s.isOpen && (
+                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            Closed now
+                          </span>
+                        )}
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            s.matchPercent === 100
+                              ? 'bg-green-50 text-green-700'
+                              : s.matchPercent >= 60
+                                ? 'bg-blue-50 text-blue-700'
+                                : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {s.matchedItems}/{s.totalItems} items ({s.matchPercent}%)
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500">
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {s.distanceKm} km
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                          {s.rating.toFixed(1)}
+                        </span>
+                        <span>
+                          {s.openTime}–{s.closeTime}
+                        </span>
+                        {s.owner.name && <span>{s.owner.name}</span>}
+                        <a
+                          href={`tel:${s.owner.phone}`}
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
+                        >
+                          <Phone className="h-3 w-3" />
+                          {s.owner.phone}
+                        </a>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => assignStoreMutation.mutate(s.id)}
+                      disabled={assignStoreMutation.isPending}
+                      className="btn-primary text-sm"
+                    >
+                      {assignStoreMutation.isPending &&
+                      assignStoreMutation.variables === s.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : data.store ? (
+                        'Reassign'
+                      ) : (
+                        'Assign'
+                      )}
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Manual assign — eligible drivers */}
+      {data.status !== OrderStatus.DELIVERED &&
+        data.status !== OrderStatus.CANCELLED &&
+        data.store && (
+          <div className="card overflow-hidden">
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6">
+              <div className="flex items-center gap-2">
+                <Bike className="h-4 w-4 text-primary" />
+                <h3 className="text-base font-semibold text-gray-900">
+                  {data.driver ? 'Reassign driver' : 'Assign a driver'}
+                </h3>
+                <span className="text-xs text-gray-400">
+                  Online drivers, ranked by distance from store
+                </span>
+              </div>
+            </div>
+            {!eligibleDrivers ? (
+              <div className="p-6 text-center text-sm text-gray-400">Loading…</div>
+            ) : eligibleDrivers.length === 0 ? (
+              <div className="p-6 text-center text-sm text-gray-400">
+                No driver is online right now.
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-50">
+                {eligibleDrivers
+                  .filter((d) => d.id !== data.driver?.id)
+                  .map((d) => (
+                    <li
+                      key={d.id}
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium text-gray-900">
+                            {d.user.name ?? 'Driver'}
+                          </p>
+                          {d.vehicleType && (
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                              {d.vehicleType}
+                            </span>
+                          )}
+                          {d.vehicleNumber && (
+                            <span className="text-xs text-gray-400">{d.vehicleNumber}</span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500">
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {d.distanceKm != null ? `${d.distanceKm} km` : '—'}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                            {d.rating.toFixed(1)}{' '}
+                            <span className="text-gray-400">({d.totalRatings})</span>
+                          </span>
+                          <a
+                            href={`tel:${d.user.phone}`}
+                            className="inline-flex items-center gap-1 text-primary hover:underline"
+                          >
+                            <Phone className="h-3 w-3" />
+                            {d.user.phone}
+                          </a>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => assignDriverMutation.mutate(d.id)}
+                        disabled={assignDriverMutation.isPending}
+                        className="btn-primary text-sm"
+                      >
+                        {assignDriverMutation.isPending &&
+                        assignDriverMutation.variables === d.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : data.driver ? (
+                          'Reassign'
+                        ) : (
+                          'Assign'
+                        )}
+                      </button>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        )}
 
       {/* Items */}
       <div className="card overflow-hidden">

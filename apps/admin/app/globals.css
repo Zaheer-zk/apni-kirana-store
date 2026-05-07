@@ -96,4 +96,15 @@
       transform: translateX(100%);
     }
   }
+
+  /* Top navigation progress bar — sweeps 0→100% over 350ms, then fades 250ms */
+  .nav-progress {
+    animation: nav-progress-sweep 0.6s ease-out forwards;
+  }
+
+  @keyframes nav-progress-sweep {
+    0%   { width: 0%;   opacity: 1; }
+    60%  { width: 100%; opacity: 1; }
+    100% { width: 100%; opacity: 0; }
+  }
 }

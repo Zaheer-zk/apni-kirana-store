@@ -174,7 +174,14 @@ router.get('/drivers', async (req: Request, res: Response) => {
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
-    if (status) where['status'] = status;
+    if (status === 'ACTIVE') {
+      // "Active" in the admin UI = approved-and-not-suspended. The DB enum
+      // splits this into OFFLINE (approved, not currently online) and ONLINE
+      // (toggled online and accepting deliveries).
+      where['status'] = { in: ['OFFLINE', 'ONLINE'] };
+    } else if (status) {
+      where['status'] = status;
+    }
 
     const [drivers, total] = await prisma.$transaction([
       prisma.driver.findMany({

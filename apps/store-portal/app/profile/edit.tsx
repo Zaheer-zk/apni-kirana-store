@@ -10,11 +10,12 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
+import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
-import { colors, fontSize, spacing } from '@/constants/theme';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
 
 export default function EditStoreProfileScreen() {
   const { storeProfile, setStoreProfile } = useStorePortalStore();
@@ -33,20 +34,64 @@ export default function EditStoreProfileScreen() {
   const [city, setCity] = useState<string>(initialAddress.city ?? '');
   const [stateName, setStateName] = useState<string>(initialAddress.state ?? '');
   const [pincode, setPincode] = useState<string>(initialAddress.pincode ?? '');
+  // Lat/Lng — without these the matching engine can't find this store.
+  // Stored as strings here so empty input doesn't show 0,0.
+  const initialLat = (storeProfile as any)?.lat;
+  const initialLng = (storeProfile as any)?.lng;
+  const [lat, setLat] = useState<string>(
+    typeof initialLat === 'number' ? String(initialLat) : ''
+  );
+  const [lng, setLng] = useState<string>(
+    typeof initialLng === 'number' ? String(initialLng) : ''
+  );
+  const [locating, setLocating] = useState(false);
 
   const [errors, setErrors] = useState<{
     name?: string;
     pincode?: string;
+    location?: string;
   }>({});
 
   const validate = (): boolean => {
-    const next: { name?: string; pincode?: string } = {};
+    const next: { name?: string; pincode?: string; location?: string } = {};
     if (!name.trim()) next.name = 'Store name is required';
     if (pincode && !/^\d{6}$/.test(pincode))
       next.pincode = 'Pincode must be 6 digits';
+    // Coordinates are required for the dispatch engine to find this store
+    const latNum = parseFloat(lat);
+    const lngNum = parseFloat(lng);
+    if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+      next.location = 'Tap "Use current location" or enter latitude / longitude';
+    } else if (latNum < 6 || latNum > 38 || lngNum < 68 || lngNum > 98) {
+      next.location = 'Coordinates look invalid (must be inside India)';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
+
+  async function captureCurrentLocation() {
+    setLocating(true);
+    setErrors((e) => ({ ...e, location: undefined }));
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Location permission denied',
+          'Allow location access in settings, or enter latitude / longitude manually.',
+        );
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      setLat(pos.coords.latitude.toFixed(6));
+      setLng(pos.coords.longitude.toFixed(6));
+    } catch (err) {
+      Alert.alert('Could not get location', (err as Error).message);
+    } finally {
+      setLocating(false);
+    }
+  }
 
   const updateMutation = useMutation({
     mutationFn: async () => {
@@ -59,6 +104,8 @@ export default function EditStoreProfileScreen() {
         city: city.trim(),
         state: stateName.trim(),
         pincode: pincode.trim(),
+        lat: parseFloat(lat),
+        lng: parseFloat(lng),
       };
       const res = await api.put(`/api/v1/stores/${id}`, body);
       return res.data;
@@ -161,6 +208,58 @@ export default function EditStoreProfileScreen() {
           />
         </View>
 
+        <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>
+          Store location *
+        </Text>
+        <Text style={styles.locationHelp}>
+          Customers within ~5 km of this pin will see your store. Without
+          a location, the order dispatcher can't find you.
+        </Text>
+        <View style={styles.formGroup}>
+          <Button
+            title={locating ? 'Getting location…' : 'Use current location'}
+            icon="locate-outline"
+            onPress={captureCurrentLocation}
+            loading={locating}
+            disabled={locating}
+            variant="outline"
+            fullWidth
+          />
+          <View style={styles.coordRow}>
+            <View style={styles.coordCell}>
+              <Input
+                label="Latitude"
+                value={lat}
+                onChangeText={(v) => {
+                  setLat(v);
+                  if (errors.location) setErrors({ ...errors, location: undefined });
+                }}
+                placeholder="28.6155"
+                keyboardType="numeric"
+              />
+            </View>
+            <View style={styles.coordCell}>
+              <Input
+                label="Longitude"
+                value={lng}
+                onChangeText={(v) => {
+                  setLng(v);
+                  if (errors.location) setErrors({ ...errors, location: undefined });
+                }}
+                placeholder="77.2095"
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+          {errors.location ? (
+            <Text style={styles.locationError}>{errors.location}</Text>
+          ) : lat && lng ? (
+            <Text style={styles.locationOk}>
+              ✓ Pinned at {parseFloat(lat).toFixed(4)}, {parseFloat(lng).toFixed(4)}
+            </Text>
+          ) : null}
+        </View>
+
         <Button
           title="Save changes"
           icon="save-outline"
@@ -189,5 +288,28 @@ const styles = StyleSheet.create({
   },
   formGroup: {
     gap: spacing.lg,
+  },
+  locationHelp: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    marginBottom: spacing.md,
+    lineHeight: 20,
+  },
+  coordRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  coordCell: {
+    flex: 1,
+  },
+  locationError: {
+    fontSize: fontSize.sm,
+    color: colors.error,
+    fontWeight: '600',
+  },
+  locationOk: {
+    fontSize: fontSize.sm,
+    color: colors.success,
+    fontWeight: '600',
   },
 });

@@ -3,20 +3,36 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { apiClient } from './api';
 
-// Expo SDK 53 removed Android push notification support from Expo Go entirely.
-// `import 'expo-notifications'` THROWS at module evaluation in Expo Go on
-// SDK 53+, so we lazy-load it only when we know we're not in Expo Go.
-// We use `any` for the module type because Babel/Metro doesn't always handle
-// `typeof import('...')` cleanly when the underlying module is broken at load.
-const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
+// Expo SDK 53+ removed Android push notification support from Expo Go.
+// `import 'expo-notifications'` THROWS at module evaluation time under
+// Expo Go, so we never import it statically. We require() it lazily —
+// inside each function — only after we've confirmed we're not in Expo Go.
+//
+// Detection: try every signal Expo has shipped over the years.
+//   - executionEnvironment === 'storeClient'  (SDK 50+)
+//   - appOwnership === 'expo'                 (SDK 49 and earlier, kept for safety)
+const IS_EXPO_GO =
+  Constants.executionEnvironment === 'storeClient' ||
+  // appOwnership has been deprecated but is still set by Expo Go in some SDKs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (Constants as any).appOwnership === 'expo';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let Notifications: any = null;
-if (!IS_EXPO_GO) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  Notifications = require('expo-notifications');
-  // Configure foreground delivery once at load
-  Notifications.setNotificationHandler({
+function loadNotifications(): any | null {
+  if (IS_EXPO_GO) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('expo-notifications');
+  } catch {
+    return null;
+  }
+}
+
+// Configure foreground delivery once at module load — but only if we're
+// outside Expo Go and the module loaded cleanly.
+const _modAtLoad = loadNotifications();
+if (_modAtLoad) {
+  _modAtLoad.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
@@ -32,6 +48,7 @@ if (!IS_EXPO_GO) {
  * Returns the token (or null if Expo Go / simulator / permission denied).
  */
 export async function registerForPushNotifications(): Promise<string | null> {
+  const Notifications = loadNotifications();
   if (!Notifications) {
     console.log(
       '[Notifications] Push disabled in Expo Go (SDK 53+). Build a dev client ' +
@@ -92,11 +109,8 @@ export async function registerForPushNotifications(): Promise<string | null> {
   return token;
 }
 
-/**
- * Read the current device's Expo push token without re-prompting the user.
- * Returns null on simulator / Expo Go / no projectId / no permission.
- */
 export async function getCurrentPushToken(): Promise<string | null> {
+  const Notifications = loadNotifications();
   if (!Notifications || !Device.isDevice) return null;
   const projectId =
     Constants.expoConfig?.extra?.eas?.projectId ??
@@ -110,11 +124,8 @@ export async function getCurrentPushToken(): Promise<string | null> {
   }
 }
 
-/**
- * Best-effort: tell the backend to remove this device's token. Called on
- * logout so the previous user's notifications stop arriving here.
- */
 export async function unregisterPushNotifications(): Promise<void> {
+  const Notifications = loadNotifications();
   if (!Notifications) return;
   const token = await getCurrentPushToken();
   try {
@@ -122,7 +133,7 @@ export async function unregisterPushNotifications(): Promise<void> {
       params: token ? { token } : undefined,
     });
   } catch {
-    // best-effort — never block logout
+    // best-effort
   }
 }
 
@@ -135,11 +146,14 @@ export function attachNotificationListeners(opts: {
   onReceive?: (n: any) => void;
   onTap?: (data: Record<string, unknown>) => void;
 }): () => void {
+  const Notifications = loadNotifications();
   if (!Notifications) return () => {};
-  const recv = Notifications.addNotificationReceivedListener((n) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recv = Notifications.addNotificationReceivedListener((n: any) => {
     opts.onReceive?.(n);
   });
-  const resp = Notifications.addNotificationResponseReceivedListener((r) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const resp = Notifications.addNotificationResponseReceivedListener((r: any) => {
     const data = r.notification.request.content.data ?? {};
     opts.onTap?.(data);
   });

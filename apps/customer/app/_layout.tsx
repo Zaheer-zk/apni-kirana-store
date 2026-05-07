@@ -141,6 +141,7 @@ export default function RootLayout() {
             <Stack.Screen name="account/edit-address" options={{ headerShown: false }} />
             <Stack.Screen name="account/notifications" options={{ headerShown: false }} />
             <Stack.Screen name="account/help" options={{ headerShown: false }} />
+            <Stack.Screen name="account/support" options={{ title: 'Help & Support' }} />
             <Stack.Screen name="account/about" options={{ headerShown: false }} />
             <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
           </Stack>

@@ -68,6 +68,27 @@ export function setupSocket(io: Server): void {
       }
     });
 
+    // ── Subscribe to a support thread room (user's own thread, or admin) ───
+    socket.on('support:join', async (threadId: string) => {
+      const role = socket.data.role as string;
+      if (role === 'ADMIN') {
+        // Admins can join any thread room
+        socket.join(`support:${threadId}`);
+        return;
+      }
+      // Non-admins can only join their own thread
+      const thread = await prisma.supportThread.findUnique({
+        where: { id: threadId },
+        select: { userId: true },
+      });
+      if (thread?.userId === userId) {
+        socket.join(`support:${threadId}`);
+      }
+    });
+    socket.on('support:leave', (threadId: string) => {
+      socket.leave(`support:${threadId}`);
+    });
+
     // ── Subscribe to a chat room (must be a participant) ────────────────────
     socket.on('chat:join', async (chatId: string) => {
       const chat = await prisma.chat.findFirst({

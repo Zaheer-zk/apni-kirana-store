@@ -25,6 +25,7 @@ import addressesRouter from './routes/addresses.routes';
 import usersRouter from './routes/users.routes';
 import promosRouter from './routes/promos.routes';
 import chatsRouter from './routes/chats.routes';
+import supportRouter from './routes/support.routes';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,7 @@ app.use('/api/v1/addresses', addressesRouter);
 app.use('/api/v1/users', usersRouter);
 app.use('/api/v1/promos', promosRouter);
 app.use('/api/v1/chats', chatsRouter);
+app.use('/api/v1/support', supportRouter);
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 

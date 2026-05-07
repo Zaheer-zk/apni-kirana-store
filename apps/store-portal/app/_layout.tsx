@@ -100,6 +100,7 @@ function RootLayoutNav() {
       <Stack.Screen name="profile/operating-hours" options={{ title: 'Operating hours' }} />
       <Stack.Screen name="profile/edit" options={{ title: 'Edit store profile' }} />
       <Stack.Screen name="profile/notifications" options={{ title: 'Notification preferences' }} />
+      <Stack.Screen name="profile/support" options={{ title: 'Help & Support' }} />
       <Stack.Screen name="notifications/index" options={{ title: 'Notifications' }} />
       <Stack.Screen name="chat/[orderId]" options={{ title: 'Chat' }} />
     </Stack>

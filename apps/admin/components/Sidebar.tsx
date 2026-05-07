@@ -17,6 +17,7 @@ import {
   Map,
   History,
   Bell,
+  LifeBuoy,
   X,
 } from 'lucide-react';
 import { clearToken } from '@/lib/auth';
@@ -32,6 +33,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
   { href: '/notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" /> },
+  { href: '/support', label: 'Support', icon: <LifeBuoy className="h-4 w-4" /> },
   { href: '/stores', label: 'Stores', icon: <Store className="h-4 w-4" /> },
   { href: '/drivers', label: 'Drivers', icon: <Bike className="h-4 w-4" /> },
   { href: '/catalog', label: 'Catalog', icon: <BookOpen className="h-4 w-4" /> },

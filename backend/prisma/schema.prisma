@@ -414,6 +414,54 @@ model ChatMessage {
   @@index([chatId, createdAt])
 }
 
+// Support thread between any user (customer / store_owner / driver) and
+// the admin team. Each user has at most ONE open support thread at a time —
+// admins reply from the inbox. Independent of order chats: this is for
+// general help, complaints, account issues, etc.
+//
+// Status flow: OPEN → RESOLVED. Admin can re-open by sending a new message.
+model SupportThread {
+  id           String                @id @default(cuid())
+  // The user reaching out. We don't store an adminId because any admin can
+  // reply — see SupportMessage.senderId for who actually sent each message.
+  userId       String                @unique
+  status       SupportThreadStatus   @default(OPEN)
+  subject      String?
+  // Last message preview + timestamp keep the inbox fast — no need to JOIN
+  // ChatMessage to render the list.
+  lastMessage  String?
+  lastSenderId String?
+  lastAt       DateTime?
+  // Counts so admin sees unread badges per-thread
+  userUnread   Int                   @default(0) // unread for the user (admin sent)
+  adminUnread  Int                   @default(0) // unread for admins (user sent)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  messages SupportMessage[]
+
+  @@index([status, lastAt])
+  @@index([adminUnread])
+}
+
+enum SupportThreadStatus {
+  OPEN
+  RESOLVED
+}
+
+model SupportMessage {
+  id        String   @id @default(cuid())
+  threadId  String
+  senderId  String
+  body      String   @db.Text
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  thread SupportThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+}
+
 // One row per device a user has installed the app on. We fan out mobile
 // pushes to every Device for the recipient, so a user receives notifications
 // on their phone + tablet etc. Token-dead errors delete just that one row.

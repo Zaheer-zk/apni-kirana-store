@@ -211,12 +211,8 @@ export default function StoreProfileScreen() {
           <MenuRow
             icon="help-circle-outline"
             title="Help & support"
-            onPress={() =>
-              Alert.alert(
-                'Help & support',
-                'Reach our support team at support@apnikirana.app'
-              )
-            }
+            // Live chat with admin team
+            onPress={() => router.push('/profile/support')}
             showDivider
           />
           <MenuRow

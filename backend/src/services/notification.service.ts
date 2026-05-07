@@ -116,7 +116,9 @@ export type NotificationEvent =
   | 'ADMIN_ORDER_PLACED'
   // Misc
   | 'PROMO_ANNOUNCE'
-  | 'CHAT_MESSAGE';
+  | 'CHAT_MESSAGE'
+  | 'SUPPORT_REPLY'         // admin → user reply on a support thread
+  | 'ADMIN_SUPPORT_NEW';    // user → admin: new message in any thread
 
 interface Template {
   title: string;
@@ -220,6 +222,15 @@ const TEMPLATES: Record<NotificationEvent, TemplateFn> = {
   CHAT_MESSAGE: (v) => ({
     title: v.senderName ? `${v.senderName} (Order #${v.orderShort})` : 'New message',
     body: v.preview ?? 'You have a new message.',
+  }),
+
+  SUPPORT_REPLY: (v) => ({
+    title: 'Apni Kirana Support',
+    body: v.preview ?? 'A support agent replied to your message.',
+  }),
+  ADMIN_SUPPORT_NEW: (v) => ({
+    title: v.senderName ? `Support: ${v.senderName} (${v.role})` : 'New support message',
+    body: v.preview ?? 'A user is asking for help.',
   }),
 };
 

@@ -235,7 +235,8 @@ export default function ProfileScreen() {
             iconBg={colors.infoLight}
             label="Help & Support"
             subtitle="FAQs, contact support"
-            onPress={() => router.push('/profile/help')}
+            // Live chat with admin support team
+            onPress={() => router.push('/profile/support')}
           />
           <MenuRow
             icon="information-circle"

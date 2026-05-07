@@ -190,7 +190,8 @@ export default function ProfileScreen() {
         {
           icon: 'chatbubble-ellipses-outline',
           label: 'Help & Support',
-          onPress: () => router.push('/account/help'),
+          // Opens a live chat thread with the admin team
+          onPress: () => router.push('/account/support'),
           iconBg: colors.successLight,
           iconColor: colors.success,
         },

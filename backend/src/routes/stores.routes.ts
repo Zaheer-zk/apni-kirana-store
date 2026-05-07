@@ -104,25 +104,9 @@ router.get('/nearby', async (req: Request, res: Response) => {
   }
 });
 
-// ─── GET /:id ─────────────────────────────────────────────────────────────────
-
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
-    const store = await prisma.store.findUnique({
-      where: { id: req.params['id'] },
-      include: { _count: { select: { items: true } } },
-    });
-
-    if (!store) return sendError(res, 'Store not found', 404);
-
-    return sendSuccess(res, store);
-  } catch (err) {
-    console.error('[Stores] get store error:', err);
-    return sendError(res, 'Failed to fetch store', 500);
-  }
-});
-
-// ─── GET /me — current store owner's store (must be before /:id) ────────────
+// ─── GET /me — current store owner's store. MUST be defined before /:id
+// otherwise Express treats "me" as an `:id` param value and the wrong
+// handler matches first.
 router.get(
   '/me',
   authenticate,
@@ -141,6 +125,24 @@ router.get(
     }
   },
 );
+
+// ─── GET /:id ─────────────────────────────────────────────────────────────────
+
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const store = await prisma.store.findUnique({
+      where: { id: req.params['id'] },
+      include: { _count: { select: { items: true } } },
+    });
+
+    if (!store) return sendError(res, 'Store not found', 404);
+
+    return sendSuccess(res, store);
+  } catch (err) {
+    console.error('[Stores] get store error:', err);
+    return sendError(res, 'Failed to fetch store', 500);
+  }
+});
 
 // ─── GET /:id/items ───────────────────────────────────────────────────────────
 

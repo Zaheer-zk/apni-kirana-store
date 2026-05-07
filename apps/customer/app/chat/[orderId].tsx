@@ -316,11 +316,11 @@ const styles = StyleSheet.create({
   },
   bubbleMine: {
     backgroundColor: colors.primary,
-    borderTopRightRadius: radius.xs,
+    borderTopRightRadius: 4,
   },
   bubbleTheirs: {
     backgroundColor: colors.white,
-    borderTopLeftRadius: radius.xs,
+    borderTopLeftRadius: 4,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },

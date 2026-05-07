@@ -101,4 +101,50 @@ router.delete('/me', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+// ─── Notification preferences ────────────────────────────────────────────────
+
+router.get('/me/preferences', authenticate, async (req: Request, res: Response) => {
+  try {
+    let prefs = await prisma.notificationPreferences.findUnique({
+      where: { userId: req.user!.id },
+    });
+    if (!prefs) {
+      // Auto-provision with defaults so the client always gets a row
+      prefs = await prisma.notificationPreferences.create({
+        data: { userId: req.user!.id },
+      });
+    }
+    return sendSuccess(res, prefs);
+  } catch (err) {
+    console.error('[Users] get preferences error:', err);
+    return sendError(res, 'Failed to fetch preferences', 500);
+  }
+});
+
+router.put('/me/preferences', authenticate, async (req: Request, res: Response) => {
+  try {
+    // Whitelist updatable fields — client can't sneak in userId/timestamps
+    const allowed = [
+      'orderUpdates', 'promotional', 'dailySummary', 'driverUpdates',
+      'newOrderAlerts', 'rescindedAlerts', 'earningsSummary',
+      'newDeliveryAlerts', 'payoutNotifications',
+      'newStoreApprovals', 'newDriverApprovals', 'refundEvents',
+    ];
+    const data: Record<string, boolean> = {};
+    for (const k of allowed) {
+      if (typeof req.body?.[k] === 'boolean') data[k] = req.body[k];
+    }
+
+    const prefs = await prisma.notificationPreferences.upsert({
+      where: { userId: req.user!.id },
+      create: { userId: req.user!.id, ...data },
+      update: data,
+    });
+    return sendSuccess(res, prefs, 'Preferences saved');
+  } catch (err) {
+    console.error('[Users] update preferences error:', err);
+    return sendError(res, 'Failed to save preferences', 500);
+  }
+});
+
 export default router;

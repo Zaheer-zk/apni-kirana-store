@@ -34,6 +34,7 @@
         "backgroundColor": "#DC2626"
       },
       "package": "com.apnikirana.driver",
+      "useNextNotificationsApi": true,
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
@@ -57,7 +58,8 @@
       ],
       "expo-task-manager",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true

@@ -157,6 +157,56 @@ Pulled from `GET /drivers/earnings`. The screen has three tabs (today / week / m
 - Average per delivery
 - A simple bar chart by day
 
+## Push notifications
+
+The driver app uses the **Expo Push Service** via `expo-notifications` —
+the same pattern as the customer app (see `apps/customer/lib/notifications.ts`
+for the canonical implementation).
+
+```ts
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+export async function registerForPush() {
+  if (!Device.isDevice) return;
+  const { status } = await Notifications.requestPermissionsAsync();
+  if (status !== 'granted') return;
+  const { data: token } = await Notifications.getExpoPushTokenAsync();
+  await api.put('/notifications/fcm-token', { token });
+}
+```
+
+Token registration auto-runs on every authenticated launch so the backend
+always has a fresh token. Tap on a `DRIVER_NEW_DELIVERY` notification opens
+the active delivery screen for `data.orderId`.
+
+### Notification preferences
+
+The Profile screen exposes a **Notifications** sub-screen synced with the
+backend via `GET|PUT /api/v1/users/me/preferences`. First load
+auto-provisions defaults.
+
+Driver-relevant flags:
+
+| Flag | What it gates |
+| --- | --- |
+| `newDeliveryAlerts` | `DRIVER_NEW_DELIVERY` and `DRIVER_OFFER_RESCINDED` |
+| `payoutNotifications` | `DRIVER_PAYOUT` |
+| `earningsSummary` | Future end-of-day / weekly earnings summary |
+| `promotional` | Platform-side promo announcements |
+
+Always-on for drivers: `DRIVER_APPROVED`, `DRIVER_SUSPENDED`,
+`ORDER_CANCELLED` (when the driver is assigned to an order that gets cancelled).
+See `docs/notifications.md` for the full mapping.
+
 ## Environment variables
 
 | Var | Example |

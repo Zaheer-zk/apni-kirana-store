@@ -107,4 +107,46 @@ router.put('/fcm-token', validate(fcmTokenSchema), async (req: Request, res: Res
   }
 });
 
+// ─── Web Push (admin browser) ────────────────────────────────────────────────
+import { getVapidPublicKey } from '../services/web-push.service';
+
+router.get('/web-push/public-key', (_req: Request, res: Response) => {
+  return sendSuccess(res, { publicKey: getVapidPublicKey() });
+});
+
+router.post('/web-push/subscribe', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { endpoint, keys } = req.body as {
+      endpoint: string;
+      keys: { p256dh: string; auth: string };
+    };
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      return sendError(res, 'Invalid subscription payload', 400);
+    }
+    await prisma.webPushSubscription.upsert({
+      where: { endpoint },
+      create: { userId: req.user!.id, endpoint, p256dh: keys.p256dh, auth: keys.auth },
+      update: { userId: req.user!.id, p256dh: keys.p256dh, auth: keys.auth },
+    });
+    return sendSuccess(res, null, 'Subscribed');
+  } catch (err) {
+    console.error('[Notifications] web-push subscribe error:', err);
+    return sendError(res, 'Failed to subscribe', 500);
+  }
+});
+
+router.post('/web-push/unsubscribe', authenticate, async (req: Request, res: Response) => {
+  try {
+    const endpoint = req.body?.endpoint as string | undefined;
+    if (!endpoint) return sendError(res, 'endpoint required', 400);
+    await prisma.webPushSubscription.deleteMany({
+      where: { endpoint, userId: req.user!.id },
+    });
+    return sendSuccess(res, null, 'Unsubscribed');
+  } catch (err) {
+    console.error('[Notifications] web-push unsubscribe error:', err);
+    return sendError(res, 'Failed to unsubscribe', 500);
+  }
+});
+
 export default router;

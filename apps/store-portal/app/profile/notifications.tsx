@@ -1,61 +1,49 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Switch,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as SecureStore from 'expo-secure-store';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/Card';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
-
-const STORAGE_KEY = 'store-notif-prefs';
+import { api } from '@/lib/api';
 
 interface NotifPrefs {
-  newOrderAlerts: boolean;
-  orderRescinded: boolean;
-  dailyEarningsSummary: boolean;
-  promotionalOffers: boolean;
+  orderUpdates?: boolean;
+  promotional?: boolean;
+  dailySummary?: boolean;
+  driverUpdates?: boolean;
+  newOrderAlerts?: boolean;
+  rescindedAlerts?: boolean;
+  earningsSummary?: boolean;
+  newDeliveryAlerts?: boolean;
+  payoutNotifications?: boolean;
+  newStoreApprovals?: boolean;
+  newDriverApprovals?: boolean;
+  refundEvents?: boolean;
 }
 
-const DEFAULTS: NotifPrefs = {
-  newOrderAlerts: true,
-  orderRescinded: true,
-  dailyEarningsSummary: false,
-  promotionalOffers: false,
-};
+type StoreToggleKey =
+  | 'newOrderAlerts'
+  | 'rescindedAlerts'
+  | 'earningsSummary'
+  | 'promotional';
 
-// Storage shim: prefer AsyncStorage if available, else fall back to SecureStore.
-const storage = {
-  async get(key: string): Promise<string | null> {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const mod = require('@react-native-async-storage/async-storage');
-      const AsyncStorage = mod?.default ?? mod;
-      if (AsyncStorage?.getItem) return await AsyncStorage.getItem(key);
-    } catch {
-      /* fall through */
-    }
-    return SecureStore.getItemAsync(key);
-  },
-  async set(key: string, value: string): Promise<void> {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const mod = require('@react-native-async-storage/async-storage');
-      const AsyncStorage = mod?.default ?? mod;
-      if (AsyncStorage?.setItem) {
-        await AsyncStorage.setItem(key, value);
-        return;
-      }
-    } catch {
-      /* fall through */
-    }
-    await SecureStore.setItemAsync(key, value);
-  },
-};
+const QUERY_KEY = ['notifPrefs'] as const;
+
+async function fetchPrefs(): Promise<NotifPrefs> {
+  const res = await api.get<NotifPrefs>('/api/v1/users/me/preferences');
+  return res.data ?? {};
+}
+
+async function updatePrefs(patch: Partial<NotifPrefs>): Promise<NotifPrefs> {
+  const res = await api.put<NotifPrefs>('/api/v1/users/me/preferences', patch);
+  return res.data ?? {};
+}
 
 interface RowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -63,10 +51,19 @@ interface RowProps {
   subtitle?: string;
   value: boolean;
   onValueChange: (v: boolean) => void;
+  disabled?: boolean;
   showDivider?: boolean;
 }
 
-function PrefRow({ icon, title, subtitle, value, onValueChange, showDivider }: RowProps) {
+function PrefRow({
+  icon,
+  title,
+  subtitle,
+  value,
+  onValueChange,
+  disabled,
+  showDivider,
+}: RowProps) {
   return (
     <>
       <View style={styles.row}>
@@ -80,6 +77,7 @@ function PrefRow({ icon, title, subtitle, value, onValueChange, showDivider }: R
         <Switch
           value={value}
           onValueChange={onValueChange}
+          disabled={disabled}
           trackColor={{ false: colors.gray300, true: colors.primaryLight }}
           thumbColor={value ? colors.primary : colors.gray400}
         />
@@ -89,43 +87,79 @@ function PrefRow({ icon, title, subtitle, value, onValueChange, showDivider }: R
   );
 }
 
+function SkeletonRow({ showDivider }: { showDivider?: boolean }) {
+  return (
+    <>
+      <View style={styles.row}>
+        <View style={[styles.rowIconWrap, styles.skeletonBlock]} />
+        <View style={{ flex: 1, paddingRight: spacing.md, gap: 6 }}>
+          <View style={[styles.skeletonBlock, styles.skeletonTitle]} />
+          <View style={[styles.skeletonBlock, styles.skeletonSubtitle]} />
+        </View>
+        <View style={[styles.skeletonBlock, styles.skeletonSwitch]} />
+      </View>
+      {showDivider ? <View style={styles.divider} /> : null}
+    </>
+  );
+}
+
 export default function NotificationsScreen() {
-  const [prefs, setPrefs] = useState<NotifPrefs>(DEFAULTS);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const raw = await storage.get(STORAGE_KEY);
-        if (active && raw) {
-          const parsed = JSON.parse(raw);
-          setPrefs({ ...DEFAULTS, ...parsed });
-        }
-      } catch {
-        /* keep defaults */
-      } finally {
-        if (active) setLoading(false);
+  const { data, isLoading } = useQuery<NotifPrefs>({
+    queryKey: QUERY_KEY,
+    queryFn: fetchPrefs,
+  });
+
+  const mutation = useMutation<
+    NotifPrefs,
+    Error,
+    Partial<NotifPrefs>,
+    { previous: NotifPrefs | undefined }
+  >({
+    mutationFn: updatePrefs,
+    onMutate: async (patch) => {
+      await queryClient.cancelQueries({ queryKey: QUERY_KEY });
+      const previous = queryClient.getQueryData<NotifPrefs>(QUERY_KEY);
+      queryClient.setQueryData<NotifPrefs>(QUERY_KEY, (old) => ({
+        ...(old ?? {}),
+        ...patch,
+      }));
+      return { previous };
+    },
+    onError: (_err, _patch, ctx) => {
+      if (ctx?.previous !== undefined) {
+        queryClient.setQueryData(QUERY_KEY, ctx.previous);
       }
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
 
-  const update = (patch: Partial<NotifPrefs>) => {
-    const next = { ...prefs, ...patch };
-    setPrefs(next);
-    storage.set(STORAGE_KEY, JSON.stringify(next)).catch(() => {
-      /* swallow */
-    });
+  const toggle = (key: StoreToggleKey, value: boolean) => {
+    mutation.mutate({ [key]: value } as Partial<NotifPrefs>);
   };
 
-  if (loading) {
+  const get = (key: StoreToggleKey, fallback: boolean): boolean => {
+    const v = data?.[key];
+    return typeof v === 'boolean' ? v : fallback;
+  };
+
+  if (isLoading) {
     return (
-      <View style={styles.loadingWrap}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <Card padding={0} style={styles.menuCard}>
+          <SkeletonRow showDivider />
+          <SkeletonRow showDivider />
+          <SkeletonRow showDivider />
+          <SkeletonRow />
+        </Card>
+      </ScrollView>
     );
   }
 
@@ -140,40 +174,38 @@ export default function NotificationsScreen() {
           icon="notifications-outline"
           title="New order alerts"
           subtitle="Get notified the moment an order arrives"
-          value={prefs.newOrderAlerts}
-          onValueChange={(v) => update({ newOrderAlerts: v })}
+          value={get('newOrderAlerts', true)}
+          onValueChange={(v) => toggle('newOrderAlerts', v)}
           showDivider
         />
         <PrefRow
           icon="close-circle-outline"
-          title="Order rescinded"
-          subtitle="Alerts when a customer cancels an active order"
-          value={prefs.orderRescinded}
-          onValueChange={(v) => update({ orderRescinded: v })}
+          title="Order taken by another store"
+          subtitle="Alerts when an order moves to a different store"
+          value={get('rescindedAlerts', true)}
+          onValueChange={(v) => toggle('rescindedAlerts', v)}
           showDivider
         />
         <PrefRow
           icon="cash-outline"
           title="Daily earnings summary"
           subtitle="Receive a summary every evening"
-          value={prefs.dailyEarningsSummary}
-          onValueChange={(v) => update({ dailyEarningsSummary: v })}
+          value={get('earningsSummary', false)}
+          onValueChange={(v) => toggle('earningsSummary', v)}
           showDivider
         />
         <PrefRow
           icon="megaphone-outline"
-          title="Promotional offers from admin"
+          title="Promotional offers"
           subtitle="Marketplace promos and partner programs"
-          value={prefs.promotionalOffers}
-          onValueChange={(v) => update({ promotionalOffers: v })}
+          value={get('promotional', false)}
+          onValueChange={(v) => toggle('promotional', v)}
         />
       </Card>
 
       <View style={styles.noteBox}>
-        <Ionicons name="cloud-offline-outline" size={18} color={colors.textSecondary} />
-        <Text style={styles.noteText}>
-          Sync with server coming soon. Preferences are saved on this device.
-        </Text>
+        <Ionicons name="cloud-done-outline" size={18} color={colors.textSecondary} />
+        <Text style={styles.noteText}>Synced with your account</Text>
       </View>
     </ScrollView>
   );
@@ -182,12 +214,6 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.xl, paddingTop: 100, paddingBottom: spacing.xxxl, gap: spacing.lg },
-  loadingWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-  },
   menuCard: { overflow: 'hidden' },
   row: {
     flexDirection: 'row',
@@ -216,4 +242,21 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   noteText: { flex: 1, fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 18 },
+  skeletonBlock: {
+    backgroundColor: colors.gray200,
+    borderRadius: radius.sm,
+  },
+  skeletonTitle: {
+    height: 14,
+    width: '55%',
+  },
+  skeletonSubtitle: {
+    height: 10,
+    width: '80%',
+  },
+  skeletonSwitch: {
+    width: 44,
+    height: 26,
+    borderRadius: radius.full,
+  },
 });

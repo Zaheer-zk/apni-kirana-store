@@ -345,6 +345,45 @@ model AuditLog {
 
 // Delivery zones — admin-configurable per city/area (radius + fee structure).
 // Used for surge pricing, geofencing future expansion zones.
+// Per-user notification toggles (one row per user). Server-side source of truth
+// for what kinds of notifications to actually push (FCM / in-app).
+model NotificationPreferences {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  // Common across roles
+  orderUpdates        Boolean  @default(true)
+  promotional         Boolean  @default(true)
+  dailySummary        Boolean  @default(false)
+  // Customer-specific
+  driverUpdates       Boolean  @default(true)
+  // Store-specific
+  newOrderAlerts      Boolean  @default(true)
+  rescindedAlerts     Boolean  @default(true)
+  earningsSummary     Boolean  @default(false)
+  // Driver-specific
+  newDeliveryAlerts   Boolean  @default(true)
+  payoutNotifications Boolean  @default(true)
+  // Admin-specific
+  newStoreApprovals   Boolean  @default(true)
+  newDriverApprovals  Boolean  @default(true)
+  refundEvents        Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+// Web push subscriptions for the admin browser (PushManager / service worker).
+// Different from FCM — used by admin web app only.
+model WebPushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
 model Zone {
   id              String   @id @default(cuid())
   name            String   @unique

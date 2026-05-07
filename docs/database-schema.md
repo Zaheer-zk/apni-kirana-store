@@ -25,6 +25,9 @@ The schema is defined in `apps/backend/prisma/schema.prisma`. Postgres 16 is the
               +------+--------+                   |CatalogItem |         |
               | OrderRating   |                   +------------+         |
               +---------------+   Order.driverId ?--------------+--------+
+
+  User 1-1 NotificationPreferences (auto-created on first GET)
+  User 1-* WebPushSubscription   (one row per admin browser endpoint)
 ```
 
 `CatalogItem` is the master product list maintained by ADMIN. `StoreItem` is a
@@ -290,6 +293,101 @@ StoreItem no longer blocks order history).
 | `readAt` | DateTime? | |
 | `createdAt` | DateTime | indexed desc for inbox |
 
+### `NotificationPreferences`
+
+Per-user toggles that gate categories of pushes. Exactly **one row per user**
+(unique on `userId`). Auto-provisioned with defaults on the first
+`GET /api/v1/users/me/preferences`. Updated via
+`PUT /api/v1/users/me/preferences` (partial body, server-side whitelist).
+
+When `notify(event, userId, vars)` runs, it consults the
+`PREFERENCE_KEY[event]` mapping in `notification.service.ts`. If the matched
+flag is `false`, the function returns immediately — no DB row is written and
+no push is sent. See `docs/notifications.md` for the full event → flag map
+and the list of always-on events that ignore preferences.
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `id` | String (PK) | cuid | |
+| `userId` | String, **unique** | | One row per user; FK link is logical (no Prisma relation declared today). |
+| `orderUpdates` | Boolean | `true` | Customer order lifecycle pushes |
+| `promotional` | Boolean | `true` | `PROMO_ANNOUNCE` |
+| `dailySummary` | Boolean | `false` | Future end-of-day digest |
+| `driverUpdates` | Boolean | `true` | Reserved for live driver-status pushes |
+| `newOrderAlerts` | Boolean | `true` | Store: new order + offered events |
+| `rescindedAlerts` | Boolean | `true` | Store: rescinded after another store accepted |
+| `earningsSummary` | Boolean | `false` | Future earnings summary |
+| `newDeliveryAlerts` | Boolean | `true` | Driver: new delivery + rescinded |
+| `payoutNotifications` | Boolean | `true` | Driver: payout processed |
+| `newStoreApprovals` | Boolean | `true` | Admin: new store pending |
+| `newDriverApprovals` | Boolean | `true` | Admin: new driver pending |
+| `refundEvents` | Boolean | `true` | Admin: refund events |
+| `createdAt`, `updatedAt` | DateTime | | |
+
+```prisma
+model NotificationPreferences {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  // Common across roles
+  orderUpdates        Boolean  @default(true)
+  promotional         Boolean  @default(true)
+  dailySummary        Boolean  @default(false)
+  // Customer-specific
+  driverUpdates       Boolean  @default(true)
+  // Store-specific
+  newOrderAlerts      Boolean  @default(true)
+  rescindedAlerts     Boolean  @default(true)
+  earningsSummary     Boolean  @default(false)
+  // Driver-specific
+  newDeliveryAlerts   Boolean  @default(true)
+  payoutNotifications Boolean  @default(true)
+  // Admin-specific
+  newStoreApprovals   Boolean  @default(true)
+  newDriverApprovals  Boolean  @default(true)
+  refundEvents        Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+```
+
+### `WebPushSubscription`
+
+A single browser registration for the admin Web Push channel — one row per
+subscribed browser/endpoint. The admin dashboard registers a service worker,
+subscribes via `pushManager.subscribe({ applicationServerKey: VAPID_PUBLIC })`,
+and POSTs the resulting subscription JSON to
+`POST /api/v1/notifications/web-push/subscribe`. Backend upserts on
+`endpoint`. Mobile clients use Expo Push (token stored on `User.fcmToken`)
+and never write to this table.
+
+When `notify(...)` fires, `sendWebPushToUser(userId, payload)` loads every
+row for that user and dispatches via the `web-push` library. A 404 or 410
+response from the push service auto-deletes the dead row.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | String (PK) | cuid |
+| `userId` | String | indexed; logical FK to User (no Prisma relation declared) |
+| `endpoint` | String, **unique** | full push service URL from `PushSubscription.endpoint` |
+| `p256dh` | String | base64 elliptic-curve public key from `PushSubscription.keys.p256dh` |
+| `auth` | String | base64 auth secret from `PushSubscription.keys.auth` |
+| `createdAt` | DateTime | |
+
+```prisma
+model WebPushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+```
+
+Migration: `backend/prisma/migrations/20260507_notif_prefs/migration.sql`.
+
 ## Index strategy
 
 | Model | Indexes | Why |
@@ -300,6 +398,8 @@ StoreItem no longer blocks order history).
 | StoreItem | `(storeId, catalogItemId)` unique, `storeId`, `catalogItemId` | per-store inventory & cross-store availability |
 | Order | `customerId`, `storeId`, `driverId`, `status`, `placedAt` desc | inbox queries |
 | Notification | `(userId, createdAt desc)`, partial WHERE `readAt IS NULL` | unread badge |
+| NotificationPreferences | `userId` unique | one-row-per-user lookup in `notify()` |
+| WebPushSubscription | `endpoint` unique, `userId` | upsert on subscribe, fan-out per user |
 | RefreshToken | `tokenHash` unique, `userId` | refresh + bulk revoke |
 
 ## Migrations

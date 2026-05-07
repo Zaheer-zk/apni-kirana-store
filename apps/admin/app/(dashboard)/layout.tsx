@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { Menu, ShoppingBasket } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
+import NotificationBell from '@/components/NotificationBell';
+import EnableNotificationsBanner from '@/components/EnableNotificationsBanner';
 
 export default function DashboardLayout({
   children,
@@ -18,7 +20,7 @@ export default function DashboardLayout({
 
       {/* Main content — offset by sidebar width on lg+. */}
       <main className="flex w-full min-w-0 flex-1 flex-col overflow-x-hidden lg:ml-60">
-        {/* Top bar — visible only below lg */}
+        {/* Mobile top bar */}
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-gray-200 bg-white px-3 lg:hidden">
           <button
             type="button"
@@ -34,9 +36,15 @@ export default function DashboardLayout({
             </div>
             <p className="text-sm font-semibold text-gray-900">Apni Kirana Admin</p>
           </div>
-          {/* Spacer to keep title centered */}
-          <div className="h-11 w-11" aria-hidden="true" />
+          <NotificationBell />
         </header>
+
+        {/* Desktop top bar — visible only at lg+ to host the bell on the right. */}
+        <header className="sticky top-0 z-20 hidden h-14 items-center justify-end border-b border-gray-200 bg-white px-6 lg:flex">
+          <NotificationBell />
+        </header>
+
+        <EnableNotificationsBanner />
 
         <div className="min-w-0 flex-1 p-4 lg:p-8">{children}</div>
       </main>

@@ -15,7 +15,45 @@
 
 import { prisma } from '../config/prisma';
 import admin from 'firebase-admin';
+import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { config } from '../config/env';
+import { sendWebPushToUser } from './web-push.service';
+
+// Map each NotificationEvent to the preference flag it respects (if any).
+// Events without a key in this map are always sent (e.g. urgent flow
+// notifications like ORDER_CANCELLED).
+const PREFERENCE_KEY: Partial<Record<string, keyof PreferencesShape>> = {
+  ORDER_PLACED: 'orderUpdates',
+  ORDER_ACCEPTED: 'orderUpdates',
+  ORDER_REJECTED: 'orderUpdates',
+  ORDER_DRIVER_ASSIGNED: 'orderUpdates',
+  ORDER_PICKED_UP: 'orderUpdates',
+  ORDER_DELIVERED: 'orderUpdates',
+  STORE_NEW_ORDER: 'newOrderAlerts',
+  STORE_ORDER_OFFERED: 'newOrderAlerts',
+  STORE_ORDER_RESCINDED: 'rescindedAlerts',
+  DRIVER_NEW_DELIVERY: 'newDeliveryAlerts',
+  DRIVER_OFFER_RESCINDED: 'newDeliveryAlerts',
+  DRIVER_PAYOUT: 'payoutNotifications',
+  ADMIN_NEW_STORE_PENDING: 'newStoreApprovals',
+  ADMIN_NEW_DRIVER_PENDING: 'newDriverApprovals',
+  PROMO_ANNOUNCE: 'promotional',
+};
+
+interface PreferencesShape {
+  orderUpdates: boolean;
+  promotional: boolean;
+  dailySummary: boolean;
+  driverUpdates: boolean;
+  newOrderAlerts: boolean;
+  rescindedAlerts: boolean;
+  earningsSummary: boolean;
+  newDeliveryAlerts: boolean;
+  payoutNotifications: boolean;
+  newStoreApprovals: boolean;
+  newDriverApprovals: boolean;
+  refundEvents: boolean;
+}
 
 // ─── Firebase init (lazy, dev-safe) ──────────────────────────────────────────
 
@@ -185,6 +223,16 @@ export async function notify(
   userId: string,
   vars: Record<string, string | number | undefined> = {},
 ): Promise<void> {
+  // Honor user preferences (if set). Missing preferences row = all defaults true.
+  const prefKey = PREFERENCE_KEY[event];
+  if (prefKey) {
+    const prefs = await prisma.notificationPreferences.findUnique({ where: { userId } });
+    if (prefs && prefs[prefKey] === false) {
+      // User has opted out of this category; skip both DB write and push
+      return;
+    }
+  }
+
   const stringVars = Object.fromEntries(
     Object.entries(vars).map(([k, v]) => [k, v == null ? '' : String(v)]),
   );
@@ -220,12 +268,71 @@ async function persistAndPush(
   });
 
   if (user?.fcmToken) {
-    sendFcmPush(user.id, user.fcmToken, title, body, data).catch(() => {
-      // FCM failures swallowed
-    });
+    // Route by token shape: ExponentPushToken[xxx] → Expo Push (free, no
+    // Firebase project). Anything else is treated as a raw FCM token.
+    if (Expo.isExpoPushToken(user.fcmToken)) {
+      sendExpoPush(userId, user.fcmToken, title, body, data).catch(() => {});
+    } else {
+      sendFcmPush(userId, user.fcmToken, title, body, data).catch(() => {});
+    }
   } else if (process.env.NODE_ENV !== 'test') {
-    // Dev-friendly: log so you can see what would have been pushed
-    console.log(`[Notify] (in-app only — no FCM token) [${title}] ${body}`);
+    console.log(`[Notify] (in-app only — no push token) [${title}] ${body}`);
+  }
+
+  // Web push (admin browser). Best-effort; silently no-ops when no
+  // subscription or VAPID keys aren't configured.
+  sendWebPushToUser(userId, {
+    title,
+    body,
+    url: typeof data?.orderId === 'string' ? `/orders/${data.orderId}` : '/',
+  }).catch(() => {});
+}
+
+// ─── Expo Push (free, no Firebase account required) ─────────────────────────
+//
+// Mobile apps register with `getExpoPushTokenAsync()` which returns
+// `ExponentPushToken[xxx]`. We POST to https://exp.host/--/api/v2/push/send
+// (handled by the Expo SDK) and Expo's relay forwards to APNs/FCM.
+
+const expo = new Expo();
+
+async function sendExpoPush(
+  userId: string,
+  token: string,
+  title: string,
+  body: string,
+  data?: Record<string, string>,
+): Promise<void> {
+  const message: ExpoPushMessage = {
+    to: token,
+    title,
+    body,
+    data,
+    sound: 'default',
+    priority: 'high',
+    channelId: data?.event?.startsWith('STORE_')
+      ? 'store-default'
+      : data?.event?.startsWith('DRIVER_')
+        ? 'driver-default'
+        : 'default',
+  };
+  try {
+    const tickets: ExpoPushTicket[] = await expo.sendPushNotificationsAsync([message]);
+    const ticket = tickets[0];
+    if (ticket?.status === 'error') {
+      const code = ticket.details?.error;
+      // Token is dead → clear so we don't keep retrying
+      if (code === 'DeviceNotRegistered') {
+        await prisma.user
+          .update({ where: { id: userId }, data: { fcmToken: null } })
+          .catch(() => {});
+        console.log(`[Expo] Cleared invalid token for user ${userId}`);
+        return;
+      }
+      console.warn(`[Expo] push error for user ${userId}:`, ticket.message, code);
+    }
+  } catch (err) {
+    console.error('[Expo] send error:', err);
   }
 }
 

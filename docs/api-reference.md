@@ -579,8 +579,133 @@ Auth: any. Paginated list.
 
 ### `PUT /fcm-token`
 
-Auth: any. Saves the FCM token from the app.
+Auth: any. Saves the device push token from the app onto `User.fcmToken`.
+Accepts either an Expo Push token (`ExponentPushToken[xxx]` — preferred) or a
+raw FCM token. The notification service auto-detects which transport to use
+based on the token shape.
 
 ```json
-{ "fcmToken": "dM3...", "platform": "android" }
+{ "token": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]" }
 ```
+
+### `GET /web-push/public-key`
+
+**Public.** Returns the VAPID application server key the admin browser must
+pass to `pushManager.subscribe()`. When VAPID keys aren't configured the
+`publicKey` is the empty string, which the client should treat as "web push
+disabled".
+
+```bash
+curl http://localhost:3001/api/v1/notifications/web-push/public-key
+```
+
+```json
+{ "publicKey": "BL8a...4hQ" }
+```
+
+### `POST /web-push/subscribe`
+
+Auth: any. Persists a `WebPushSubscription` for the authenticated user. Used
+by the admin dashboard. Re-subscribing from the same browser is idempotent
+(`endpoint` is the unique key — body is upserted).
+
+```bash
+curl -X POST http://localhost:3001/api/v1/notifications/web-push/subscribe \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "endpoint": "https://fcm.googleapis.com/fcm/send/eS4...",
+    "keys": {
+      "p256dh": "BL8a...4hQ",
+      "auth":   "tBHItJI5svbpez7KI4CCXg"
+    }
+  }'
+```
+
+| Field | Notes |
+| --- | --- |
+| `endpoint` | The push service URL from `PushSubscription.endpoint`. Required. Unique. |
+| `keys.p256dh` | Base64 elliptic-curve public key. Required. |
+| `keys.auth` | Base64 auth secret. Required. |
+
+`400` if any of the three fields is missing.
+
+### `POST /web-push/unsubscribe`
+
+Auth: any. Removes the matching `WebPushSubscription` row(s) for the
+authenticated user. Body must include `endpoint`.
+
+```json
+{ "endpoint": "https://fcm.googleapis.com/fcm/send/eS4..." }
+```
+
+Idempotent — deleting a subscription that doesn't exist returns `200` with no
+side effects.
+
+---
+
+## Users — `/api/v1/users`
+
+### `GET /me/preferences`
+
+Auth: any. Returns the caller's `NotificationPreferences` row.
+**Auto-provisions** the row with defaults on first call, so clients don't have
+to handle a 404.
+
+```bash
+curl http://localhost:3001/api/v1/users/me/preferences \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "id": "npf_01H...",
+  "userId": "usr_01H...",
+  "orderUpdates": true,
+  "promotional": true,
+  "dailySummary": false,
+  "driverUpdates": true,
+  "newOrderAlerts": true,
+  "rescindedAlerts": true,
+  "earningsSummary": false,
+  "newDeliveryAlerts": true,
+  "payoutNotifications": true,
+  "newStoreApprovals": true,
+  "newDriverApprovals": true,
+  "refundEvents": true,
+  "createdAt": "2026-05-07T10:00:00Z",
+  "updatedAt": "2026-05-07T10:00:00Z"
+}
+```
+
+### `PUT /me/preferences`
+
+Auth: any. Partial update — send only the boolean flags you want to change.
+Unknown fields are ignored (whitelist enforced server-side, so clients can't
+sneak in `userId` or timestamps). Non-boolean values are also rejected.
+
+```bash
+curl -X PUT http://localhost:3001/api/v1/users/me/preferences \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{ "promotional": false, "dailySummary": true }'
+```
+
+| Field | Type | Default | Controls |
+| --- | --- | --- | --- |
+| `orderUpdates` | boolean | `true` | Customer order lifecycle pushes (placed/accepted/rejected/driver assigned/picked up/delivered) |
+| `promotional` | boolean | `true` | `PROMO_ANNOUNCE` blasts |
+| `dailySummary` | boolean | `false` | Future end-of-day digest |
+| `driverUpdates` | boolean | `true` | Reserved for live driver-status updates |
+| `newOrderAlerts` | boolean | `true` | Store: incoming order + offer events |
+| `rescindedAlerts` | boolean | `true` | Store: another store accepted before us |
+| `earningsSummary` | boolean | `false` | Future store/driver earnings summary |
+| `newDeliveryAlerts` | boolean | `true` | Driver: new offer + rescinded |
+| `payoutNotifications` | boolean | `true` | Driver: payout processed |
+| `newStoreApprovals` | boolean | `true` | Admin: new store awaiting approval |
+| `newDriverApprovals` | boolean | `true` | Admin: new driver awaiting approval |
+| `refundEvents` | boolean | `true` | Admin: refund events |
+
+Returns the upserted row. See `docs/notifications.md` for the full mapping
+between `NotificationEvent` keys and these flags, including the always-on
+events that ignore all preferences.

@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
-import { apiClient } from './api';
+import { api } from '@/lib/api';
 
 // Configure how notifications appear when app is foregrounded
 Notifications.setNotificationHandler({
@@ -40,16 +40,16 @@ export async function registerForPushNotifications(): Promise<string | null> {
   const token = tokenObj.data;
 
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
+    await Notifications.setNotificationChannelAsync('driver-default', {
+      name: 'driver-default',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#16A34A',
+      lightColor: '#DC2626',
     });
   }
 
   try {
-    await apiClient.put('/api/v1/notifications/fcm-token', { token });
+    await api.put('/api/v1/notifications/fcm-token', { token });
     console.log('[Notifications] Token registered with backend');
   } catch (err) {
     console.warn('[Notifications] Failed to register token with backend:', err);

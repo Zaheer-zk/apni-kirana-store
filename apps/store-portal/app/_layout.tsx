@@ -6,6 +6,10 @@ import { StatusBar } from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import { useStorePortalStore } from '@/store/store.store';
 import { colors } from '@/constants/theme';
+import {
+  attachNotificationListeners,
+  registerForPushNotifications,
+} from '@/lib/notifications';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -47,6 +51,20 @@ function RootLayoutNav() {
     } else {
       router.replace('/(auth)/login');
     }
+  }, [accessToken]);
+
+  // Register for push notifications and attach tap listener once authenticated.
+  useEffect(() => {
+    if (!accessToken) return;
+    registerForPushNotifications();
+    const detach = attachNotificationListeners({
+      onTap: (data) => {
+        if (typeof data?.orderId === 'string') {
+          router.push(`/order/${data.orderId}`);
+        }
+      },
+    });
+    return detach;
   }, [accessToken]);
 
   return (

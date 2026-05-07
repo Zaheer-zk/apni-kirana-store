@@ -9,6 +9,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as TaskManager from 'expo-task-manager';
 import { useDriverStore } from '@/store/driver.store';
 import { LOCATION_TASK_NAME } from '@/lib/location';
+import {
+  attachNotificationListeners,
+  registerForPushNotifications,
+} from '@/lib/notifications';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 
 const queryClient = new QueryClient({
@@ -88,6 +92,20 @@ function RootLayoutNav() {
       router.replace('/(auth)/login');
     }
   }, [accessToken, isReady]);
+
+  // Register for push notifications and attach tap listener once authenticated.
+  useEffect(() => {
+    if (!accessToken) return;
+    registerForPushNotifications();
+    const detach = attachNotificationListeners({
+      onTap: (data) => {
+        if (typeof data?.orderId === 'string') {
+          router.push(`/order/${data.orderId}`);
+        }
+      },
+    });
+    return detach;
+  }, [accessToken]);
 
   if (!isReady) return <SplashScreen />;
 

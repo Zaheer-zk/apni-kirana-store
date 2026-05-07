@@ -112,7 +112,60 @@ Background location is **not** required for the customer app — it only uses fo
 
 ## Push notifications
 
-On login, request notification permissions, fetch the FCM token via `@react-native-firebase/messaging`, and PUT it to `/notifications/fcm-token`. Re-register on token refresh.
+The customer app uses the **Expo Push Service** via `expo-notifications`. Expo
+relays through APNs/FCM for us, so there's no Firebase project to maintain
+during development. (The backend silently falls back to `firebase-admin` if a
+non-Expo token is registered.)
+Token registration runs **automatically on every authenticated launch** (not
+just at first login) so a returning user never has to re-grant permission for
+the token to make it back to the server.
+
+```ts
+// apps/customer/lib/notifications.ts
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+export async function registerForPush() {
+  if (!Device.isDevice) return;
+  const { status } = await Notifications.requestPermissionsAsync();
+  if (status !== 'granted') return;
+  const { data: token } = await Notifications.getExpoPushTokenAsync();
+  await api.put('/notifications/fcm-token', { token });
+}
+```
+
+A tap handler reads the `data` field, and if `data.orderId` is present
+deep-links to `/order/[id]`.
+
+### Notification preferences
+
+The Profile screen has a **Notifications** sub-screen that mirrors
+`GET|PUT /api/v1/users/me/preferences`. The first load auto-provisions a row
+on the backend, so there's no "loading" or 404 path to handle.
+
+Customer-relevant flags:
+
+| Flag | What it gates |
+| --- | --- |
+| `orderUpdates` | All order lifecycle pushes (placed, accepted, driver assigned, picked up, delivered) |
+| `promotional` | `PROMO_ANNOUNCE` blasts and offer announcements |
+| `dailySummary` | Future end-of-day order summary |
+| `driverUpdates` | Reserved for live driver-status updates |
+
+Always-on events that ignore preferences: `ORDER_CANCELLED`,
+`ORDER_DELIVERED`. See `docs/notifications.md` for the full mapping.
+
+Previously the toggles were stored locally in AsyncStorage; they now sync
+with the backend so the preference applies regardless of which device the
+customer is using.
 
 ## Environment variables
 

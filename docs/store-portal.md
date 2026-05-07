@@ -138,6 +138,57 @@ Stored as JSON in `Store.openHours`:
 
 Outside these hours, the store is treated as closed (matching algorithm skips it) regardless of the `isOpen` toggle.
 
+## Push notifications
+
+The store portal uses the **Expo Push Service** via `expo-notifications` —
+same pattern as the customer and driver apps.
+
+```ts
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+export async function registerForPush() {
+  if (!Device.isDevice) return;
+  const { status } = await Notifications.requestPermissionsAsync();
+  if (status !== 'granted') return;
+  const { data: token } = await Notifications.getExpoPushTokenAsync();
+  await api.put('/notifications/fcm-token', { token });
+}
+```
+
+Token registration auto-runs on every authenticated launch. A push for a new
+order (`STORE_ORDER_OFFERED` / `STORE_NEW_ORDER`) deep-links to the incoming
+order screen using `data.orderId`. Foreground delivery is enabled so the
+banner still appears even with the app open — important since stores have a
+3-minute window to accept.
+
+### Notification preferences
+
+The Profile / Settings screen has a **Notifications** sub-screen that
+mirrors `GET|PUT /api/v1/users/me/preferences`. First load auto-provisions
+defaults.
+
+Store-relevant flags:
+
+| Flag | What it gates |
+| --- | --- |
+| `newOrderAlerts` | `STORE_NEW_ORDER` and `STORE_ORDER_OFFERED` |
+| `rescindedAlerts` | `STORE_ORDER_RESCINDED` (another store accepted before us) |
+| `earningsSummary` | Future end-of-day / weekly earnings summary |
+| `promotional` | Platform-side promo announcements |
+
+Always-on for stores: `STORE_APPROVED`, `STORE_SUSPENDED`, and
+`ORDER_CANCELLED` (when an accepted order is cancelled by the customer).
+See `docs/notifications.md` for the full mapping.
+
 ## Environment variables
 
 | Var | Example |

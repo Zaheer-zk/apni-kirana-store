@@ -62,9 +62,24 @@ services:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:3001
+      # Turbopack dev mode is memory-hungry. Raising Node's heap ceiling
+      # to 4GB stops the "approaching memory threshold, restarting" loop
+      # we hit during long sessions.
+      NODE_OPTIONS: "--max-old-space-size=4096"
+      # Skip Next telemetry pings (one fewer thing for dev to do).
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Keep dev focused — disable the Watchpack file-system polling that
+      # spams CPU on macOS/Docker bind-mount layers.
+      WATCHPACK_POLLING: "false"
     depends_on:
       - backend
     command: npm run dev
+    # Hard-cap container memory at 6GB so a runaway dev server can't
+    # eat the laptop. Adjust if you have more headroom.
+    deploy:
+      resources:
+        limits:
+          memory: 6G
 
 volumes:
   postgres_data:

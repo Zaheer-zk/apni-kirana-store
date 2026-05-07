@@ -93,53 +93,57 @@ async function main() {
   console.log(`✓ ${catalog.length} catalog items created (admin-managed master list)`);
 
   // ─── 3. STORES (4 active, 1 pending, 1 suspended) ─────────────────────
+  // All locations clustered around Khandela town centre, Sikar district,
+  // Rajasthan (lat ~27.6033, lng ~75.4944). Spread within ~1 km so the
+  // matching engine's 5 km radius covers every store from every customer
+  // address — perfect for end-to-end order routing tests.
   const storeData = [
     {
       ownerPhone: '9999988881', ownerName: 'Raju Kumar',
       storeName: "Raju's Kirana Store",
       description: 'Fresh groceries and daily essentials',
-      category: 'GROCERY' as const, lat: 28.6139, lng: 77.2090,
-      street: '123 Main Bazaar', city: 'New Delhi', pincode: '110001',
+      category: 'GROCERY' as const, lat: 27.6020, lng: 75.4935,
+      street: 'Main Bazaar, Old Khandela', city: 'Khandela', pincode: '332702',
       status: 'ACTIVE' as const, isOpen: true, rating: 4.6, totalRatings: 124,
     },
     {
       ownerPhone: '9999988882', ownerName: 'Priya Sharma',
       storeName: 'Sharma General Store',
       description: '24/7 essentials for the colony',
-      category: 'GENERAL' as const, lat: 28.6219, lng: 77.2100,
-      street: '78 Karol Bagh', city: 'New Delhi', pincode: '110005',
+      category: 'GENERAL' as const, lat: 27.6050, lng: 75.4960,
+      street: 'Station Road, Khandela', city: 'Khandela', pincode: '332702',
       status: 'ACTIVE' as const, isOpen: true, rating: 4.4, totalRatings: 89,
     },
     {
       ownerPhone: '9999988883', ownerName: 'Anil Verma',
       storeName: 'Anil Medical Store',
       description: 'Licensed pharmacy with home delivery',
-      category: 'PHARMACY' as const, lat: 28.6280, lng: 77.2150,
-      street: '12 Janpath', city: 'New Delhi', pincode: '110001',
+      category: 'PHARMACY' as const, lat: 27.6010, lng: 75.4920,
+      street: 'Hospital Road, Khandela', city: 'Khandela', pincode: '332702',
       status: 'ACTIVE' as const, isOpen: true, rating: 4.8, totalRatings: 56,
     },
     {
       ownerPhone: '9999988884', ownerName: 'Mohan Patel',
       storeName: 'Mohan Snacks Corner',
       description: 'Hot snacks and beverages',
-      category: 'RESTAURANT' as const, lat: 28.6300, lng: 77.2080,
-      street: '45 Chandni Chowk', city: 'New Delhi', pincode: '110006',
+      category: 'RESTAURANT' as const, lat: 27.6068, lng: 75.4970,
+      street: 'Bus Stand, Khandela', city: 'Khandela', pincode: '332702',
       status: 'ACTIVE' as const, isOpen: false, rating: 4.2, totalRatings: 203,
     },
     {
       ownerPhone: '9999988885', ownerName: 'Sunita Devi',
       storeName: 'Sunita Provision Store',
       description: 'Awaiting verification',
-      category: 'GROCERY' as const, lat: 28.6250, lng: 77.2200,
-      street: '99 Daryaganj', city: 'New Delhi', pincode: '110002',
+      category: 'GROCERY' as const, lat: 27.6005, lng: 75.4960,
+      street: 'Sikar Road, Khandela', city: 'Khandela', pincode: '332702',
       status: 'PENDING_APPROVAL' as const, isOpen: false, rating: 0, totalRatings: 0,
     },
     {
       ownerPhone: '9999988886', ownerName: 'Vinod Agarwal',
       storeName: 'Vinod Suspended Mart',
       description: 'Suspended due to complaints',
-      category: 'GENERAL' as const, lat: 28.6400, lng: 77.2300,
-      street: '5 Old Delhi', city: 'New Delhi', pincode: '110007',
+      category: 'GENERAL' as const, lat: 27.6090, lng: 75.4990,
+      street: 'Outer Ring, Khandela', city: 'Khandela', pincode: '332702',
       status: 'SUSPENDED' as const, isOpen: false, rating: 2.1, totalRatings: 15,
     },
   ];
@@ -153,7 +157,7 @@ async function main() {
       data: {
         ownerId: owner.id, name: s.storeName, description: s.description,
         category: s.category, lat: s.lat, lng: s.lng,
-        street: s.street, city: s.city, state: 'Delhi', pincode: s.pincode,
+        street: s.street, city: s.city, state: 'Rajasthan', pincode: s.pincode,
         status: s.status, isOpen: s.isOpen, openTime: '08:00', closeTime: '22:00',
         rating: s.rating, totalRatings: s.totalRatings,
       },
@@ -251,7 +255,9 @@ async function main() {
       data: {
         userId: u.id, vehicleType: d.vt as any, vehicleNumber: d.vn,
         licenseNumber: `DL${d.phone.slice(-8)}`, status: d.status as any,
-        currentLat: 28.6150, currentLng: 77.2100,
+        // All drivers start near Khandela town centre — within 200m of every
+        // store so dispatch picks the closest one deterministically.
+        currentLat: 27.6033, currentLng: 75.4944,
         rating: d.rating, totalRatings: d.ratings, totalEarnings: d.earnings,
       },
     }));
@@ -259,13 +265,16 @@ async function main() {
   console.log(`✓ ${drivers.length} drivers`);
 
   // ─── 6. CUSTOMERS ────────────────────────────────────────────────────
+  // All customers live in Khandela so the matching engine routes orders
+  // to a real candidate store every time. Spread within ~500m of the
+  // town centre so each customer gets multiple eligible stores nearby.
   const customerData = [
-    // Test Customer's address is intentionally ~200m from Raju's Kirana
+    // Test Customer's address is intentionally ~150m from Raju's Kirana
     // so any order they place reaches Raju (store 9999988881) via the matching engine.
-    { phone: '9999966661', name: 'Test Customer', city: 'New Delhi', pin: '110001', lat: 28.6155, lng: 77.2105 },
-    { phone: '9999966662', name: 'Anita Verma', city: 'New Delhi', pin: '110005', lat: 28.6219, lng: 77.2100 },
-    { phone: '9999966663', name: 'Rohit Mehra', city: 'New Delhi', pin: '110001', lat: 28.6280, lng: 77.2150 },
-    { phone: '9999966664', name: 'Kavita Iyer', city: 'New Delhi', pin: '110007', lat: 28.6400, lng: 77.2300 },
+    { phone: '9999966661', name: 'Test Customer', city: 'Khandela', pin: '332702', lat: 27.6025, lng: 75.4938 },
+    { phone: '9999966662', name: 'Anita Verma',   city: 'Khandela', pin: '332702', lat: 27.6055, lng: 75.4965 },
+    { phone: '9999966663', name: 'Rohit Mehra',   city: 'Khandela', pin: '332702', lat: 27.6015, lng: 75.4925 },
+    { phone: '9999966664', name: 'Kavita Iyer',   city: 'Khandela', pin: '332702', lat: 27.6075, lng: 75.4980 },
   ];
   const customers = [];
   for (const c of customerData) {
@@ -275,16 +284,18 @@ async function main() {
     const home = await prisma.address.create({
       data: {
         userId: u.id, label: 'Home', street: `${Math.floor(Math.random() * 99) + 1} Main Road`,
-        city: c.city, state: 'Delhi', pincode: c.pin,
+        city: c.city, state: 'Rajasthan', pincode: c.pin,
         lat: c.lat, lng: c.lng, isDefault: true,
       },
     });
     if (customers.length < 2) {
       await prisma.address.create({
         data: {
-          userId: u.id, label: 'Work', street: '500 Cyber Hub',
-          city: 'Gurgaon', state: 'Haryana', pincode: '122002',
-          lat: 28.4946, lng: 77.0890, isDefault: false,
+          userId: u.id, label: 'Work', street: 'Shop 12, Sikar Road',
+          city: 'Sikar', state: 'Rajasthan', pincode: '332001',
+          // Sikar town — ~30 km from Khandela. A "far" address for
+          // testing the matching engine's distance ranking + city-wide fallback.
+          lat: 27.6094, lng: 75.1399, isDefault: false,
         },
       });
     }
@@ -459,7 +470,8 @@ async function main() {
 
   // ─── 11. NAMED TEST TRIO — Zaheer / Baqala / Chotu ───────────────────
   // Three closely-located entities so end-to-end testing is deterministic.
-  // Coordinates: 28.6160 / 77.2090 (Connaught Place area, ~150m apart)
+  // Coordinates: ~27.6033 / 75.4944 (Khandela town centre, Sikar district,
+  // Rajasthan — within 100m of each other so dispatch always matches).
 
   // 11.1 Customer — Zaheer
   const zaheer = await prisma.user.create({
@@ -474,12 +486,13 @@ async function main() {
     data: {
       userId: zaheer.id,
       label: 'Home',
-      street: 'Flat 4B, Imperial Heights, Connaught Lane',
-      city: 'New Delhi',
-      state: 'Delhi',
-      pincode: '110001',
-      lat: 28.6160,
-      lng: 77.2090,
+      street: 'House 14, Bus Stand Road, Khandela',
+      city: 'Khandela',
+      state: 'Rajasthan',
+      pincode: '332702',
+      // Khandela town centre — ~70 m from Baqala, the test store
+      lat: 27.6038,
+      lng: 75.4949,
       isDefault: true,
     },
   });
@@ -487,12 +500,14 @@ async function main() {
     data: {
       userId: zaheer.id,
       label: 'Office',
-      street: '12 Cyber Hub, Tower B, Floor 5',
-      city: 'Gurgaon',
-      state: 'Haryana',
-      pincode: '122002',
-      lat: 28.4946,
-      lng: 77.0890,
+      street: 'Shop 12, Sikar Road',
+      city: 'Sikar',
+      state: 'Rajasthan',
+      pincode: '332001',
+      // Sikar town — ~30 km from Khandela. A "far" address for testing
+      // the distance-ranked dispatch and city-wide fallback.
+      lat: 27.6094,
+      lng: 75.1399,
       isDefault: false,
     },
   });
@@ -513,12 +528,12 @@ async function main() {
       name: 'Baqala — The Corner Shop',
       description: 'Your friendly neighbourhood kirana — open 7am to 11pm',
       category: 'GROCERY',
-      lat: 28.6155, // ~50m from Zaheer's home
-      lng: 77.2095,
-      street: '7 Connaught Lane, Ground Floor',
-      city: 'New Delhi',
-      state: 'Delhi',
-      pincode: '110001',
+      lat: 27.6033, // Khandela town centre — ~70m from Zaheer's home
+      lng: 75.4944,
+      street: 'Main Bazaar, Khandela',
+      city: 'Khandela',
+      state: 'Rajasthan',
+      pincode: '332702',
       status: 'ACTIVE',
       isOpen: true,
       openTime: '07:00',
@@ -551,7 +566,7 @@ async function main() {
       },
     });
   }
-  console.log(`✓ Store "Baqala" (8888888882) ACTIVE+OPEN, ~150m from Zaheer, stocking all ${allCatalog.length} catalog items`);
+  console.log(`✓ Store "Baqala" (8888888882) ACTIVE+OPEN, ~70m from Zaheer (Khandela), stocking all ${allCatalog.length} catalog items`);
 
   // 11.3 Driver — Chotu (ONLINE, near Baqala)
   const chotuUser = await prisma.user.create({
@@ -566,24 +581,25 @@ async function main() {
     data: {
       userId: chotuUser.id,
       vehicleType: 'BIKE',
-      vehicleNumber: 'DL-09-CH-1234',
-      licenseNumber: 'DL98765432',
+      vehicleNumber: 'RJ-23-CH-1234',
+      licenseNumber: 'RJ98765432',
       status: 'ONLINE',
-      currentLat: 28.6158, // right next to Baqala
-      currentLng: 77.2092,
+      currentLat: 27.6035, // ~30m from Baqala in Khandela town centre
+      currentLng: 75.4946,
       rating: 4.9,
       totalRatings: 312,
       totalEarnings: 24800,
     },
   });
-  console.log(`✓ Driver "Chotu Singh" (8888888883) ONLINE, BIKE, ~50m from Baqala`);
+  console.log(`✓ Driver "Chotu Singh" (8888888883) ONLINE, BIKE, ~30m from Baqala (Khandela)`);
 
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('  END-TO-END TEST TRIO (deterministic order routing)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('  Location:  Khandela, Sikar, Rajasthan (lat ~27.6033, lng ~75.4944)');
   console.log('  Customer:  8888888881  Zaheer Khan');
-  console.log('  Store:     8888888882  Baqala — The Corner Shop  (150m away, ALL items)');
-  console.log('  Driver:    8888888883  Chotu Singh  (ONLINE, 50m from Baqala)');
+  console.log('  Store:     8888888882  Baqala — The Corner Shop  (70m away, ALL items)');
+  console.log('  Driver:    8888888883  Chotu Singh  (ONLINE, 30m from Baqala)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
   // ─── SUMMARY ──────────────────────────────────────────────────────────

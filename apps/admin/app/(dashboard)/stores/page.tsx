@@ -59,7 +59,7 @@ export default function StoresPage() {
       const res = await api.get<{ success: boolean; data: StoresResponse }>(
         `/api/v1/admin/stores?status=${activeTab}`
       );
-      const list = res.data?.data?.stores ?? [];
+      const list = Array.isArray(res.data?.data?.stores) ? res.data.data.stores : [];
       return list.map((s) => ({
         id: s.id,
         name: s.name,
@@ -91,7 +91,7 @@ export default function StoresPage() {
     },
   });
 
-  const filtered = (data ?? []).filter((s) =>
+  const filtered = (Array.isArray(data) ? data : []).filter((s) =>
     s.name.toLowerCase().includes(search.toLowerCase())
   );
 

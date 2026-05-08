@@ -24,6 +24,7 @@ interface HealthResponse {
       rssBytes: number;
       heapUsedBytes: number;
       heapTotalBytes: number;
+      heapSizeLimitBytes: number;
       externalBytes: number;
     };
   };
@@ -222,8 +223,11 @@ export default function SystemPage() {
 
   const cpuPct = health.data?.system.loadPercent ?? 0;
   const memPct = health.data?.system.memory.usedPercent ?? 0;
+  // Compare heapUsed against the V8 ceiling, not the elastic heapTotal —
+  // heapTotal grows on demand, so heapUsed/heapTotal is always near 100%.
   const heapPct = health.data
-    ? health.data.process.memory.heapUsedBytes / health.data.process.memory.heapTotalBytes
+    ? health.data.process.memory.heapUsedBytes /
+      health.data.process.memory.heapSizeLimitBytes
     : 0;
 
   return (
@@ -276,7 +280,7 @@ export default function SystemPage() {
                 icon={<Server className="h-3.5 w-3.5" />}
                 label="Heap used"
                 value={`${(heapPct * 100).toFixed(0)}%`}
-                hint={`${formatBytes(health.data.process.memory.heapUsedBytes)} / ${formatBytes(health.data.process.memory.heapTotalBytes)} · RSS ${formatBytes(health.data.process.memory.rssBytes)}`}
+                hint={`${formatBytes(health.data.process.memory.heapUsedBytes)} / ${formatBytes(health.data.process.memory.heapSizeLimitBytes)} limit · RSS ${formatBytes(health.data.process.memory.rssBytes)}`}
                 tone={toneFor(heapPct, 0.7, 0.9)}
               />
               <ProgressBar percent={heapPct} tone={toneFor(heapPct, 0.7, 0.9)} />

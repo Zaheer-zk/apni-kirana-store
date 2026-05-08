@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import os from 'os';
+import v8 from 'v8';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { sendSuccess } from '../utils/response';
 import { getRecentErrors, clearErrors } from '../utils/error-log';
@@ -18,6 +19,7 @@ router.use(authenticate, authorize('ADMIN'));
  */
 router.get('/health', async (_req: Request, res: Response) => {
   const mem = process.memoryUsage();
+  const heapStats = v8.getHeapStatistics();
   const total = os.totalmem();
   const free = os.freemem();
   const cpus = os.cpus();
@@ -44,6 +46,9 @@ router.get('/health', async (_req: Request, res: Response) => {
         rssBytes: mem.rss,
         heapUsedBytes: mem.heapUsed,
         heapTotalBytes: mem.heapTotal,
+        // V8's actual ceiling — equivalent to --max-old-space-size in bytes.
+        // This is the right denominator for "are we close to OOM?".
+        heapSizeLimitBytes: heapStats.heap_size_limit,
         externalBytes: mem.external,
       },
     },

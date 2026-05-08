@@ -56,7 +56,7 @@ export default function DriversPage() {
       const res = await api.get<{ success: boolean; data: DriversResponse }>(
         `/api/v1/admin/drivers?status=${activeTab}`
       );
-      const list = res.data?.data?.drivers ?? [];
+      const list = Array.isArray(res.data?.data?.drivers) ? res.data.data.drivers : [];
       return list.map((d) => ({
         id: d.id,
         name: d.user?.name ?? 'Unnamed',
@@ -87,7 +87,7 @@ export default function DriversPage() {
     },
   });
 
-  const filtered = (data ?? []).filter((d) => {
+  const filtered = (Array.isArray(data) ? data : []).filter((d) => {
     const q = search.toLowerCase();
     return d.name.toLowerCase().includes(q) || d.phone.includes(q);
   });

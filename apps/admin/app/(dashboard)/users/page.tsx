@@ -49,10 +49,11 @@ export default function UsersPage() {
         data: { users: Array<UserProfile & { isActive: boolean }>; total: number; page: number; pages: number };
       }>(`/api/v1/admin/users?${params.toString()}`);
       const payload = res.data?.data ?? { users: [], total: 0, page: 1, pages: 0 };
+      const list = Array.isArray(payload.users) ? payload.users : [];
       return {
-        users: payload.users.map((u) => ({ ...u, isSuspended: !u.isActive } as UserRow)),
-        total: payload.total,
-        pages: payload.pages,
+        users: list.map((u) => ({ ...u, isSuspended: !u.isActive } as UserRow)),
+        total: payload.total ?? 0,
+        pages: payload.pages ?? 0,
       };
     },
   });

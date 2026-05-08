@@ -510,3 +510,20 @@ model Zone {
   @@index([city])
   @@index([isActive])
 }
+
+// Platform-wide settings. Single row, id="default". Read on the order-create
+// + matching paths via a cached service so toggles in the admin UI take
+// effect without a backend restart.
+model PlatformSetting {
+  id                         String   @id @default("default")
+  baseDeliveryFee            Float    @default(30)
+  perKmFee                   Float    @default(5)
+  commissionPercent          Float    @default(10)
+  deliveryRadiusKm           Float    @default(5)
+  storeAcceptTimeoutMinutes  Int      @default(3)
+  driverAcceptTimeoutSeconds Int      @default(60)
+  storeMatchingMode          String   @default("BROADCAST")
+  driverMatchingMode         String   @default("BROADCAST")
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+}

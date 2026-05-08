@@ -9,11 +9,10 @@ import { matchingQueue } from '../queues';
 import { assignDriverForOrder } from '../services/driver.service';
 import { sendNotification, notifyAdmins, notify } from '../services/notification.service';
 import { broadcastOrderStatus } from '../services/order-events.service';
+import { getSettings } from '../services/settings.service';
+import { haversineDistance } from '../utils/geo';
 
 const router = Router();
-
-const DELIVERY_FEE = 30;
-const COMMISSION_RATE = 0.05; // 5%
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -165,10 +164,31 @@ router.post(
 
       const initialStoreId = resolvedItems[0]!.storeItem.storeId;
 
-      // Calculate totals (price snapshot at order time)
+      // Calculate totals (price snapshot at order time). Delivery fee and
+      // commission come from PlatformSetting so admins can tune pricing
+      // without redeploying — see settings.service.ts.
       const subtotal = resolvedItems.reduce((s, r) => s + r.storeItem.price * r.qty, 0);
-      const deliveryFee = DELIVERY_FEE;
-      const commission = parseFloat((subtotal * COMMISSION_RATE).toFixed(2));
+      const settings = await getSettings();
+
+      let distanceKm = 0;
+      const initialStore = await prisma.store.findUnique({
+        where: { id: initialStoreId },
+        select: { lat: true, lng: true },
+      });
+      if (initialStore && address.lat != null && address.lng != null) {
+        distanceKm = haversineDistance(
+          initialStore.lat,
+          initialStore.lng,
+          address.lat,
+          address.lng,
+        );
+      }
+      const deliveryFee = parseFloat(
+        (settings.baseDeliveryFee + settings.perKmFee * distanceKm).toFixed(2),
+      );
+      const commission = parseFloat(
+        (subtotal * (settings.commissionPercent / 100)).toFixed(2),
+      );
 
       // Promo code application (validated server-side; ignore invalid silently for now)
       let promoDiscount = 0;

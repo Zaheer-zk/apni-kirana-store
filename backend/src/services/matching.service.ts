@@ -35,15 +35,15 @@ import { haversineDistance, getBoundingBox } from '../utils/geo';
 import { notify } from './notification.service';
 import { matchingQueue } from '../queues/queues';
 import { io } from '../socket';
+import { getSettings } from './settings.service';
 
 const MIN_ITEM_MATCH_PERCENT = 0.6;
 const TOP_N_BROADCAST = 5;
-const SEARCH_RADIUS_KM = 5;
-const STORE_RETRY_DELAY_MS = 3 * 60 * 1000;
-
-const MATCHING_MODE = (process.env.STORE_MATCHING_MODE ?? 'BROADCAST').toUpperCase() as
-  | 'BROADCAST'
-  | 'CASCADE';
+// SEARCH_RADIUS_KM, STORE_RETRY_DELAY_MS, and MATCHING_MODE all come from
+// PlatformSetting via getSettings() — they used to be env-pinned at module
+// load, which meant changing them required a restart. Now an admin can tune
+// them from the Settings page and the next match cycle picks up the change
+// (within the settings cache TTL, ~5s).
 
 interface ScoredStore {
   storeId: string;
@@ -71,6 +71,9 @@ async function rankStores(
     },
   });
   if (!order || order.status !== 'PENDING') return null;
+
+  const settings = await getSettings();
+  const SEARCH_RADIUS_KM = settings.deliveryRadiusKm;
 
   const { lat, lng } = order.deliveryAddress;
 
@@ -174,6 +177,8 @@ async function rankStores(
  * BROADCAST mode: notify the top N stores in parallel. First store to accept wins.
  */
 async function broadcastToStores(orderId: string, scored: ScoredStore[]): Promise<void> {
+  const settings = await getSettings();
+  const STORE_RETRY_DELAY_MS = settings.storeAcceptTimeoutMinutes * 60_000;
   const top = scored.slice(0, TOP_N_BROADCAST);
   console.log(
     `[Match] Broadcasting order ${orderId} to ${top.length} stores: ` +
@@ -215,6 +220,8 @@ async function broadcastToStores(orderId: string, scored: ScoredStore[]): Promis
  * recursively try the next best store.
  */
 async function cascadeToBestStore(orderId: string, scored: ScoredStore[], excludeStoreIds: string[]): Promise<void> {
+  const settings = await getSettings();
+  const STORE_RETRY_DELAY_MS = settings.storeAcceptTimeoutMinutes * 60_000;
   const best = scored[0]!;
   await prisma.order.update({ where: { id: orderId }, data: { storeId: best.storeId } });
   // Resolve item count + total for the templated message
@@ -276,7 +283,8 @@ export async function matchStoreForOrder(
     return;
   }
 
-  if (MATCHING_MODE === 'CASCADE') {
+  const settings = await getSettings();
+  if (settings.storeMatchingMode === 'CASCADE') {
     await cascadeToBestStore(orderId, scored, excludeStoreIds);
   } else {
     await broadcastToStores(orderId, scored);

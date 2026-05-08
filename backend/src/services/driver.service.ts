@@ -35,15 +35,13 @@ import { haversineDistance, getBoundingBox } from '../utils/geo';
 import { sendNotification } from './notification.service';
 import { driverQueue } from '../queues/queues';
 import { io } from '../socket';
+import { getSettings } from './settings.service';
 
 const DRIVER_SEARCH_RADIUS_KM = 5;
-const DRIVER_ACCEPT_TIMEOUT_MS = 60 * 1000;
-const DRIVER_RETRY_DELAY_MS = 2 * 60 * 1000;
 const TOP_N_BROADCAST = 3;
-
-const DRIVER_MATCHING_MODE = (process.env.DRIVER_MATCHING_MODE ?? 'BROADCAST').toUpperCase() as
-  | 'BROADCAST'
-  | 'CASCADE';
+// Driver accept timeout, retry delay, and matching mode are now read from
+// PlatformSetting via getSettings() — see settings.service.ts. Cached
+// in-process for ~5s so admin tweaks propagate without a backend restart.
 
 interface ScoredDriver {
   driverId: string;
@@ -98,6 +96,8 @@ async function rankDrivers(
 }
 
 async function broadcastToDrivers(orderId: string, scored: ScoredDriver[]): Promise<void> {
+  const settings = await getSettings();
+  const DRIVER_ACCEPT_TIMEOUT_MS = settings.driverAcceptTimeoutSeconds * 1000;
   const top = scored.slice(0, TOP_N_BROADCAST);
   console.log(
     `[Driver] Broadcasting order ${orderId} to ${top.length} drivers: ` +
@@ -140,6 +140,8 @@ async function cascadeToBestDriver(
   scored: ScoredDriver[],
   excludeDriverIds: string[],
 ): Promise<void> {
+  const settings = await getSettings();
+  const DRIVER_ACCEPT_TIMEOUT_MS = settings.driverAcceptTimeoutSeconds * 1000;
   const best = scored[0]!;
   await prisma.order.update({
     where: { id: orderId },
@@ -167,6 +169,8 @@ export async function assignDriverForOrder(
   if (!ranked) return;
   const { scored, customerId } = ranked;
 
+  const settings = await getSettings();
+
   if (scored.length === 0) {
     await sendNotification(
       customerId,
@@ -177,12 +181,13 @@ export async function assignDriverForOrder(
     await driverQueue.add(
       'retry-driver-assignment',
       { orderId, excludeDriverIds },
-      { delay: DRIVER_RETRY_DELAY_MS },
+      // Re-search after twice the per-driver accept window
+      { delay: settings.driverAcceptTimeoutSeconds * 2 * 1000 },
     );
     return;
   }
 
-  if (DRIVER_MATCHING_MODE === 'CASCADE') {
+  if (settings.driverMatchingMode === 'CASCADE') {
     await cascadeToBestDriver(orderId, scored, excludeDriverIds);
   } else {
     await broadcastToDrivers(orderId, scored);

@@ -1,10 +1,13 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { prisma } from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
+import { validate } from '../middleware/validate.middleware';
 import { broadcastOrderStatus } from '../services/order-events.service';
 import { haversineDistance } from '../utils/geo';
 import { notify } from '../services/notification.service';
+import { getSettings, updateSettings } from '../services/settings.service';
 
 const router = Router();
 
@@ -636,26 +639,58 @@ router.put('/orders/:id/assign-driver', async (req: Request, res: Response) => {
 
 // ─── GET /analytics ───────────────────────────────────────────────────────────
 
-// ─── GET /settings — global platform config ───────────────────────────────────
+// ─── /settings — global platform config (singleton row, cached read) ──────────
+
+const matchingModeEnum = z.enum(['BROADCAST', 'CASCADE']);
+
+const settingsUpdateSchema = z
+  .object({
+    baseDeliveryFee: z.number().min(0).max(1000),
+    perKmFee: z.number().min(0).max(500),
+    commissionPercent: z.number().min(0).max(50),
+    deliveryRadiusKm: z.number().min(0.5).max(50),
+    storeAcceptTimeoutMinutes: z.number().int().min(1).max(60),
+    driverAcceptTimeoutSeconds: z.number().int().min(15).max(600),
+    storeMatchingMode: matchingModeEnum,
+    driverMatchingMode: matchingModeEnum,
+  })
+  .partial();
+
 router.get('/settings', async (_req: Request, res: Response) => {
   try {
-    // For now: settings are derived from env / defaults. A dedicated Settings
-    // table can replace this when admin needs per-deployment overrides.
-    return sendSuccess(res, {
-      deliveryRadiusKm: 5,
-      baseDeliveryFee: 30,
-      perKmFee: 0,
-      commissionRate: 0.10,
-      storeAcceptTimeoutMinutes: 3,
-      driverAcceptTimeoutSeconds: 60,
-      matchingMode: process.env.STORE_MATCHING_MODE ?? 'BROADCAST',
-      driverMatchingMode: process.env.DRIVER_MATCHING_MODE ?? 'BROADCAST',
-    });
+    const settings = await getSettings();
+    return sendSuccess(res, settings);
   } catch (err) {
-    console.error('[Admin] settings error:', err);
+    console.error('[Admin] settings GET error:', err);
     return sendError(res, 'Failed to fetch settings', 500);
   }
 });
+
+router.put(
+  '/settings',
+  validate(settingsUpdateSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const updated = await updateSettings(req.body);
+      // Best-effort audit trail
+      await prisma.auditLog
+        .create({
+          data: {
+            actorId: req.user?.id ?? null,
+            action: 'PLATFORM_SETTINGS_UPDATE',
+            targetType: 'PlatformSetting',
+            targetId: 'default',
+            after: req.body as object,
+          },
+        })
+        .catch(() => undefined);
+      return sendSuccess(res, updated, 'Settings updated');
+    } catch (err) {
+      console.error('[Admin] settings PUT error:', err);
+      return sendError(res, 'Failed to update settings', 500);
+    }
+  },
+);
 
 router.get('/analytics', async (_req: Request, res: Response) => {
   try {

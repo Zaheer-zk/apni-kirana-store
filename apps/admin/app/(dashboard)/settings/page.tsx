@@ -39,7 +39,10 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
-    if (data) setForm(data);
+    // Merge over the existing form so any field the API omits keeps its
+    // default — prevents "controlled → uncontrolled" warnings if the
+    // backend response shape ever drifts.
+    if (data) setForm((prev) => ({ ...prev, ...data }));
   }, [data]);
 
   const mutation = useMutation({
@@ -58,6 +61,14 @@ export default function SettingsPage() {
 
   function setField<K extends keyof PlatformSettings>(key: K, val: PlatformSettings[K]) {
     setForm((prev) => ({ ...prev, [key]: val }));
+  }
+
+  // Number-input onChange helper. Empty string and NaN both collapse to 0
+  // so the input stays controlled when the user clears the field.
+  function parseNumber(raw: string): number {
+    if (raw === '') return 0;
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? n : 0;
   }
 
   return (
@@ -95,7 +106,7 @@ export default function SettingsPage() {
                 max={MAX_STORE_RADIUS_KM}
                 step={0.5}
                 value={form.deliveryRadiusKm}
-                onChange={(e) => setField('deliveryRadiusKm', parseFloat(e.target.value))}
+                onChange={(e) => setField('deliveryRadiusKm', parseNumber(e.target.value))}
                 className="w-full h-2 rounded-full appearance-none bg-gray-200 accent-primary cursor-pointer"
               />
               <div className="flex justify-between text-xs text-gray-400 mt-1">
@@ -120,7 +131,7 @@ export default function SettingsPage() {
                   min={0}
                   step={1}
                   value={form.baseDeliveryFee}
-                  onChange={(e) => setField('baseDeliveryFee', parseFloat(e.target.value))}
+                  onChange={(e) => setField('baseDeliveryFee', parseNumber(e.target.value))}
                   className="input pl-7"
                 />
               </div>
@@ -142,7 +153,7 @@ export default function SettingsPage() {
                   min={0}
                   step={0.5}
                   value={form.perKmFee}
-                  onChange={(e) => setField('perKmFee', parseFloat(e.target.value))}
+                  onChange={(e) => setField('perKmFee', parseNumber(e.target.value))}
                   className="input pl-7"
                 />
               </div>
@@ -164,7 +175,7 @@ export default function SettingsPage() {
                   max={100}
                   step={0.5}
                   value={form.commissionPercent}
-                  onChange={(e) => setField('commissionPercent', parseFloat(e.target.value))}
+                  onChange={(e) => setField('commissionPercent', parseNumber(e.target.value))}
                   className="input pr-8"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>

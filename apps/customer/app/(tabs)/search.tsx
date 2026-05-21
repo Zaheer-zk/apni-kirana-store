@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   ScrollView,
@@ -104,22 +105,39 @@ function useDebounced<T>(value: T, delay: number): T {
   return debounced;
 }
 
+const PAGE_LIMIT = 20;
+
+interface CatalogPage {
+  items: CatalogItem[];
+  total: number;
+  page: number;
+  pages: number;
+}
+
 async function fetchCatalogSearch(q: string): Promise<CatalogItem[]> {
   const res = await apiClient.get(`/api/v1/catalog/search/q?q=${encodeURIComponent(q)}`);
   return unwrapList<CatalogItem>(res.data, 'items');
 }
 
-async function fetchCatalogByCategory(
-  category: ItemCategory | 'ALL'
-): Promise<CatalogItem[]> {
+async function fetchCatalogByCategoryPage(params: {
+  page: number;
+  category: ItemCategory | 'ALL';
+}): Promise<CatalogPage> {
   const search = new URLSearchParams();
-  search.set('limit', '50');
-  search.set('page', '1');
-  if (category !== 'ALL') search.set('category', category);
+  search.set('limit', String(PAGE_LIMIT));
+  search.set('page', String(params.page));
+  if (params.category !== 'ALL') search.set('category', params.category);
   const res = await apiClient.get(`/api/v1/catalog?${search.toString()}`);
-  const data = unwrapOne<{ items?: CatalogItem[] } | CatalogItem[]>(res.data);
-  if (Array.isArray(data)) return data;
-  return data.items ?? [];
+  const data = unwrapOne<Partial<CatalogPage> | CatalogItem[]>(res.data);
+  if (Array.isArray(data)) {
+    return { items: data, total: data.length, page: params.page, pages: params.page };
+  }
+  return {
+    items: data.items ?? [],
+    total: data.total ?? 0,
+    page: data.page ?? params.page,
+    pages: data.pages ?? 1,
+  };
 }
 
 function CatalogResultRow({ item }: { item: CatalogItem }) {
@@ -174,24 +192,30 @@ export default function SearchScreen() {
     enabled: isSearching,
   });
 
-  const categoryQuery = useQuery({
+  const categoryQuery = useInfiniteQuery({
     queryKey: ['catalog-by-category', activeCategory],
-    queryFn: () => fetchCatalogByCategory(activeCategory),
+    queryFn: ({ pageParam }) =>
+      fetchCatalogByCategoryPage({ page: pageParam as number, category: activeCategory }),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.page < last.pages ? last.page + 1 : undefined),
     enabled: !isSearching && activeCategory !== 'ALL',
   });
 
   // For idle "popular items" preview, fetch a small slice of catalog
   const popularQuery = useQuery({
     queryKey: ['catalog-popular-preview'],
-    queryFn: () => fetchCatalogByCategory('ALL'),
+    queryFn: () => fetchCatalogByCategoryPage({ page: 1, category: 'ALL' }),
     enabled: !isSearching && activeCategory === 'ALL',
   });
 
   const showResults = isSearching || activeCategory !== 'ALL';
 
-  const results: CatalogItem[] = isSearching
-    ? searchQuery.data ?? []
-    : categoryQuery.data ?? [];
+  const categoryItems = useMemo(
+    () => (categoryQuery.data?.pages ?? []).flatMap((p) => p.items),
+    [categoryQuery.data]
+  );
+
+  const results: CatalogItem[] = isSearching ? searchQuery.data ?? [] : categoryItems;
 
   const isResultsLoading = isSearching ? searchQuery.isLoading : categoryQuery.isLoading;
 
@@ -299,7 +323,7 @@ export default function SearchScreen() {
             </View>
           </View>
 
-          {!popularQuery.isLoading && (popularQuery.data?.length ?? 0) > 0 && (
+          {!popularQuery.isLoading && (popularQuery.data?.items?.length ?? 0) > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHead}>
                 <Text style={styles.sectionTitle}>Popular items</Text>
@@ -308,7 +332,7 @@ export default function SearchScreen() {
                 </TouchableOpacity>
               </View>
               <View style={{ gap: spacing.md }}>
-                {(popularQuery.data ?? []).slice(0, 4).map((item) => (
+                {(popularQuery.data?.items ?? []).slice(0, 4).map((item) => (
                   <CatalogResultRow key={item.id} item={item} />
                 ))}
               </View>
@@ -352,6 +376,19 @@ export default function SearchScreen() {
             ) : null
           }
           renderItem={({ item }) => <CatalogResultRow item={item} />}
+          onEndReachedThreshold={0.4}
+          onEndReached={() => {
+            if (!isSearching && categoryQuery.hasNextPage && !categoryQuery.isFetchingNextPage) {
+              categoryQuery.fetchNextPage();
+            }
+          }}
+          ListFooterComponent={
+            !isSearching && categoryQuery.isFetchingNextPage ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={{ paddingTop: spacing.xxl }}>
               <EmptyState
@@ -524,6 +561,9 @@ const styles = StyleSheet.create({
   listContent: {
     padding: spacing.lg,
     flexGrow: 1,
+  },
+  footerLoader: {
+    paddingVertical: spacing.lg,
   },
   resultHeader: {
     flexDirection: 'row',

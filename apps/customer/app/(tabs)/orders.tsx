@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   RefreshControl,
@@ -29,20 +30,45 @@ const ACTIVE_STATUSES: OrderStatus[] = [
 
 type Tab = 'active' | 'past';
 
-async function fetchOrders(): Promise<Order[]> {
+const PAGE_LIMIT = 20;
+
+interface OrdersPage {
+  orders: Order[];
+  total: number;
+  page: number;
+  pages: number;
+}
+
+async function fetchOrdersPage(page: number): Promise<OrdersPage> {
   // Backend: GET /orders is auto-scoped to the authenticated role (customer
   // sees own orders) and returns { success, data: { orders, total, page,...} }
-  const res = await apiClient.get('/api/v1/orders');
+  const res = await apiClient.get(
+    `/api/v1/orders?page=${page}&limit=${PAGE_LIMIT}`
+  );
   const payload = res.data as unknown;
-  if (Array.isArray(payload)) return payload as Order[];
+  if (Array.isArray(payload)) {
+    return { orders: payload as Order[], total: payload.length, page, pages: page };
+  }
   if (payload && typeof payload === 'object') {
     const o = payload as Record<string, unknown>;
-    if (Array.isArray(o.data)) return o.data as Order[];
     const inner = o.data as Record<string, unknown> | undefined;
-    if (inner && Array.isArray(inner.orders)) return inner.orders as Order[];
-    if (Array.isArray((o as { orders?: unknown }).orders)) return (o as { orders: Order[] }).orders;
+    if (inner && Array.isArray(inner.orders)) {
+      return {
+        orders: inner.orders as Order[],
+        total: (inner.total as number) ?? (inner.orders as Order[]).length,
+        page: (inner.page as number) ?? page,
+        pages: (inner.pages as number) ?? page,
+      };
+    }
+    if (Array.isArray(o.data)) {
+      return { orders: o.data as Order[], total: (o.data as Order[]).length, page, pages: page };
+    }
+    if (Array.isArray((o as { orders?: unknown }).orders)) {
+      const orders = (o as { orders: Order[] }).orders;
+      return { orders, total: orders.length, page, pages: page };
+    }
   }
-  return [];
+  return { orders: [], total: 0, page, pages: page };
 }
 
 function formatDate(iso: string): string {
@@ -146,16 +172,21 @@ function OrderSkeleton() {
 export default function OrdersScreen() {
   const [tab, setTab] = useState<Tab>('active');
 
-  const ordersQuery = useQuery({
+  const ordersQuery = useInfiniteQuery({
     queryKey: ['my-orders'],
-    queryFn: fetchOrders,
+    queryFn: ({ pageParam }) => fetchOrdersPage(pageParam as number),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.page < last.pages ? last.page + 1 : undefined),
     // Always refetch when the tab is focused so newly-placed orders show up
     refetchOnMount: 'always',
     refetchOnWindowFocus: 'always',
     staleTime: 0,
   });
 
-  const orders = ordersQuery.data ?? [];
+  const orders = useMemo(
+    () => (ordersQuery.data?.pages ?? []).flatMap((p) => p.orders),
+    [ordersQuery.data]
+  );
 
   const filtered = useMemo(() => {
     const sorted = [...orders].sort(
@@ -221,6 +252,19 @@ export default function OrdersScreen() {
             />
           }
           renderItem={({ item }) => <OrderCard order={item} isPast={tab === 'past'} />}
+          onEndReachedThreshold={0.4}
+          onEndReached={() => {
+            if (ordersQuery.hasNextPage && !ordersQuery.isFetchingNextPage) {
+              ordersQuery.fetchNextPage();
+            }
+          }}
+          ListFooterComponent={
+            ordersQuery.isFetchingNextPage ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             <EmptyState
               icon="receipt-outline"
@@ -291,6 +335,9 @@ const styles = StyleSheet.create({
   listContent: {
     padding: spacing.lg,
     flexGrow: 1,
+  },
+  footerLoader: {
+    paddingVertical: spacing.lg,
   },
   card: {
     backgroundColor: colors.card,

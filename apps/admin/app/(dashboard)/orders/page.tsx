@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { Filter } from 'lucide-react';
+import { Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
@@ -42,7 +42,17 @@ interface OrdersResponse {
   }>;
   total: number;
   page: number;
+  limit: number;
+  pages: number;
 }
+
+interface OrdersResult {
+  rows: OrderRow[];
+  total: number;
+  pages: number;
+}
+
+const PAGE_SIZE = 20;
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'All Statuses' },
@@ -61,36 +71,52 @@ export default function OrdersPage() {
   const [type, setType] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [page, setPage] = useState(1);
+
+  // Reset to page 1 whenever a filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [status, type, from, to]);
 
   const params = new URLSearchParams();
   if (status) params.set('status', status);
   if (type) params.set('type', type);
   if (from) params.set('from', from);
   if (to) params.set('to', to);
+  params.set('page', String(page));
+  params.set('limit', String(PAGE_SIZE));
 
-  const { data, isLoading, isError } = useQuery<OrderRow[]>({
-    queryKey: ['admin-orders', status, type, from, to],
+  const { data, isLoading, isError } = useQuery<OrdersResult>({
+    queryKey: ['admin-orders', status, type, from, to, page],
     queryFn: async () => {
       const res = await api.get<{ success: boolean; data: OrdersResponse }>(
         `/api/v1/admin/orders?${params.toString()}`
       );
       const list = res.data?.data?.orders ?? [];
-      return list.map((o) => ({
-        id: o.id,
-        status: o.status,
-        total: o.total,
-        paymentMethod: o.paymentMethod,
-        paymentStatus: o.paymentStatus,
-        createdAt: o.createdAt,
-        customerName: o.customer?.name ?? o.customer?.phone ?? '—',
-        storeName: o.store?.name ?? '—',
-        driverName: o.driver?.user?.name ?? null,
-        itemCount: o._count?.items ?? o.items?.length ?? 0,
-        orderType: o.orderType ?? 'CUSTOMER',
-        buyerStoreName: o.buyerStore?.name ?? null,
-      }));
+      return {
+        rows: list.map((o) => ({
+          id: o.id,
+          status: o.status,
+          total: o.total,
+          paymentMethod: o.paymentMethod,
+          paymentStatus: o.paymentStatus,
+          createdAt: o.createdAt,
+          customerName: o.customer?.name ?? o.customer?.phone ?? '—',
+          storeName: o.store?.name ?? '—',
+          driverName: o.driver?.user?.name ?? null,
+          itemCount: o._count?.items ?? o.items?.length ?? 0,
+          orderType: o.orderType ?? 'CUSTOMER',
+          buyerStoreName: o.buyerStore?.name ?? null,
+        })),
+        total: res.data?.data?.total ?? 0,
+        pages: res.data?.data?.pages ?? 1,
+      };
     },
   });
+
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const pages = data?.pages ?? 1;
 
   const columns: Column<OrderRow>[] = [
     {
@@ -258,12 +284,41 @@ export default function OrdersPage() {
       <div className="card overflow-hidden">
         <DataTable
           columns={columns}
-          rows={data ?? []}
+          rows={rows}
           isLoading={isLoading}
           isError={isError}
           emptyMessage="No orders match the selected filters."
           onRowClick={(o) => router.push(`/orders/${o.id}`)}
         />
+
+        {/* Pagination */}
+        {!isLoading && !isError && total > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-3 text-sm text-gray-500 sm:px-6">
+            <p>
+              Page <span className="font-medium text-gray-900">{page}</span> of{' '}
+              <span className="font-medium text-gray-900">{pages}</span> •{' '}
+              {total.toLocaleString('en-IN')} total
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Prev
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                disabled={page >= pages}
+                className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

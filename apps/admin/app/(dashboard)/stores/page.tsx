@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Building2, Star } from 'lucide-react';
+import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Building2, Star, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
@@ -50,35 +50,55 @@ interface StoresResponse {
   stores: BackendStore[];
   total: number;
   page: number;
+  limit: number;
+  pages: number;
 }
+
+interface StoresResult {
+  rows: StoreRow[];
+  total: number;
+  pages: number;
+}
+
+const PAGE_SIZE = 20;
 
 export default function StoresPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('PENDING_APPROVAL');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError } = useQuery<StoreRow[]>({
-    queryKey: ['admin-stores', activeTab],
+  // Reset to page 1 when the tab or search changes
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, search]);
+
+  const { data, isLoading, isError } = useQuery<StoresResult>({
+    queryKey: ['admin-stores', activeTab, page],
     queryFn: async () => {
       const res = await api.get<{ success: boolean; data: StoresResponse }>(
-        `/api/v1/admin/stores?status=${activeTab}`
+        `/api/v1/admin/stores?status=${activeTab}&page=${page}&limit=${PAGE_SIZE}`
       );
       const list = Array.isArray(res.data?.data?.stores) ? res.data.data.stores : [];
-      return list.map((s) => ({
-        id: s.id,
-        name: s.name,
-        category: s.category,
-        status: s.status,
-        city: s.city,
-        rating: s.rating ?? 0,
-        isWholesaler: s.isWholesaler ?? false,
-        isPreferred: s.isPreferred ?? false,
-        ownerName: s.owner?.name ?? 'Unnamed',
-        ownerPhone: s.owner?.phone ?? '',
-        itemCount: s._count?.items ?? 0,
-        orderCount: s._count?.orders ?? 0,
-        createdAt: s.createdAt,
-      }));
+      return {
+        rows: list.map((s) => ({
+          id: s.id,
+          name: s.name,
+          category: s.category,
+          status: s.status,
+          city: s.city,
+          rating: s.rating ?? 0,
+          isWholesaler: s.isWholesaler ?? false,
+          isPreferred: s.isPreferred ?? false,
+          ownerName: s.owner?.name ?? 'Unnamed',
+          ownerPhone: s.owner?.phone ?? '',
+          itemCount: s._count?.items ?? 0,
+          orderCount: s._count?.orders ?? 0,
+          createdAt: s.createdAt,
+        })),
+        total: res.data?.data?.total ?? 0,
+        pages: res.data?.data?.pages ?? 1,
+      };
     },
   });
 
@@ -113,7 +133,10 @@ export default function StoresPage() {
     },
   });
 
-  const filtered = (Array.isArray(data) ? data : []).filter((s) =>
+  const total = data?.total ?? 0;
+  const pages = data?.pages ?? 1;
+
+  const filtered = (data?.rows ?? []).filter((s) =>
     s.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -277,6 +300,35 @@ export default function StoresPage() {
           emptyMessage="No stores in this category."
           rowHref={(s) => `/stores/${s.id}`}
         />
+
+        {/* Pagination */}
+        {!isLoading && !isError && total > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-3 text-sm text-gray-500 sm:px-6">
+            <p>
+              Page <span className="font-medium text-gray-900">{page}</span> of{' '}
+              <span className="font-medium text-gray-900">{pages}</span> •{' '}
+              {total.toLocaleString('en-IN')} total
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Prev
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                disabled={page >= pages}
+                className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

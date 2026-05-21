@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { Ionicons } from '@expo/vector-icons';
 import { useDriverStore } from '@/store/driver.store';
 import {
@@ -47,9 +48,11 @@ function RootLayoutNav() {
     let cancelled = false;
     async function bootstrap() {
       try {
-        const token = await SecureStore.getItemAsync('accessToken');
-        const userRaw = await SecureStore.getItemAsync('user');
-        const driverProfileRaw = await SecureStore.getItemAsync('driverProfile');
+        const token = await SecureStore.getItemAsync(STORAGE_KEYS.accessToken);
+        const userRaw = await SecureStore.getItemAsync(STORAGE_KEYS.user);
+        const driverProfileRaw = await SecureStore.getItemAsync(
+          STORAGE_KEYS.driverProfile,
+        );
 
         if (cancelled) return;
 

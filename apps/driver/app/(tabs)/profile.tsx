@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { unregisterPushNotifications } from '@/lib/notifications';
 import { useDriverStore } from '@/store/driver.store';
 import { stopLocationTracking } from '@/lib/location';
@@ -122,9 +123,9 @@ export default function ProfileScreen() {
           await unregisterPushNotifications();
           await stopLocationTracking();
           await Promise.all([
-            SecureStore.deleteItemAsync('accessToken'),
-            SecureStore.deleteItemAsync('user'),
-            SecureStore.deleteItemAsync('driverProfile'),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.accessToken),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.user),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.driverProfile),
           ]);
           clearAuth();
           router.replace('/(auth)/login');

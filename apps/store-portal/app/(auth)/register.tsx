@@ -17,6 +17,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
 import MapView, { Region } from 'react-native-maps';
 import { useMutation } from '@tanstack/react-query';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { api } from '@/lib/api';
 import type { StoreCategory, UserProfile } from '@aks/shared';
 
@@ -191,11 +192,11 @@ export default function StoreRegisterScreen() {
       return inner;
     },
     onSuccess: async (data) => {
-      await SecureStore.setItemAsync('accessToken', data.accessToken);
+      await SecureStore.setItemAsync(STORAGE_KEYS.accessToken, data.accessToken);
       if (data.refreshToken) {
-        await SecureStore.setItemAsync('refreshToken', data.refreshToken);
+        await SecureStore.setItemAsync(STORAGE_KEYS.refreshToken, data.refreshToken);
       }
-      await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+      await SecureStore.setItemAsync(STORAGE_KEYS.user, JSON.stringify(data.user));
       setStep('form');
     },
     onError: (err) => Alert.alert('Error', err.message || 'Invalid OTP'),

@@ -13,6 +13,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { unregisterPushNotifications } from '@/lib/notifications';
 import { useStorePortalStore } from '@/store/store.store';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { Avatar } from '@/components/Avatar';
 import { Badge } from '@/components/Badge';
 import { Card } from '@/components/Card';
@@ -93,9 +94,9 @@ export default function StoreProfileScreen() {
         onPress: async () => {
           await unregisterPushNotifications();
           await Promise.all([
-            SecureStore.deleteItemAsync('accessToken'),
-            SecureStore.deleteItemAsync('user'),
-            SecureStore.deleteItemAsync('storeProfile'),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.accessToken),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.user),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.storeProfile),
           ]);
           clearAuth();
           // Use the leaf path. Expo Router resolves /login to the (auth)

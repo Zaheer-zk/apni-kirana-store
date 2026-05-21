@@ -15,6 +15,7 @@ import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { apiClient } from '@/lib/api';
 import { unregisterPushNotifications } from '@/lib/notifications';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { useAuthStore } from '@/store/auth.store';
 import { useCartStore } from '@/store/cart.store';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
@@ -137,9 +138,9 @@ export default function ProfileScreen() {
           // they're logged in on stay subscribed.
           await unregisterPushNotifications();
           await Promise.all([
-            SecureStore.deleteItemAsync('accessToken'),
-            SecureStore.deleteItemAsync('refreshToken'),
-            SecureStore.deleteItemAsync('user'),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.accessToken),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.refreshToken),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.user),
           ]);
           clearAuth();
           clearCart();

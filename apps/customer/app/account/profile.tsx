@@ -17,6 +17,7 @@ import { Button } from '@/components/Button';
 import { Header } from '@/components/Header';
 import { Input } from '@/components/Input';
 import { apiClient } from '@/lib/api';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { useAuthStore } from '@/store/auth.store';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 import type { UserProfile } from '@aks/shared';
@@ -53,7 +54,7 @@ export default function EditProfileScreen() {
           ...(user as UserProfile),
           ...updated,
         };
-        await SecureStore.setItemAsync('user', JSON.stringify(merged));
+        await SecureStore.setItemAsync(STORAGE_KEYS.user, JSON.stringify(merged));
         setAuth(merged, accessToken);
       }
       qc.invalidateQueries({ queryKey: ['me'] });

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { unregisterPushNotifications } from '@/lib/notifications';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { useDriverStore } from '@/store/driver.store';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
@@ -22,9 +23,9 @@ export default function PendingApprovalScreen() {
         onPress: async () => {
           await unregisterPushNotifications();
           await Promise.all([
-            SecureStore.deleteItemAsync('accessToken'),
-            SecureStore.deleteItemAsync('user'),
-            SecureStore.deleteItemAsync('driverProfile'),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.accessToken),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.user),
+            SecureStore.deleteItemAsync(STORAGE_KEYS.driverProfile),
           ]);
           clearAuth();
           router.replace('/(auth)/login');

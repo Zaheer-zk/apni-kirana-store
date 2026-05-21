@@ -16,6 +16,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import type { UserProfile, StoreProfile } from '@aks/shared';
 
 interface SendOtpResponse {
@@ -55,8 +56,8 @@ export default function StoreLoginScreen() {
       return inner;
     },
     onSuccess: async (data) => {
-      await SecureStore.setItemAsync('accessToken', data.accessToken);
-      await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+      await SecureStore.setItemAsync(STORAGE_KEYS.accessToken, data.accessToken);
+      await SecureStore.setItemAsync(STORAGE_KEYS.user, JSON.stringify(data.user));
 
       // Store owner: load their store profile (if any) so we can decide where to route
       let storeProfile = data.storeProfile;
@@ -69,7 +70,7 @@ export default function StoreLoginScreen() {
         }
       }
       if (storeProfile) {
-        await SecureStore.setItemAsync('storeProfile', JSON.stringify(storeProfile));
+        await SecureStore.setItemAsync(STORAGE_KEYS.storeProfile, JSON.stringify(storeProfile));
       }
       setAuth(data.accessToken, data.user, storeProfile);
 

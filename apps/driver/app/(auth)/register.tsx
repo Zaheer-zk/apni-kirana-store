@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { EmptyState } from '@/components/EmptyState';
@@ -149,11 +150,11 @@ export default function DriverRegisterScreen() {
       return inner;
     },
     onSuccess: async (data) => {
-      await SecureStore.setItemAsync('accessToken', data.accessToken);
+      await SecureStore.setItemAsync(STORAGE_KEYS.accessToken, data.accessToken);
       if (data.refreshToken) {
-        await SecureStore.setItemAsync('refreshToken', data.refreshToken);
+        await SecureStore.setItemAsync(STORAGE_KEYS.refreshToken, data.refreshToken);
       }
-      await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+      await SecureStore.setItemAsync(STORAGE_KEYS.user, JSON.stringify(data.user));
       setStep('form');
     },
     onError: (err) => showError(err.message || 'Invalid OTP'),

@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import { useStorePortalStore } from '@/store/store.store';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { colors } from '@/constants/theme';
 import {
   attachNotificationListeners,
@@ -26,9 +27,9 @@ function RootLayoutNav() {
   useEffect(() => {
     async function bootstrap() {
       try {
-        const token = await SecureStore.getItemAsync('accessToken');
-        const userRaw = await SecureStore.getItemAsync('user');
-        const storeProfileRaw = await SecureStore.getItemAsync('storeProfile');
+        const token = await SecureStore.getItemAsync(STORAGE_KEYS.accessToken);
+        const userRaw = await SecureStore.getItemAsync(STORAGE_KEYS.user);
+        const storeProfileRaw = await SecureStore.getItemAsync(STORAGE_KEYS.storeProfile);
 
         if (token && userRaw) {
           const user = JSON.parse(userRaw);

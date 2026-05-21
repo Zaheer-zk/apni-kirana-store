@@ -2,6 +2,7 @@ import axios, { AxiosError } from 'axios';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '@/store/auth.store';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
@@ -20,7 +21,7 @@ apiClient.interceptors.request.use(
   async (config) => {
     // Prefer Zustand in-memory token for speed
     const { accessToken } = useAuthStore.getState();
-    const token = accessToken ?? (await SecureStore.getItemAsync('accessToken'));
+    const token = accessToken ?? (await SecureStore.getItemAsync(STORAGE_KEYS.accessToken));
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -36,9 +37,9 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     if (error.response?.status === 401) {
       // Clear all stored credentials
-      await SecureStore.deleteItemAsync('accessToken');
-      await SecureStore.deleteItemAsync('refreshToken');
-      await SecureStore.deleteItemAsync('user');
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.accessToken);
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.refreshToken);
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.user);
       useAuthStore.getState().clearAuth();
 
       // Redirect to login

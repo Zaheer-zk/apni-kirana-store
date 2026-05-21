@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { useDriverStore } from '@/store/driver.store';
 import { Button } from '@/components/Button';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
@@ -117,11 +118,11 @@ export default function LoginScreen() {
       return inner;
     },
     onSuccess: async (data) => {
-      await SecureStore.setItemAsync('accessToken', data.accessToken);
-      await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+      await SecureStore.setItemAsync(STORAGE_KEYS.accessToken, data.accessToken);
+      await SecureStore.setItemAsync(STORAGE_KEYS.user, JSON.stringify(data.user));
       if (data.driverProfile) {
         await SecureStore.setItemAsync(
-          'driverProfile',
+          STORAGE_KEYS.driverProfile,
           JSON.stringify(data.driverProfile),
         );
       }

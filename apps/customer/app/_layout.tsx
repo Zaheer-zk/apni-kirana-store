@@ -13,6 +13,7 @@ import {
   registerForPushNotifications,
 } from '@/lib/notifications';
 import { TransitionOverlay } from '@/components/TransitionOverlay';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -47,8 +48,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const token = await SecureStore.getItemAsync('accessToken');
-        const userRaw = await SecureStore.getItemAsync('user');
+        const token = await SecureStore.getItemAsync(STORAGE_KEYS.accessToken);
+        const userRaw = await SecureStore.getItemAsync(STORAGE_KEYS.user);
         if (cancelled) return;
         if (token && userRaw) {
           try {

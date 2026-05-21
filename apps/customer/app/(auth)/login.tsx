@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { apiClient } from '@/lib/api';
+import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { useAuthStore } from '@/store/auth.store';
 import { useTransitionStore } from '@/store/transition.store';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
@@ -150,9 +151,9 @@ export default function LoginScreen() {
       // Set in-memory auth + parallel SecureStore writes (don't block on disk)
       setAuth(user, accessToken);
       await Promise.all([
-        SecureStore.setItemAsync('accessToken', accessToken),
-        SecureStore.setItemAsync('refreshToken', refreshToken),
-        SecureStore.setItemAsync('user', JSON.stringify(user)),
+        SecureStore.setItemAsync(STORAGE_KEYS.accessToken, accessToken),
+        SecureStore.setItemAsync(STORAGE_KEYS.refreshToken, refreshToken),
+        SecureStore.setItemAsync(STORAGE_KEYS.user, JSON.stringify(user)),
       ]);
 
       // hasAddress comes back from verify-otp now — no separate /addresses round-trip

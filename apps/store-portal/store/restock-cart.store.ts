@@ -1,53 +1,39 @@
 import { create } from 'zustand';
 
-// Cart for B2B restock orders — a store owner buying stock from one wholesaler.
-// A cart only ever holds items from a single wholesaler; switching wholesaler
-// resets it.
+// Cart for B2B restock orders. The buyer picks catalog items; the backend
+// matching engine chooses the best in-range wholesaler — so the cart holds
+// catalog items only (no wholesaler, no price until the order is placed).
 
 export interface RestockCartItem {
-  storeItemId: string;
+  catalogItemId: string;
   name: string;
   unit: string;
-  price: number;
+  category: string;
   imageUrl: string | null;
-  stockQty: number; // quantity the wholesaler has available
-  qty: number; // quantity the buyer wants
+  qty: number;
 }
 
 interface RestockCartState {
-  wholesalerId: string | null;
-  wholesalerName: string | null;
-  items: Record<string, RestockCartItem>;
-  /** Call when opening a wholesaler. Resets the cart if it's a different wholesaler. */
-  enterWholesaler: (id: string, name: string) => void;
+  items: Record<string, RestockCartItem>; // keyed by catalogItemId
   setQty: (item: Omit<RestockCartItem, 'qty'>, qty: number) => void;
   clear: () => void;
 }
 
 export const useRestockCart = create<RestockCartState>((set) => ({
-  wholesalerId: null,
-  wholesalerName: null,
   items: {},
-
-  enterWholesaler: (id, name) =>
-    set((s) =>
-      s.wholesalerId === id
-        ? { wholesalerName: name }
-        : { wholesalerId: id, wholesalerName: name, items: {} },
-    ),
 
   setQty: (item, qty) =>
     set((s) => {
       const items = { ...s.items };
       if (qty <= 0) {
-        delete items[item.storeItemId];
+        delete items[item.catalogItemId];
       } else {
-        items[item.storeItemId] = { ...item, qty: Math.min(qty, item.stockQty) };
+        items[item.catalogItemId] = { ...item, qty };
       }
       return { items };
     }),
 
-  clear: () => set({ wholesalerId: null, wholesalerName: null, items: {} }),
+  clear: () => set({ items: {} }),
 }));
 
 export function restockCartList(items: Record<string, RestockCartItem>): RestockCartItem[] {
@@ -56,8 +42,4 @@ export function restockCartList(items: Record<string, RestockCartItem>): Restock
 
 export function restockCartCount(items: Record<string, RestockCartItem>): number {
   return Object.values(items).reduce((n, i) => n + i.qty, 0);
-}
-
-export function restockCartSubtotal(items: Record<string, RestockCartItem>): number {
-  return Object.values(items).reduce((s, i) => s + i.price * i.qty, 0);
 }

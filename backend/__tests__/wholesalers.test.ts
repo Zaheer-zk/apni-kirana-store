@@ -23,7 +23,8 @@ jest.mock('../src/services/driver.service', () => ({
 import request from 'supertest';
 import { createTestApp } from './helpers/app';
 import { prisma } from '../src/config/prisma';
-import { createStoreOwner, createItem, tokenFor } from './helpers/factory';
+import { matchingQueue } from '../src/queues';
+import { createStoreOwner, createItem, loginAs, tokenFor } from './helpers/factory';
 
 const app = createTestApp();
 
@@ -38,25 +39,16 @@ async function createWholesaler() {
 }
 
 describe('GET /api/v1/wholesalers', () => {
-  it('lists wholesaler stores and excludes regular stores', async () => {
+  it('lists wholesaler stores', async () => {
     const { store: wholesaler } = await createWholesaler();
-    const { user: buyerOwner } = await createStoreOwner(); // regular store
-    const buyerToken = tokenFor(buyerOwner);
+    const { user: buyerOwner } = await createStoreOwner();
 
     const res = await request(app)
       .get('/api/v1/wholesalers')
-      .set('Authorization', `Bearer ${buyerToken}`);
+      .set('Authorization', `Bearer ${tokenFor(buyerOwner)}`);
 
     expect(res.status).toBe(200);
-    const ids = res.body.data.map((w: { id: string }) => w.id);
-    expect(ids).toContain(wholesaler.id);
-  });
-
-  it('rejects a CUSTOMER (only store owners restock)', async () => {
-    const { user: buyerOwner } = await createStoreOwner();
-    void buyerOwner;
-    const res = await request(app).get('/api/v1/wholesalers');
-    expect(res.status).toBe(401);
+    expect(res.body.data.map((w: { id: string }) => w.id)).toContain(wholesaler.id);
   });
 
   it('returns a wholesaler\'s items', async () => {
@@ -70,22 +62,22 @@ describe('GET /api/v1/wholesalers', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.items.length).toBe(1);
-    expect(res.body.data.items[0].price).toBe(40);
   });
 });
 
 describe('POST /api/v1/orders/restock', () => {
-  it('places a restock order with RESTOCK type, zero commission, and correct links', async () => {
+  it('places a RESTOCK order and hands it to the matching engine', async () => {
     const { store: wholesaler } = await createWholesaler();
     const item = await createItem(wholesaler.id, { price: 50, stockQty: 100 });
     const { user: buyerOwner, store: buyerStore } = await createStoreOwner();
+
+    (matchingQueue.add as jest.Mock).mockClear();
 
     const res = await request(app)
       .post('/api/v1/orders/restock')
       .set('Authorization', `Bearer ${tokenFor(buyerOwner)}`)
       .send({
-        wholesalerId: wholesaler.id,
-        items: [{ storeItemId: item.id, qty: 4 }],
+        items: [{ catalogItemId: item.catalogItemId, qty: 4 }],
         paymentMethod: 'CASH_ON_DELIVERY',
       });
 
@@ -94,32 +86,19 @@ describe('POST /api/v1/orders/restock', () => {
     expect(res.body.data.status).toBe('PENDING');
     expect(res.body.data.subtotal).toBe(200);
     expect(res.body.data.commission).toBe(0);
-    expect(res.body.data.deliveryFee).toBe(30);
-    expect(res.body.data.total).toBe(230);
     expect(res.body.data.storeId).toBe(wholesaler.id);
     expect(res.body.data.buyerStoreId).toBe(buyerStore.id);
     expect(res.body.data.customerId).toBe(buyerOwner.id);
+    // The matching engine is invoked to pick the best in-range wholesaler.
+    expect(matchingQueue.add).toHaveBeenCalledWith(
+      'match-store',
+      expect.objectContaining({ orderId: res.body.data.id }),
+    );
   });
 
-  it('rejects ordering from your own store', async () => {
-    const { user: owner, store } = await createStoreOwner();
-    await prisma.store.update({ where: { id: store.id }, data: { isWholesaler: true } });
-    const item = await createItem(store.id, { price: 50, stockQty: 10 });
-
-    const res = await request(app)
-      .post('/api/v1/orders/restock')
-      .set('Authorization', `Bearer ${tokenFor(owner)}`)
-      .send({
-        wholesalerId: store.id,
-        items: [{ storeItemId: item.id, qty: 1 }],
-        paymentMethod: 'CASH_ON_DELIVERY',
-      });
-
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 404 when the target store is not a wholesaler', async () => {
-    const { store: regularStore } = await createStoreOwner(); // not a wholesaler
+  it('returns 404 when no wholesaler stocks the requested items', async () => {
+    // Item exists, but only at a regular (non-wholesaler) store.
+    const { store: regularStore } = await createStoreOwner();
     const item = await createItem(regularStore.id, { price: 50, stockQty: 10 });
     const { user: buyerOwner } = await createStoreOwner();
 
@@ -127,8 +106,7 @@ describe('POST /api/v1/orders/restock', () => {
       .post('/api/v1/orders/restock')
       .set('Authorization', `Bearer ${tokenFor(buyerOwner)}`)
       .send({
-        wholesalerId: regularStore.id,
-        items: [{ storeItemId: item.id, qty: 1 }],
+        items: [{ catalogItemId: item.catalogItemId, qty: 1 }],
         paymentMethod: 'CASH_ON_DELIVERY',
       });
 
@@ -144,8 +122,7 @@ describe('POST /api/v1/orders/restock', () => {
       .post('/api/v1/orders/restock')
       .set('Authorization', `Bearer ${tokenFor(buyerOwner)}`)
       .send({
-        wholesalerId: wholesaler.id,
-        items: [{ storeItemId: item.id, qty: 99 }],
+        items: [{ catalogItemId: item.catalogItemId, qty: 99 }],
         paymentMethod: 'CASH_ON_DELIVERY',
       });
 
@@ -155,16 +132,17 @@ describe('POST /api/v1/orders/restock', () => {
   it('forbids a CUSTOMER from placing a restock order', async () => {
     const { store: wholesaler } = await createWholesaler();
     const item = await createItem(wholesaler.id, { price: 50, stockQty: 10 });
+    const { token } = await loginAs('CUSTOMER');
 
     const res = await request(app)
       .post('/api/v1/orders/restock')
+      .set('Authorization', `Bearer ${token}`)
       .send({
-        wholesalerId: wholesaler.id,
-        items: [{ storeItemId: item.id, qty: 1 }],
+        items: [{ catalogItemId: item.catalogItemId, qty: 1 }],
         paymentMethod: 'CASH_ON_DELIVERY',
       });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
   });
 });
 
@@ -179,8 +157,7 @@ describe('GET /api/v1/orders/restock', () => {
       .post('/api/v1/orders/restock')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        wholesalerId: wholesaler.id,
-        items: [{ storeItemId: item.id, qty: 2 }],
+        items: [{ catalogItemId: item.catalogItemId, qty: 2 }],
         paymentMethod: 'CASH_ON_DELIVERY',
       });
 

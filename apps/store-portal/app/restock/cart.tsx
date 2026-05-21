@@ -5,11 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { api } from '@/lib/api';
-import {
-  useRestockCart,
-  restockCartList,
-  restockCartSubtotal,
-} from '@/store/restock-cart.store';
+import { useRestockCart, restockCartList } from '@/store/restock-cart.store';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
@@ -19,22 +15,17 @@ type PaymentMethod = 'CASH_ON_DELIVERY' | 'ONLINE';
 
 export default function RestockCartScreen() {
   const queryClient = useQueryClient();
-  const wholesalerId = useRestockCart((s) => s.wholesalerId);
-  const wholesalerName = useRestockCart((s) => s.wholesalerName);
   const cartItems = useRestockCart((s) => s.items);
   const setQty = useRestockCart((s) => s.setQty);
   const clear = useRestockCart((s) => s.clear);
 
   const [payment, setPayment] = useState<PaymentMethod>('CASH_ON_DELIVERY');
-
   const items = useMemo(() => restockCartList(cartItems), [cartItems]);
-  const subtotal = useMemo(() => restockCartSubtotal(cartItems), [cartItems]);
 
   const placeOrder = useMutation({
     mutationFn: async () => {
       const res = await api.post('/api/v1/orders/restock', {
-        wholesalerId,
-        items: items.map((i) => ({ storeItemId: i.storeItemId, qty: i.qty })),
+        items: items.map((i) => ({ catalogItemId: i.catalogItemId, qty: i.qty })),
         paymentMethod: payment,
       });
       return res.data?.data;
@@ -44,9 +35,9 @@ export default function RestockCartScreen() {
       queryClient.invalidateQueries({ queryKey: ['restock-orders'] });
       Alert.alert(
         'Restock order placed',
-        `Your order with ${wholesalerName ?? 'the wholesaler'} has been sent${
-          order?.total != null ? ` — total ₹${order.total.toFixed(2)}` : ''
-        }. You'll be notified when it's accepted.`,
+        `We're matching your order with the best wholesaler${
+          order?.total != null ? ` — estimated total ₹${order.total.toFixed(2)}` : ''
+        }. You'll be notified once a wholesaler accepts.`,
         [{ text: 'View orders', onPress: () => router.replace('/restock/orders') }],
       );
     },
@@ -62,11 +53,11 @@ export default function RestockCartScreen() {
           <EmptyState
             icon="cart-outline"
             title="Your restock cart is empty"
-            subtitle="Add items from a wholesaler to place a restock order."
+            subtitle="Add items from the Restock tab to place an order."
           />
           <Button
             variant="primary"
-            title="Browse wholesalers"
+            title="Browse items"
             onPress={() => router.replace('/(tabs)/restock')}
           />
         </View>
@@ -77,17 +68,10 @@ export default function RestockCartScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {wholesalerName ? (
-          <View style={styles.wsRow}>
-            <Ionicons name="business" size={16} color={colors.primary} />
-            <Text style={styles.wsName}>{wholesalerName}</Text>
-          </View>
-        ) : null}
-
         <Card padding={spacing.md}>
           {items.map((item, idx) => (
             <View
-              key={item.storeItemId}
+              key={item.catalogItemId}
               style={[styles.itemRow, idx > 0 && styles.itemRowBorder]}
             >
               <View style={{ flex: 1 }}>
@@ -95,7 +79,8 @@ export default function RestockCartScreen() {
                   {item.name}
                 </Text>
                 <Text style={styles.itemMeta}>
-                  ₹{item.price.toFixed(2)} / {item.unit}
+                  {item.unit ? `${item.unit} · ` : ''}
+                  {item.category}
                 </Text>
               </View>
               <View style={styles.stepper}>
@@ -110,17 +95,11 @@ export default function RestockCartScreen() {
                 <TouchableOpacity
                   style={styles.stepBtn}
                   activeOpacity={0.7}
-                  disabled={item.qty >= item.stockQty}
                   onPress={() => setQty(item, item.qty + 1)}
                 >
-                  <Ionicons
-                    name="add"
-                    size={16}
-                    color={item.qty >= item.stockQty ? colors.textMuted : colors.primary}
-                  />
+                  <Ionicons name="add" size={16} color={colors.primary} />
                 </TouchableOpacity>
               </View>
-              <Text style={styles.itemLine}>₹{(item.price * item.qty).toFixed(2)}</Text>
             </View>
           ))}
         </Card>
@@ -149,21 +128,19 @@ export default function RestockCartScreen() {
           })}
         </View>
 
-        <Card padding={spacing.md} style={{ marginTop: spacing.md }}>
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Subtotal</Text>
-            <Text style={styles.summaryValue}>₹{subtotal.toFixed(2)}</Text>
-          </View>
-          <Text style={styles.feeNote}>
-            A delivery fee is added at checkout based on distance to your store.
+        <View style={styles.note}>
+          <Ionicons name="information-circle-outline" size={16} color={colors.textMuted} />
+          <Text style={styles.noteText}>
+            We&apos;ll match your order to the best in-range wholesaler. The final price and
+            delivery fee are confirmed once a wholesaler accepts.
           </Text>
-        </Card>
+        </View>
       </ScrollView>
 
       <View style={styles.footer}>
         <Button
           variant="primary"
-          title={`Place restock order · ₹${subtotal.toFixed(2)}+`}
+          title={`Place restock order · ${items.length} item${items.length === 1 ? '' : 's'}`}
           fullWidth
           loading={placeOrder.isPending}
           disabled={placeOrder.isPending}
@@ -179,14 +156,10 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   emptyWrap: { flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.lg },
 
-  wsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.md },
-  wsName: { fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary },
-
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
   itemRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   itemName: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary },
   itemMeta: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
-  itemLine: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, minWidth: 64, textAlign: 'right' },
 
   stepper: {
     flexDirection: 'row',
@@ -197,7 +170,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   stepBtn: { padding: 6 },
-  stepQty: { fontSize: fontSize.sm, fontWeight: '800', color: colors.textPrimary, minWidth: 18, textAlign: 'center' },
+  stepQty: {
+    fontSize: fontSize.sm,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    minWidth: 18,
+    textAlign: 'center',
+  },
 
   sectionLabel: {
     fontSize: fontSize.sm,
@@ -223,10 +202,15 @@ const styles = StyleSheet.create({
   payText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textMuted },
   payTextActive: { color: colors.primary },
 
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  summaryLabel: { fontSize: fontSize.md, color: colors.textSecondary, fontWeight: '600' },
-  summaryValue: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
-  feeNote: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: spacing.sm },
+  note: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.gray100,
+  },
+  noteText: { flex: 1, fontSize: fontSize.xs, color: colors.textSecondary, lineHeight: 18 },
 
   footer: {
     padding: spacing.lg,

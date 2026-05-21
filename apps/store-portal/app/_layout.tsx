@@ -97,7 +97,6 @@ function RootLayoutNav() {
       <Stack.Screen name="inventory/add" options={{ headerShown: false }} />
       <Stack.Screen name="inventory/browse-catalog" options={{ title: 'Add from catalog' }} />
       <Stack.Screen name="inventory/[id]" options={{ title: 'Edit item' }} />
-      <Stack.Screen name="restock/[wholesalerId]" options={{ title: 'Wholesaler' }} />
       <Stack.Screen name="restock/cart" options={{ title: 'Restock cart' }} />
       <Stack.Screen name="restock/orders" options={{ title: 'My restock orders' }} />
       <Stack.Screen name="profile/operating-hours" options={{ title: 'Operating hours' }} />

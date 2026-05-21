@@ -40,12 +40,14 @@ const createOrderSchema = z.object({
 
 // Restock order: a store owner buys stock from a wholesaler. Items reference the
 // wholesaler's StoreItem ids. No matching engine — the buyer picks the wholesaler.
+// Restock order: a store owner buys stock. They submit catalog items; the
+// matching engine picks the best in-range wholesaler (same engine as customer
+// orders, filtered to wholesalers).
 const createRestockSchema = z.object({
-  wholesalerId: z.string().cuid(),
   items: z
     .array(
       z.object({
-        storeItemId: z.string().cuid(),
+        catalogItemId: z.string().cuid(),
         qty: z.number().int().positive(),
       }),
     )
@@ -325,9 +327,10 @@ router.post(
 );
 
 // ─── POST /restock ────────────────────────────────────────────────────────────
-// A store owner places a B2B restock order with a wholesaler. The wholesaler
-// receives it as a normal incoming order; once accepted, the driver fleet
-// delivers it to the buyer's store (reuses the standard order lifecycle).
+// A store owner places a B2B restock order. They submit catalog items; the
+// matching engine picks the best in-range wholesaler (the same engine as
+// customer orders, filtered to wholesalers). Once a wholesaler accepts, the
+// driver fleet delivers to the buyer's store.
 
 router.post(
   '/restock',
@@ -336,9 +339,7 @@ router.post(
   validate(createRestockSchema),
   async (req: Request, res: Response) => {
     try {
-      const { wholesalerId, items, paymentMethod, notes } = req.body as z.infer<
-        typeof createRestockSchema
-      >;
+      const { items, paymentMethod, notes } = req.body as z.infer<typeof createRestockSchema>;
       const buyerId = req.user!.id;
 
       // The buyer must have a registered store (delivery target for the restock).
@@ -346,30 +347,41 @@ router.post(
       if (!buyerStore) {
         return sendError(res, 'You need a registered store to place restock orders', 400);
       }
-      if (buyerStore.id === wholesalerId) {
-        return sendError(res, 'You cannot place a restock order with your own store', 400);
-      }
 
-      // The target must be an active wholesaler.
-      const wholesaler = await prisma.store.findFirst({
-        where: { id: wholesalerId, isWholesaler: true },
+      const reqCatalogItemIds = items.map((i) => i.catalogItemId);
+
+      // Seed the order with the wholesaler carrying the most of the requested
+      // catalog items. The matching engine re-ranks from here and broadcasts to
+      // the best in-range wholesalers.
+      const candidates = await prisma.store.findMany({
+        where: {
+          isWholesaler: true,
+          status: 'ACTIVE',
+          id: { not: buyerStore.id },
+          items: {
+            some: { catalogItemId: { in: reqCatalogItemIds }, isAvailable: true, stockQty: { gt: 0 } },
+          },
+        },
+        include: {
+          items: { where: { catalogItemId: { in: reqCatalogItemIds }, isAvailable: true, stockQty: { gt: 0 } } },
+        },
       });
-      if (!wholesaler) return sendError(res, 'Wholesaler not found', 404);
-      if (wholesaler.status !== 'ACTIVE') {
-        return sendError(res, 'This wholesaler is not currently accepting orders', 400);
+      candidates.sort((a, b) => b.items.length - a.items.length);
+      if (candidates.length === 0) {
+        return sendError(res, 'No wholesaler currently stocks these items', 404);
       }
+      const wholesaler = candidates[0]!;
 
-      // Resolve items to the wholesaler's StoreItem records.
-      const reqStoreItemIds = items.map((i) => i.storeItemId);
+      // The seed wholesaler must carry ALL requested items to build the order.
       const storeItems = await prisma.storeItem.findMany({
-        where: { id: { in: reqStoreItemIds }, storeId: wholesalerId, isAvailable: true },
+        where: { storeId: wholesaler.id, catalogItemId: { in: reqCatalogItemIds }, isAvailable: true },
         include: { catalogItem: true },
       });
-      if (storeItems.length !== reqStoreItemIds.length) {
-        return sendError(res, 'One or more items are unavailable at this wholesaler', 400);
+      if (storeItems.length !== reqCatalogItemIds.length) {
+        return sendError(res, 'No single wholesaler currently stocks all of these items', 400);
       }
       const resolved = items.map((i) => ({
-        storeItem: storeItems.find((si) => si.id === i.storeItemId)!,
+        storeItem: storeItems.find((si) => si.catalogItemId === i.catalogItemId)!,
         qty: i.qty,
       }));
       for (const r of resolved) {
@@ -378,8 +390,8 @@ router.post(
         }
       }
 
-      // Totals. Restock orders carry no platform commission (B2B) — the buyer
-      // still pays the delivery fee that funds the driver.
+      // Totals. Restock carries no platform commission (B2B); the buyer still
+      // pays the delivery fee that funds the driver.
       const subtotal = resolved.reduce((s, r) => s + r.storeItem.price * r.qty, 0);
       const settings = await getSettings();
       const distanceKm = haversineDistance(
@@ -418,7 +430,7 @@ router.post(
       const order = await prisma.order.create({
         data: {
           customerId: buyerId,
-          storeId: wholesalerId,
+          storeId: wholesaler.id,
           buyerStoreId: buyerStore.id,
           orderType: 'RESTOCK',
           status: 'PENDING',
@@ -445,14 +457,8 @@ router.post(
         include: { items: true },
       });
 
-      // Notify the wholesaler's owner directly — no matching engine for restock.
-      notify('STORE_RESTOCK_ORDER', wholesaler.ownerId, {
-        orderShort: order.id.slice(-6),
-        orderId: order.id,
-        buyerStoreName: buyerStore.name,
-        itemCount: order.items.length,
-        total: order.total,
-      }).catch((err) => console.warn('[Orders] restock notify failed:', err));
+      // Hand off to the matching engine — it picks the best in-range wholesaler.
+      await matchingQueue.add('match-store', { orderId: order.id, excludeStoreIds: [] });
 
       return sendSuccess(res, order, 'Restock order placed successfully', 201);
     } catch (err) {
@@ -666,28 +672,22 @@ router.put(
 
       await broadcastOrderStatus(order.id, 'REJECTED', { reason: req.body.reason });
 
-      if (order.orderType === 'RESTOCK') {
-        // Restock orders aren't matched — the buyer picks the wholesaler. Just notify.
-        await sendNotification(
-          order.customerId,
-          'Restock order declined',
-          `The wholesaler could not fulfill restock order #${order.id.slice(-6)}: ${req.body.reason}`,
-          { orderId: order.id },
-        );
-      } else {
-        // Re-trigger matching for next best store
-        await matchingQueue.add('match-store', {
-          orderId: order.id,
-          excludeStoreIds: [order.storeId],
-        });
+      // Re-trigger matching for the next best seller. Works for both customer
+      // orders (retail stores) and restock orders (wholesalers) — the engine
+      // picks the candidate set based on the order's type.
+      await matchingQueue.add('match-store', {
+        orderId: order.id,
+        excludeStoreIds: [order.storeId],
+      });
 
-        await sendNotification(
-          order.customerId,
-          'Store Update',
-          'The store could not fulfill your order. Finding another store...',
-          { orderId: order.id },
-        );
-      }
+      await sendNotification(
+        order.customerId,
+        'Order update',
+        order.orderType === 'RESTOCK'
+          ? 'A wholesaler could not fulfill your restock order. Finding another...'
+          : 'The store could not fulfill your order. Finding another store...',
+        { orderId: order.id },
+      );
 
       return sendSuccess(res, updated, 'Order rejected');
     } catch (err) {

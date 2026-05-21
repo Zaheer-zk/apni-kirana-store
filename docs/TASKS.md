@@ -6,14 +6,14 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ### 2026-05-21 — Wholesaler restock orders (B2B)
 
-Store owners can now restock from wholesalers/workshops. A "wholesaler" is a `Store` with `isWholesaler = true` (admin sets the flag); a retail store owner places a **RESTOCK** order with one, and the existing accept → driver → delivery lifecycle moves the stock to the buyer's store.
+Store owners can now restock from wholesalers/workshops. A "wholesaler" is a `Store` with `isWholesaler = true` (admin sets the flag). A retail store owner places a **RESTOCK** order; the **matching engine** picks the best in-range wholesaler (same engine as customer orders), then the accept → driver → delivery lifecycle moves the stock to the buyer's store.
 
 - [x] **Schema** — `Store.isWholesaler`, `OrderType { CUSTOMER, RESTOCK }` enum, `Order.orderType` + `Order.buyerStoreId` (links a restock order to the retail store that placed it). Migration `20260521_wholesaler_restock`.
-- [x] **Backend** — `GET /wholesalers` + `GET /wholesalers/:id/items` (browse); `POST /orders/restock` (store owner places a restock order — no matching engine, picks the wholesaler directly, commission 0, delivery fee normal); `GET /orders/restock` (outgoing restock orders). Reject is restock-aware (no re-match). Wholesalers are excluded from customer matching.
-- [x] **Notifications** — new `STORE_RESTOCK_ORDER` event notifies the wholesaler's owner of an incoming restock order.
+- [x] **Matching engine** — `matching.service.ts` is wholesaler-aware: RESTOCK orders match against wholesalers (`isWholesaler: true`), customer orders against retail stores. Same scoring/broadcast/driver pipeline.
+- [x] **Backend** — `POST /orders/restock` (store owner submits catalog items; engine seeds + picks the best wholesaler; commission 0, delivery fee normal); `GET /orders/restock` (outgoing restock orders); `GET /wholesalers` + `GET /wholesalers/:id/items` (browse). Reject re-matches the next wholesaler.
 - [x] **Admin** — `PUT /admin/stores/:id/wholesaler` toggle + a "Mark wholesaler" action and badge on the Stores page; `?type=` filter, RESTOCK badge, and buyer-store label on the Orders page.
-- [x] **store-portal** — new **Restock** tab: browse wholesalers → browse items → cart (`restock-cart.store.ts`) → place order; plus a "My restock orders" history screen.
-- [x] **Tests** — `backend/__tests__/wholesalers.test.ts`, 9 integration tests, all passing (run against the real test DB).
+- [x] **store-portal** — new **Restock** tab: browse the catalog → cart (`restock-cart.store.ts`) → place order (engine matches the wholesaler); plus a "My restock orders" history screen.
+- [x] **Tests** — `backend/__tests__/wholesalers.test.ts`, 7 integration tests, all passing (run against the real test DB).
 
 ### 2026-05-21 — Deployment docs rewritten for the HyperVPS
 

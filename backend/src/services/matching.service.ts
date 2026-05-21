@@ -32,7 +32,7 @@
 
 import { prisma } from '../config/prisma';
 import { haversineDistance, getBoundingBox } from '../utils/geo';
-import { notify } from './notification.service';
+import { notify, sendNotification } from './notification.service';
 import { matchingQueue } from '../queues/queues';
 import { io } from '../socket';
 import { getSettings } from './settings.service';
@@ -61,7 +61,7 @@ interface ScoredStore {
 async function rankStores(
   orderId: string,
   excludeStoreIds: string[],
-): Promise<{ scored: ScoredStore[]; totalCatalogItems: number; customerId: string; lat: number; lng: number } | null> {
+): Promise<{ scored: ScoredStore[]; totalCatalogItems: number; customerId: string; lat: number; lng: number; isRestock: boolean } | null> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: {
@@ -71,6 +71,10 @@ async function rankStores(
     },
   });
   if (!order || order.status !== 'PENDING') return null;
+
+  // RESTOCK orders match against wholesalers; CUSTOMER orders against retail stores.
+  // Same engine, opposite isWholesaler filter.
+  const isRestock = order.orderType === 'RESTOCK';
 
   const settings = await getSettings();
   const SEARCH_RADIUS_KM = settings.deliveryRadiusKm;
@@ -93,7 +97,7 @@ async function rankStores(
     where: {
       status: 'ACTIVE',
       isOpen: true,
-      isWholesaler: false, // wholesalers serve restock orders only, never customer matching
+      isWholesaler: isRestock,
       id: { notIn: excludeStoreIds },
       lat: { gte: box.minLat, lte: box.maxLat },
       lng: { gte: box.minLng, lte: box.maxLng },
@@ -122,7 +126,7 @@ async function rankStores(
       where: {
         status: 'ACTIVE',
         isOpen: true,
-        isWholesaler: false,
+        isWholesaler: isRestock,
         id: { notIn: excludeStoreIds },
         items: {
           some: {
@@ -172,7 +176,7 @@ async function rankStores(
   }
 
   scored.sort((a, b) => b.score - a.score);
-  return { scored, totalCatalogItems, customerId: order.customer.id, lat, lng };
+  return { scored, totalCatalogItems, customerId: order.customer.id, lat, lng, isRestock };
 }
 
 /**
@@ -256,7 +260,8 @@ export async function matchStoreForOrder(
   const ranked = await rankStores(orderId, excludeStoreIds);
   if (!ranked) return; // Order already moved past PENDING (accepted, cancelled, etc.)
 
-  const { scored, customerId } = ranked;
+  const { scored, customerId, isRestock } = ranked;
+  const seller = isRestock ? 'wholesaler' : 'store';
 
   if (scored.length === 0) {
     // Distinguish two failure modes so the admin / customer can read what
@@ -267,8 +272,8 @@ export async function matchStoreForOrder(
     //     within the broadcast timeout window
     const isRetry = excludeStoreIds.length > 0;
     const reason = isRetry
-      ? 'No store accepted your order in time. An admin can manually assign a store from the dashboard.'
-      : 'No store currently carries these items. An admin can manually assign a store from the dashboard.';
+      ? `No ${seller} accepted your order in time. An admin can manually assign a ${seller} from the dashboard.`
+      : `No ${seller} currently carries these items. An admin can manually assign a ${seller} from the dashboard.`;
 
     await prisma.order.update({
       where: { id: orderId },
@@ -278,7 +283,7 @@ export async function matchStoreForOrder(
       customerId,
       'Order on hold',
       isRetry
-        ? "No store accepted your order yet — we're sorting it out."
+        ? `No ${seller} accepted your order yet — we're sorting it out.`
         : 'Your order was cancelled. Please try again later.',
       { orderId },
     );

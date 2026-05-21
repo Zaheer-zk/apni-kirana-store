@@ -2,6 +2,7 @@ import {
   DriverStatus,
   ItemCategory,
   OrderStatus,
+  OrderType,
   PaymentMethod,
   PaymentStatus,
   StoreStatus,
@@ -48,6 +49,7 @@ export interface StoreProfile {
   lng: number;
   category: ItemCategory;
   status: StoreStatus;
+  isWholesaler?: boolean;
   operatingHours: OperatingHours;
   rating: number;
 }
@@ -86,6 +88,8 @@ export interface Order {
   customerId: string;
   storeId: string;
   driverId: string | null;
+  orderType: OrderType;
+  buyerStoreId: string | null;
   items: OrderItem[];
   status: OrderStatus;
   subtotal: number;

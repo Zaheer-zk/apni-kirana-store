@@ -166,6 +166,33 @@ router.put('/stores/:id/suspend', async (req: Request, res: Response) => {
   }
 });
 
+// ─── PUT /stores/:id/wholesaler ───────────────────────────────────────────────
+// Flag (or unflag) a store as a wholesaler. Wholesalers are excluded from
+// customer matching and become restock-order targets for retail store owners.
+
+router.put('/stores/:id/wholesaler', async (req: Request, res: Response) => {
+  try {
+    const isWholesaler = Boolean((req.body as { isWholesaler?: unknown }).isWholesaler);
+
+    const store = await prisma.store.findUnique({ where: { id: req.params['id'] } });
+    if (!store) return sendError(res, 'Store not found', 404);
+
+    const updated = await prisma.store.update({
+      where: { id: req.params['id'] },
+      data: { isWholesaler },
+    });
+
+    return sendSuccess(
+      res,
+      updated,
+      isWholesaler ? 'Store marked as wholesaler' : 'Store unmarked as wholesaler',
+    );
+  } catch (err) {
+    console.error('[Admin] toggle wholesaler error:', err);
+    return sendError(res, 'Failed to update wholesaler flag', 500);
+  }
+});
+
 // ─── GET /drivers ─────────────────────────────────────────────────────────────
 // Supports ?status=PENDING_APPROVAL|ACTIVE|ONLINE|OFFLINE|SUSPENDED
 
@@ -273,10 +300,12 @@ router.get('/orders', async (req: Request, res: Response) => {
     const skip = (page - 1) * limit;
     const status = req.query['status'] as string | undefined;
     const storeId = req.query['storeId'] as string | undefined;
+    const type = req.query['type'] as string | undefined;
 
     const where = {
       ...(status ? { status: status as never } : {}),
       ...(storeId ? { storeId } : {}),
+      ...(type ? { orderType: type as never } : {}),
     };
 
     const [orders, total] = await prisma.$transaction([
@@ -285,6 +314,7 @@ router.get('/orders', async (req: Request, res: Response) => {
         include: {
           customer: { select: { name: true, phone: true } },
           store: { select: { name: true } },
+          buyerStore: { select: { name: true } },
           driver: { include: { user: { select: { name: true } } } },
           _count: { select: { items: true } },
         },

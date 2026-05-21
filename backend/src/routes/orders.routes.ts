@@ -38,6 +38,22 @@ const createOrderSchema = z.object({
   promoCode: z.string().optional(),
 });
 
+// Restock order: a store owner buys stock from a wholesaler. Items reference the
+// wholesaler's StoreItem ids. No matching engine — the buyer picks the wholesaler.
+const createRestockSchema = z.object({
+  wholesalerId: z.string().cuid(),
+  items: z
+    .array(
+      z.object({
+        storeItemId: z.string().cuid(),
+        qty: z.number().int().positive(),
+      }),
+    )
+    .min(1),
+  paymentMethod: z.nativeEnum(PaymentMethod),
+  notes: z.string().max(500).optional(),
+});
+
 const rejectOrderSchema = z.object({
   reason: z.string().min(1).max(500),
 });
@@ -114,6 +130,7 @@ router.post(
             where: {
               status: 'ACTIVE',
               isOpen: true,
+              isWholesaler: false,
               items: { some: { catalogItemId: { in: reqCatalogItemIds }, isAvailable: true, stockQty: { gt: 0 } } },
             },
             include: {
@@ -307,6 +324,176 @@ router.post(
   },
 );
 
+// ─── POST /restock ────────────────────────────────────────────────────────────
+// A store owner places a B2B restock order with a wholesaler. The wholesaler
+// receives it as a normal incoming order; once accepted, the driver fleet
+// delivers it to the buyer's store (reuses the standard order lifecycle).
+
+router.post(
+  '/restock',
+  authenticate,
+  authorize('STORE_OWNER'),
+  validate(createRestockSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const { wholesalerId, items, paymentMethod, notes } = req.body as z.infer<
+        typeof createRestockSchema
+      >;
+      const buyerId = req.user!.id;
+
+      // The buyer must have a registered store (delivery target for the restock).
+      const buyerStore = await prisma.store.findUnique({ where: { ownerId: buyerId } });
+      if (!buyerStore) {
+        return sendError(res, 'You need a registered store to place restock orders', 400);
+      }
+      if (buyerStore.id === wholesalerId) {
+        return sendError(res, 'You cannot place a restock order with your own store', 400);
+      }
+
+      // The target must be an active wholesaler.
+      const wholesaler = await prisma.store.findFirst({
+        where: { id: wholesalerId, isWholesaler: true },
+      });
+      if (!wholesaler) return sendError(res, 'Wholesaler not found', 404);
+      if (wholesaler.status !== 'ACTIVE') {
+        return sendError(res, 'This wholesaler is not currently accepting orders', 400);
+      }
+
+      // Resolve items to the wholesaler's StoreItem records.
+      const reqStoreItemIds = items.map((i) => i.storeItemId);
+      const storeItems = await prisma.storeItem.findMany({
+        where: { id: { in: reqStoreItemIds }, storeId: wholesalerId, isAvailable: true },
+        include: { catalogItem: true },
+      });
+      if (storeItems.length !== reqStoreItemIds.length) {
+        return sendError(res, 'One or more items are unavailable at this wholesaler', 400);
+      }
+      const resolved = items.map((i) => ({
+        storeItem: storeItems.find((si) => si.id === i.storeItemId)!,
+        qty: i.qty,
+      }));
+      for (const r of resolved) {
+        if (r.storeItem.stockQty < r.qty) {
+          return sendError(res, `Insufficient stock for ${r.storeItem.catalogItem.name}`, 400);
+        }
+      }
+
+      // Totals. Restock orders carry no platform commission (B2B) — the buyer
+      // still pays the delivery fee that funds the driver.
+      const subtotal = resolved.reduce((s, r) => s + r.storeItem.price * r.qty, 0);
+      const settings = await getSettings();
+      const distanceKm = haversineDistance(
+        wholesaler.lat,
+        wholesaler.lng,
+        buyerStore.lat,
+        buyerStore.lng,
+      );
+      const deliveryFee = parseFloat(
+        (settings.baseDeliveryFee + settings.perKmFee * distanceKm).toFixed(2),
+      );
+      const total = parseFloat((subtotal + deliveryFee).toFixed(2));
+
+      // The driver delivers to the buyer's store. Order needs an Address row, so
+      // reuse / create one mirroring the buyer store's location.
+      let deliveryAddress = await prisma.address.findFirst({
+        where: { userId: buyerId, label: buyerStore.name, street: buyerStore.street },
+      });
+      if (!deliveryAddress) {
+        deliveryAddress = await prisma.address.create({
+          data: {
+            userId: buyerId,
+            label: buyerStore.name,
+            street: buyerStore.street,
+            city: buyerStore.city,
+            state: buyerStore.state,
+            pincode: buyerStore.pincode,
+            lat: buyerStore.lat,
+            lng: buyerStore.lng,
+          },
+        });
+      }
+
+      const dropoffOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
+      const order = await prisma.order.create({
+        data: {
+          customerId: buyerId,
+          storeId: wholesalerId,
+          buyerStoreId: buyerStore.id,
+          orderType: 'RESTOCK',
+          status: 'PENDING',
+          subtotal,
+          deliveryFee,
+          commission: 0,
+          total,
+          paymentMethod,
+          paymentStatus: 'PENDING',
+          deliveryAddressId: deliveryAddress.id,
+          notes,
+          dropoffOtp,
+          items: {
+            create: resolved.map((r) => ({
+              itemId: r.storeItem.id,
+              name: r.storeItem.catalogItem.name,
+              price: r.storeItem.price,
+              unit: r.storeItem.catalogItem.defaultUnit,
+              qty: r.qty,
+              imageUrl: r.storeItem.catalogItem.imageUrl,
+            })),
+          },
+        },
+        include: { items: true },
+      });
+
+      // Notify the wholesaler's owner directly — no matching engine for restock.
+      notify('STORE_RESTOCK_ORDER', wholesaler.ownerId, {
+        orderShort: order.id.slice(-6),
+        orderId: order.id,
+        buyerStoreName: buyerStore.name,
+        itemCount: order.items.length,
+        total: order.total,
+      }).catch((err) => console.warn('[Orders] restock notify failed:', err));
+
+      return sendSuccess(res, order, 'Restock order placed successfully', 201);
+    } catch (err) {
+      console.error('[Orders] restock create error:', err);
+      return sendError(res, 'Failed to place restock order', 500);
+    }
+  },
+);
+
+// ─── GET /restock ─────────────────────────────────────────────────────────────
+// Restock orders the current store owner has PLACED (outgoing). Incoming restock
+// orders a wholesaler receives show up in the normal GET / list.
+
+router.get('/restock', authenticate, authorize('STORE_OWNER'), async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt((req.query['page'] as string) || '1', 10));
+    const limit = Math.min(50, parseInt((req.query['limit'] as string) || '20', 10));
+    const skip = (page - 1) * limit;
+    const where = { customerId: req.user!.id, orderType: 'RESTOCK' as const };
+
+    const [orders, total] = await prisma.$transaction([
+      prisma.order.findMany({
+        where,
+        include: {
+          items: true,
+          store: { select: { name: true, owner: { select: { name: true, phone: true } } } },
+        },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.order.count({ where }),
+    ]);
+
+    return sendSuccess(res, { orders, total, page, limit, pages: Math.ceil(total / limit) });
+  } catch (err) {
+    console.error('[Orders] restock list error:', err);
+    return sendError(res, 'Failed to fetch restock orders', 500);
+  }
+});
+
 // ─── GET / ────────────────────────────────────────────────────────────────────
 
 router.get('/', authenticate, async (req: Request, res: Response) => {
@@ -479,18 +666,28 @@ router.put(
 
       await broadcastOrderStatus(order.id, 'REJECTED', { reason: req.body.reason });
 
-      // Re-trigger matching for next best store
-      await matchingQueue.add('match-store', {
-        orderId: order.id,
-        excludeStoreIds: [order.storeId],
-      });
+      if (order.orderType === 'RESTOCK') {
+        // Restock orders aren't matched — the buyer picks the wholesaler. Just notify.
+        await sendNotification(
+          order.customerId,
+          'Restock order declined',
+          `The wholesaler could not fulfill restock order #${order.id.slice(-6)}: ${req.body.reason}`,
+          { orderId: order.id },
+        );
+      } else {
+        // Re-trigger matching for next best store
+        await matchingQueue.add('match-store', {
+          orderId: order.id,
+          excludeStoreIds: [order.storeId],
+        });
 
-      await sendNotification(
-        order.customerId,
-        'Store Update',
-        'The store could not fulfill your order. Finding another store...',
-        { orderId: order.id },
-      );
+        await sendNotification(
+          order.customerId,
+          'Store Update',
+          'The store could not fulfill your order. Finding another store...',
+          { orderId: order.id },
+        );
+      }
 
       return sendSuccess(res, updated, 'Order rejected');
     } catch (err) {

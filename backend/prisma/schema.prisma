@@ -48,6 +48,13 @@ enum OrderStatus {
   REJECTED
 }
 
+// CUSTOMER  = a regular hyperlocal order placed by a customer.
+// RESTOCK   = a B2B order a store owner places with a wholesaler to refill stock.
+enum OrderType {
+  CUSTOMER
+  RESTOCK
+}
+
 enum PaymentMethod {
   CASH_ON_DELIVERY
   ONLINE
@@ -135,6 +142,7 @@ model Store {
   state        String
   pincode      String
   status       StoreStatus   @default(PENDING_APPROVAL)
+  isWholesaler Boolean       @default(false) // true = a wholesaler/workshop that retail stores restock from
   openTime     String
   closeTime    String
   rating       Float         @default(0)
@@ -143,11 +151,13 @@ model Store {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  owner  User        @relation(fields: [ownerId], references: [id])
-  items  StoreItem[]
-  orders Order[]
+  owner       User        @relation(fields: [ownerId], references: [id])
+  items       StoreItem[]
+  orders      Order[]     @relation("StoreOrders")      // orders this store received (as seller)
+  buyerOrders Order[]     @relation("BuyerStoreOrders") // restock orders this store placed (as buyer)
 
   @@index([lat, lng])
+  @@index([isWholesaler])
 }
 
 // Master product catalog managed by ADMIN.
@@ -193,6 +203,8 @@ model Order {
   customerId        String
   storeId           String
   driverId          String?
+  orderType         OrderType     @default(CUSTOMER)
+  buyerStoreId      String?       // set on RESTOCK orders: the retail store that placed the order
   status            OrderStatus   @default(PENDING)
   subtotal          Float
   deliveryFee       Float
@@ -216,7 +228,8 @@ model Order {
   updatedAt         DateTime      @updatedAt
 
   customer        User         @relation("CustomerOrders", fields: [customerId], references: [id])
-  store           Store        @relation(fields: [storeId], references: [id])
+  store           Store        @relation("StoreOrders", fields: [storeId], references: [id])
+  buyerStore      Store?       @relation("BuyerStoreOrders", fields: [buyerStoreId], references: [id])
   driver          Driver?      @relation(fields: [driverId], references: [id])
   items           OrderItem[]
   deliveryAddress Address      @relation(fields: [deliveryAddressId], references: [id])
@@ -224,6 +237,7 @@ model Order {
 
   @@index([customerId, status])
   @@index([storeId, status])
+  @@index([buyerStoreId])
 }
 
 model OrderItem {

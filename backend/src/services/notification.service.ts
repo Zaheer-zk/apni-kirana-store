@@ -32,6 +32,7 @@ const PREFERENCE_KEY: Partial<Record<string, keyof PreferencesShape>> = {
   STORE_NEW_ORDER: 'newOrderAlerts',
   STORE_ORDER_OFFERED: 'newOrderAlerts',
   STORE_ORDER_RESCINDED: 'rescindedAlerts',
+  STORE_RESTOCK_ORDER: 'newOrderAlerts',
   DRIVER_NEW_DELIVERY: 'newDeliveryAlerts',
   DRIVER_OFFER_RESCINDED: 'newDeliveryAlerts',
   DRIVER_PAYOUT: 'payoutNotifications',
@@ -102,6 +103,7 @@ export type NotificationEvent =
   | 'STORE_NEW_ORDER'
   | 'STORE_ORDER_OFFERED'
   | 'STORE_ORDER_RESCINDED'
+  | 'STORE_RESTOCK_ORDER'
   | 'STORE_APPROVED'
   | 'STORE_SUSPENDED'
   // Driver-side
@@ -170,6 +172,10 @@ const TEMPLATES: Record<NotificationEvent, TemplateFn> = {
   STORE_ORDER_RESCINDED: (v) => ({
     title: 'Order taken',
     body: `Order #${v.orderShort} was accepted by another nearby store.`,
+  }),
+  STORE_RESTOCK_ORDER: (v) => ({
+    title: 'New restock order',
+    body: `${v.buyerStoreName} placed restock order #${v.orderShort} — ${v.itemCount} items, ₹${v.total}. Tap to review.`,
   }),
   STORE_APPROVED: () => ({
     title: 'Store approved!',

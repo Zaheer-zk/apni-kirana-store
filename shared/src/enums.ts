@@ -21,6 +21,13 @@ export enum StoreStatus {
   SUSPENDED = 'SUSPENDED',
 }
 
+// CUSTOMER = hyperlocal order placed by a customer.
+// RESTOCK  = B2B order a store owner places with a wholesaler to refill stock.
+export enum OrderType {
+  CUSTOMER = 'CUSTOMER',
+  RESTOCK = 'RESTOCK',
+}
+
 export enum DriverStatus {
   PENDING_APPROVAL = 'PENDING_APPROVAL',
   ACTIVE = 'ACTIVE',

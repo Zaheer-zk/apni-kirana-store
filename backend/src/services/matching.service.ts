@@ -93,6 +93,7 @@ async function rankStores(
     where: {
       status: 'ACTIVE',
       isOpen: true,
+      isWholesaler: false, // wholesalers serve restock orders only, never customer matching
       id: { notIn: excludeStoreIds },
       lat: { gte: box.minLat, lte: box.maxLat },
       lng: { gte: box.minLng, lte: box.maxLng },
@@ -121,6 +122,7 @@ async function rankStores(
       where: {
         status: 'ACTIVE',
         isOpen: true,
+        isWholesaler: false,
         id: { notIn: excludeStoreIds },
         items: {
           some: {

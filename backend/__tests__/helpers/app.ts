@@ -7,6 +7,7 @@ import authRouter from '../../src/routes/auth.routes';
 import storesRouter from '../../src/routes/stores.routes';
 import itemsRouter from '../../src/routes/items.routes';
 import ordersRouter from '../../src/routes/orders.routes';
+import wholesalersRouter from '../../src/routes/wholesalers.routes';
 import driversRouter from '../../src/routes/drivers.routes';
 import adminRouter from '../../src/routes/admin.routes';
 import notificationsRouter from '../../src/routes/notifications.routes';
@@ -25,6 +26,7 @@ export function createTestApp(): Express {
   app.use('/api/v1/stores', storesRouter);
   app.use('/api/v1/items', itemsRouter);
   app.use('/api/v1/orders', ordersRouter);
+  app.use('/api/v1/wholesalers', wholesalersRouter);
   app.use('/api/v1/drivers', driversRouter);
   app.use('/api/v1/admin', adminRouter);
   app.use('/api/v1/notifications', notificationsRouter);

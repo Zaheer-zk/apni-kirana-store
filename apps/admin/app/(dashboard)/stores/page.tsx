@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, CheckCircle, XCircle, PauseCircle, Loader2 } from 'lucide-react';
+import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Building2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
@@ -23,6 +23,7 @@ interface StoreRow {
   status: string;
   city: string;
   rating: number;
+  isWholesaler: boolean;
   ownerName: string;
   ownerPhone: string;
   itemCount: number;
@@ -37,6 +38,7 @@ interface BackendStore {
   status: string;
   city: string;
   rating: number;
+  isWholesaler?: boolean;
   createdAt: string;
   owner: { id: string; name: string | null; phone: string };
   _count?: { items: number; orders: number };
@@ -67,6 +69,7 @@ export default function StoresPage() {
         status: s.status,
         city: s.city,
         rating: s.rating ?? 0,
+        isWholesaler: s.isWholesaler ?? false,
         ownerName: s.owner?.name ?? 'Unnamed',
         ownerPhone: s.owner?.phone ?? '',
         itemCount: s._count?.items ?? 0,
@@ -91,6 +94,14 @@ export default function StoresPage() {
     },
   });
 
+  const wholesalerMutation = useMutation({
+    mutationFn: ({ storeId, isWholesaler }: { storeId: string; isWholesaler: boolean }) =>
+      api.put(`/api/v1/admin/stores/${storeId}/wholesaler`, { isWholesaler }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-stores'], refetchType: 'all' });
+    },
+  });
+
   const filtered = (Array.isArray(data) ? data : []).filter((s) =>
     s.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -101,7 +112,14 @@ export default function StoresPage() {
       header: 'Store Name',
       render: (s) => (
         <div className="min-w-0 max-w-[180px] sm:max-w-none">
-          <p className="truncate font-medium text-gray-900" title={s.name}>{s.name}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="truncate font-medium text-gray-900" title={s.name}>{s.name}</p>
+            {s.isWholesaler && (
+              <span className="shrink-0 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                Wholesaler
+              </span>
+            )}
+          </div>
           <p className="truncate text-xs text-gray-400" title={s.category}>{s.category}</p>
         </div>
       ),
@@ -155,13 +173,24 @@ export default function StoresPage() {
             </>
           )}
           {activeTab === 'ACTIVE' && (
-            <ActionButton
-              label="Suspend"
-              icon={<PauseCircle className="h-3.5 w-3.5" />}
-              variant="warning"
-              loading={mutation.isPending}
-              onClick={() => mutation.mutate({ storeId: s.id, action: 'suspend' })}
-            />
+            <>
+              <ActionButton
+                label={s.isWholesaler ? 'Unset wholesaler' : 'Mark wholesaler'}
+                icon={<Building2 className="h-3.5 w-3.5" />}
+                variant={s.isWholesaler ? 'warning' : 'neutral'}
+                loading={wholesalerMutation.isPending}
+                onClick={() =>
+                  wholesalerMutation.mutate({ storeId: s.id, isWholesaler: !s.isWholesaler })
+                }
+              />
+              <ActionButton
+                label="Suspend"
+                icon={<PauseCircle className="h-3.5 w-3.5" />}
+                variant="warning"
+                loading={mutation.isPending}
+                onClick={() => mutation.mutate({ storeId: s.id, action: 'suspend' })}
+              />
+            </>
           )}
           {activeTab === 'SUSPENDED' && (
             <ActionButton
@@ -231,7 +260,7 @@ export default function StoresPage() {
 interface ActionButtonProps {
   label: string;
   icon: React.ReactNode;
-  variant: 'success' | 'danger' | 'warning';
+  variant: 'success' | 'danger' | 'warning' | 'neutral';
   loading: boolean;
   onClick: () => void;
 }
@@ -240,6 +269,7 @@ const variantClasses: Record<ActionButtonProps['variant'], string> = {
   success: 'bg-green-50 text-green-700 hover:bg-green-100 border-green-200',
   danger: 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200',
   warning: 'bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200',
+  neutral: 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200',
 };
 
 function ActionButton({ label, icon, variant, loading, onClick }: ActionButtonProps) {

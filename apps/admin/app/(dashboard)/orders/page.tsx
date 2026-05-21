@@ -20,6 +20,8 @@ interface OrderRow {
   storeName: string;
   driverName: string | null;
   itemCount: number;
+  orderType: string;
+  buyerStoreName: string | null;
 }
 
 interface OrdersResponse {
@@ -30,8 +32,10 @@ interface OrdersResponse {
     paymentMethod: string;
     paymentStatus: string;
     createdAt: string;
+    orderType?: string;
     customer?: { name: string | null; phone: string };
     store?: { name: string };
+    buyerStore?: { name: string } | null;
     driver?: { user?: { name: string | null } } | null;
     items?: unknown[];
     _count?: { items?: number };
@@ -54,16 +58,18 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
 export default function OrdersPage() {
   const router = useRouter();
   const [status, setStatus] = useState('');
+  const [type, setType] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
   const params = new URLSearchParams();
   if (status) params.set('status', status);
+  if (type) params.set('type', type);
   if (from) params.set('from', from);
   if (to) params.set('to', to);
 
   const { data, isLoading, isError } = useQuery<OrderRow[]>({
-    queryKey: ['admin-orders', status, from, to],
+    queryKey: ['admin-orders', status, type, from, to],
     queryFn: async () => {
       const res = await api.get<{ success: boolean; data: OrdersResponse }>(
         `/api/v1/admin/orders?${params.toString()}`
@@ -80,6 +86,8 @@ export default function OrdersPage() {
         storeName: o.store?.name ?? '—',
         driverName: o.driver?.user?.name ?? null,
         itemCount: o._count?.items ?? o.items?.length ?? 0,
+        orderType: o.orderType ?? 'CUSTOMER',
+        buyerStoreName: o.buyerStore?.name ?? null,
       }));
     },
   });
@@ -89,9 +97,16 @@ export default function OrdersPage() {
       key: 'id',
       header: 'Order ID',
       render: (o) => (
-        <span className="font-mono text-xs text-gray-600">
-          #{o.id.slice(-8).toUpperCase()}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-xs text-gray-600">
+            #{o.id.slice(-8).toUpperCase()}
+          </span>
+          {o.orderType === 'RESTOCK' && (
+            <span className="shrink-0 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+              Restock
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -110,12 +125,19 @@ export default function OrdersPage() {
       key: 'storeName',
       header: 'Store',
       render: (o) => (
-        <span
-          className="block max-w-[160px] truncate text-gray-700 sm:max-w-none"
-          title={o.storeName}
-        >
-          {o.storeName}
-        </span>
+        <div className="max-w-[200px]">
+          <span className="block truncate text-gray-700" title={o.storeName}>
+            {o.storeName}
+          </span>
+          {o.orderType === 'RESTOCK' && o.buyerStoreName && (
+            <span
+              className="block truncate text-xs text-indigo-500"
+              title={o.buyerStoreName}
+            >
+              → restock for {o.buyerStoreName}
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -191,6 +213,17 @@ export default function OrdersPage() {
             ))}
           </select>
 
+          {/* Order type */}
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="input w-full sm:w-44"
+          >
+            <option value="">All Types</option>
+            <option value="CUSTOMER">Customer orders</option>
+            <option value="RESTOCK">Restock orders</option>
+          </select>
+
           {/* Date range */}
           <div className="flex w-full items-center gap-2 sm:w-auto">
             <input
@@ -210,9 +243,9 @@ export default function OrdersPage() {
             />
           </div>
 
-          {(status || from || to) && (
+          {(status || type || from || to) && (
             <button
-              onClick={() => { setStatus(''); setFrom(''); setTo(''); }}
+              onClick={() => { setStatus(''); setType(''); setFrom(''); setTo(''); }}
               className="text-sm text-gray-400 hover:text-gray-700 underline"
             >
               Clear

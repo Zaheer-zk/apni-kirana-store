@@ -4,6 +4,25 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-21 — Wholesaler restock orders (B2B)
+
+Store owners can now restock from wholesalers/workshops. A "wholesaler" is a `Store` with `isWholesaler = true` (admin sets the flag); a retail store owner places a **RESTOCK** order with one, and the existing accept → driver → delivery lifecycle moves the stock to the buyer's store.
+
+- [x] **Schema** — `Store.isWholesaler`, `OrderType { CUSTOMER, RESTOCK }` enum, `Order.orderType` + `Order.buyerStoreId` (links a restock order to the retail store that placed it). Migration `20260521_wholesaler_restock`.
+- [x] **Backend** — `GET /wholesalers` + `GET /wholesalers/:id/items` (browse); `POST /orders/restock` (store owner places a restock order — no matching engine, picks the wholesaler directly, commission 0, delivery fee normal); `GET /orders/restock` (outgoing restock orders). Reject is restock-aware (no re-match). Wholesalers are excluded from customer matching.
+- [x] **Notifications** — new `STORE_RESTOCK_ORDER` event notifies the wholesaler's owner of an incoming restock order.
+- [x] **Admin** — `PUT /admin/stores/:id/wholesaler` toggle + a "Mark wholesaler" action and badge on the Stores page; `?type=` filter, RESTOCK badge, and buyer-store label on the Orders page.
+- [x] **store-portal** — new **Restock** tab: browse wholesalers → browse items → cart (`restock-cart.store.ts`) → place order; plus a "My restock orders" history screen.
+- [x] **Tests** — `backend/__tests__/wholesalers.test.ts`, 9 integration tests, all passing (run against the real test DB).
+
+### 2026-05-21 — Deployment docs rewritten for the HyperVPS
+
+- [x] **`docs/deployment.md` targets the HyperVPS plan** — rewrote the deploy guide around a 6 vCPU / 12 GB / 150 GB NVMe VPS. Added a "What gets deployed" six-container table, a "Production server" spec block, and an 8-step provider-neutral walkthrough (buy → SSH → DNS → clone + configure → SSL → start → first admin → smoke test) plus a Day-2 ops table.
+- [x] **Fixed a Compose `--env-file` bug** — `docker-compose.prod.yml` interpolates `${REDIS_PASSWORD}` / `${POSTGRES_USER}` etc., which Compose reads only from a literal `.env`, not `.env.prod`. Without it Redis booted with no password and the Postgres healthcheck failed. Docs now use a `dc` alias with `--env-file .env.prod`; `scripts/deploy.sh` and `scripts/init-ssl.sh` updated to pass the flag too.
+- [x] **Corrected the Environment var table** — it listed vars that don't exist in `.env.prod.example` (`CLOUDINARY_URL`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `ADMIN_PUBLIC_URL`). Now matches the real file: `CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET`, `REDIS_URL`, `DATABASE_URL`, `CORS_ORIGIN`, `NEXT_PUBLIC_API_URL`.
+- [x] **Plan + cost tables updated** — HyperVPS (~₹1,600–3,100/mo) now spans beta through launch with no mid-stage server upgrade. Removed the stale duplicate "TLS / First start / DNS / VPS bootstrap" sections that duplicated the new walkthrough.
+- [x] **Reconciled the provider section** — replaced the HostLelo-specific product matrix with a provider-neutral "Choosing a VPS" section (required specs: root SSH/Docker, NVMe, India region) plus a short "If you host on HostLelo" note. Scale-phase cost table genericised off HostLelo SKUs.
+
 ### 2026-05-07 — Cancelled-order rescue + Android stability + driver/store fixes
 
 - [x] **Admin can rescue auto-cancelled orders** — when the matching engine cancels an order (no store accepts in 3 min), admin can now manually assign a store from the order detail page. The assign-store endpoint clears `cancelReason` and flips status to STORE_ACCEPTED. Frontend shows a yellow rescue banner explaining the situation. Same for driver assignment.

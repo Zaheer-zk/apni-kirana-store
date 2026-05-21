@@ -62,6 +62,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="restock"
+        options={{
+          title: 'Restock',
+          tabBarIcon: tabIcon('cart', 'cart-outline'),
+        }}
+      />
+      <Tabs.Screen
         name="earnings"
         options={{
           title: 'Earnings',

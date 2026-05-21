@@ -43,6 +43,8 @@ RUN npm run build
 FROM node:20-slim AS production
 WORKDIR /app
 ENV NODE_ENV=production
+# Prisma's query/schema engines need OpenSSL at runtime
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
 COPY backend/package.json ./backend/

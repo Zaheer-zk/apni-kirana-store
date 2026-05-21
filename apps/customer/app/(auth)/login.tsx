@@ -250,9 +250,10 @@ export default function LoginScreen() {
             </>
           ) : step === 'phone' ? (
             <>
-              <Text style={styles.title}>Welcome</Text>
+              <Text style={styles.title}>Login or sign up</Text>
               <Text style={styles.subtitle}>
-                Enter your phone number to continue
+                New here? No separate sign-up needed — just enter your number
+                and we'll create your account.
               </Text>
 
               <View style={styles.phoneRow}>
@@ -284,7 +285,8 @@ export default function LoginScreen() {
               <View style={styles.hintBox}>
                 <Ionicons name="information-circle" size={16} color={colors.info} />
                 <Text style={styles.hintText}>
-                  Use 9999966661 to test as customer
+                  We'll send a 6-digit code to verify your number. First-time
+                  users will be asked for their name on the next step.
                 </Text>
               </View>
             </>

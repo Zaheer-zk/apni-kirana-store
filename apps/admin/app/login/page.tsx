@@ -155,8 +155,7 @@ export default function LoginPage() {
                   className="input text-center text-2xl tracking-widest font-mono"
                 />
                 <p className="mt-1.5 text-xs text-gray-500">
-                  OTP sent to +91 {phone}. Check backend logs:{' '}
-                  <code className="rounded bg-gray-100 px-1 py-0.5 font-mono">docker compose logs backend | grep OTP</code>
+                  OTP sent to +91 {phone}. Enter the 6-digit code from the SMS.
                 </p>
               </div>
 

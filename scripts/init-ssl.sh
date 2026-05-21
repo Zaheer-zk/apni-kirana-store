@@ -185,12 +185,12 @@ echo "  In nginx/conf.d/default.conf:"
 echo "    Replace 'api.yourdomain.com' with '${API_DOMAIN}' in the ssl_certificate lines."
 echo
 echo "  Once updated, start all production services:"
-echo "    docker compose -f docker-compose.prod.yml up -d"
+echo "    docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build"
 echo
 echo "  To auto-renew certificates (add to crontab on the VPS):"
 echo "    0 3 * * * cd ${PROJECT_ROOT} && docker run --rm \\"
 echo "        -v \$(pwd)/${CERTBOT_CONF_DIR}:/etc/letsencrypt \\"
 echo "        -v \$(pwd)/${CERTBOT_WWW_DIR}:/var/www/certbot \\"
 echo "        certbot/certbot renew --quiet && \\"
-echo "        docker compose -f docker-compose.prod.yml exec nginx nginx -s reload"
+echo "        docker compose --env-file .env.prod -f docker-compose.prod.yml exec nginx nginx -s reload"
 echo

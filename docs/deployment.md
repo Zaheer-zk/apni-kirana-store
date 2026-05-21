@@ -1,6 +1,36 @@
 # Deployment
 
-Production deployment to a single Ubuntu 22.04 VPS using Docker Compose, Nginx, and Let's Encrypt.
+The entire backend runs on **one Ubuntu 22.04 VPS** with Docker Compose, Nginx, and Let's Encrypt TLS. The three mobile apps are not deployed here — they ship to the app stores via EAS Build (see the bottom of this doc).
+
+## What gets deployed
+
+One `docker compose` command brings up **six containers** on the single VPS:
+
+| Container | What it is | Reachable from |
+|---|---|---|
+| `postgres` | PostgreSQL 16 — all application data | internal network only |
+| `redis` | Redis 7 — cache + BullMQ job queue | internal network only |
+| `backend` | Express API + Socket.io + BullMQ workers | internal `:3000` |
+| `admin` | Next.js admin dashboard | internal `:3000` |
+| `nginx` | Reverse proxy + TLS termination | **public `:80` / `:443`** |
+| `certbot` | Auto-renews the Let's Encrypt certificates | — |
+
+Only Nginx is exposed to the internet. It routes `api.<domain>` → `backend` and `admin.<domain>` → `admin`. Postgres and Redis are never exposed.
+
+## Production server
+
+This guide targets a **HyperVPS-class VPS**:
+
+| Spec | Value |
+|---|---|
+| CPU | 6 vCPU — AMD EPYC 7282 (2.8 GHz) |
+| RAM | 12 GB |
+| Disk | 150 GB NVMe |
+| Bandwidth | 32 TB/mo (effectively unlimited for this app) |
+| Region | India — the POP closest to your users |
+| OS | Ubuntu 22.04 LTS |
+
+The full six-container stack uses **~2 GB RAM under MVP load**, so 12 GB leaves generous headroom for traffic spikes, the `next build` step during deploys, and growth. You only split Postgres onto its own server past ~10K daily users or several cities — see [Resource sizing](#resource-sizing-for-apni-kirana-store).
 
 ## Pre-deployment checklist
 
@@ -9,7 +39,7 @@ Before you `ssh` to the VPS, gather these. The deploy script won't run without m
 | ✓ | Item | Where to get it |
 | --- | --- | --- |
 | ☐ | A domain (any registrar, e.g. Hostinger / Namecheap / GoDaddy) | ~₹100-1000/yr |
-| ☐ | A VPS — see [HostLelo product matrix](#hostlelo--picking-the-right-product); for India MVP use **HostLelo Multi-Region Cloud VPS (Mumbai)** | ~₹1,450/mo |
+| ☐ | A VPS — **6 vCPU / 12 GB RAM / 150 GB NVMe** ("HyperVPS" tier), Ubuntu 22.04, India region | ~₹1,500–2,500/mo |
 | ☐ | SMS provider account — **2Factor.in** (free 100/day) is the easiest start | <https://2factor.in> |
 | ☐ | Cloudinary account for image uploads (free tier OK) | <https://cloudinary.com> |
 | ☐ | Razorpay account for payments (Indian businesses) | <https://razorpay.com> |
@@ -20,30 +50,24 @@ Before you `ssh` to the VPS, gather these. The deploy script won't run without m
 
 The mobile apps (customer/driver/store-portal) are not deployed to a VPS — they ship to **Apple App Store** + **Google Play** via [EAS Build](https://docs.expo.dev/build/introduction/). Build commands at the bottom of this doc.
 
-## HostLelo — picking the right product
+## Choosing a VPS
 
-HostLelo (<https://www.hostlelo.com>) is the chosen hosting provider. This section covers every product they sell, which ones can run our stack, and which exact plan to pick for each phase.
+This guide targets the **HyperVPS** plan (6 vCPU / 12 GB / 150 GB NVMe). Any VPS works as long as it gives you:
 
-### Product matrix — what runs Apni Kirana Store
+- **Root SSH access** and the ability to run arbitrary **Docker** containers. The stack is Postgres + Redis + Node + Next.js — cPanel-only "Shared" or "WordPress" hosting **cannot run it**.
+- **NVMe storage** (not a spinning HDD) — Postgres is I/O-sensitive.
+- **An India region / POP** — this is a real-time app; a US/EU region adds 200–300 ms to every request.
+- **Ubuntu 22.04 LTS** (24.04 also works).
 
-| Product | URL | Runs our stack? | Why / Why not |
-|---|---|---|---|
-| **Multi-Region Cloud VPS** | [/cloud-vps](https://www.hostlelo.com/cloud-vps) | ✅ **Yes — recommended for MVP** | Root SSH, NVMe, Mumbai region, Ubuntu support |
-| **AMD EPYC VDS** | [/vds](https://www.hostlelo.com/vds) | ✅ **Yes — recommended for production** | Dedicated CPU cores, up to 64 vCPU / 512 GB RAM, 24/7 fully-managed support included |
-| **Dedicated Servers** | [/dedicated-hosting](https://www.hostlelo.com/dedicated-hosting) | ✅ Yes (overkill for v1) | Bare metal, full hardware control. Pick once you scale past one VDS |
-| **VPS Hosting** (legacy) | listed on homepage | ⚠️ Avoid for new orders | 1 GB RAM / 1 core for $18.91 — Cloud VPS gives 4× the resources for similar price |
-| **UAE VPS / UAE Dedicated** | [/uae-vps](https://www.hostlelo.com/uae-vps), [/uae-dedicated](https://www.hostlelo.com/uae-dedicated) | ✅ Yes | Pick only if you launch in UAE — adds ~80 ms RTT for Indian users |
-| **Premium Shared Hosting** | [/shared-hosting](https://www.hostlelo.com/shared-hosting) | ❌ **No** | cPanel-style, no Docker, no Node.js/Postgres — **don't buy this for AKS** |
-| **WordPress Hosting** | [/wordpress-hosting](https://www.hostlelo.com/wordpress-hosting) | ❌ **No** | Same as shared — runs only WordPress, not arbitrary Docker stacks |
-| UAE Web Hosting | [/uae-hosting](https://www.hostlelo.com/uae-hosting) | ❌ **No** | Same as shared, just UAE region |
-| Software Development | [/development](https://www.hostlelo.com/development) | n/a | A service offering, not a hosting product |
-| Bash Scripting | [/bash-script-development](https://www.hostlelo.com/bash-script-development) | n/a | DevOps service offering |
+> ⚠️ **Do not buy "Shared", "WordPress", or any cPanel-only plan.** They cannot run our Docker stack — it needs root SSH and arbitrary process control.
 
-> ⚠️ **Do not buy "Shared", "WordPress", or any cPanel-only plan.** They cannot run our Docker stack (Postgres + Redis + Node + Next.js need root SSH and arbitrary process control).
+### If you host on HostLelo
+
+HostLelo (<https://www.hostlelo.com>) was the originally-scoped provider. Their closest equivalent to the HyperVPS is the **Multi-Region Cloud VPS** (pick the Mumbai region); the **AMD EPYC VDS** line is the next step up if you want dedicated CPU cores and managed support. Avoid their **Shared / WordPress / UAE Web Hosting** plans — those are cPanel-only and cannot run Docker.
 
 ### Resource sizing for Apni Kirana Store
 
-What our 4-container stack actually uses at idle and under MVP load (~50 stores, ~500 customers, ~10 orders/min peak):
+What the core stack actually uses at idle and under MVP load (~50 stores, ~500 customers, ~10 orders/min peak). `nginx` and `certbot` add only a few MB each:
 
 | Container | Idle RAM | Peak RAM | CPU | Disk |
 |---|---|---|---|---|
@@ -54,225 +78,245 @@ What our 4-container stack actually uses at idle and under MVP load (~50 stores,
 | **Headroom** (OS, snapshots, bursts) | — | ~600 MB | — | logs + DB backups |
 | **TOTAL** | **~650 MB** | **~2.2 GB** | **~2 vCPU** | **30–50 GB** |
 
-So **4 GB RAM / 2 vCPU / 100 GB NVMe is the comfortable MVP floor**. 8 GB / 4 vCPU is the production target. Beyond that you're either separating Postgres to its own box or sharding by city.
+So **4 GB RAM / 2 vCPU / 100 GB NVMe is the bare MVP floor**. The recommended **HyperVPS (12 GB / 6 vCPU / 150 GB NVMe)** runs the stack at roughly 15–20% memory use under MVP load — that headroom absorbs traffic spikes, the `next build` step during deploys, and growth without an early resize. Split Postgres onto its own box only past ~10K daily users or several cities.
 
 ### Recommended plan by phase
 
 | Phase | Customers | Plan | Approx cost | Why |
 |---|---|---|---|---|
-| **Beta / pilot** | 0–500, 1 city | **Multi-Region Cloud VPS — 4 vCPU / 4 GB / 100 GB NVMe** ([/cloud-vps](https://www.hostlelo.com/cloud-vps), Mumbai) | $16.52 (~₹1,450) / mo | Smallest plan that fits the stack with headroom. Self-managed |
-| **Public launch** | 500–10K, 2-3 cities | **AMD EPYC VDS — ~6 vCPU / 12 GB / 360 GB NVMe** ([/vds](https://www.hostlelo.com/vds), India) | ~$50–60 (~₹4,500) / mo | Dedicated CPU cores prevent noisy-neighbor lag during dispatch matching. **Includes 24/7 fully-managed support** — your in-house ops time goes near-zero |
-| **Scale** | 10K+, 5+ cities | Dedicated Server (Ryzen 5950X, 128 GB) ([/dedicated-hosting](https://www.hostlelo.com/dedicated-hosting)) | ~$50/mo + $49/mo semi-managed | Move Postgres to separate dedicated box; backend/admin still on VDS. Add CDN |
+| **Beta / pilot** | 0–500, 1 city | 4 vCPU / 4 GB / 100 GB NVMe | ~₹1,450 / mo | Smallest box that fits the stack — fine for a closed pilot |
+| **Launch (recommended)** | 500–10K, 1–3 cities | **HyperVPS — 6 vCPU / 12 GB / 150 GB NVMe** | ~₹1,500–2,500 / mo | The plan this guide targets. Handles a few thousand daily users + real-time tracking with headroom |
+| **Scale** | 10K+, 5+ cities | Dedicated app server + a separate Postgres box | ~₹15,000+ / mo | Move Postgres off-box; add a CDN. Same Docker Compose, split across machines |
 
-For most launches, **start at Cloud VPS, upgrade to VDS when paid orders hit ~₹50K/day**. Both keep the same Docker Compose setup — only the box underneath changes.
+**Start on the HyperVPS** — it covers beta and launch both. The Docker Compose setup never changes; scaling just means a bigger box, then eventually a separate database server.
 
-## HostLelo deployment — step-by-step
+## Deploying to the HyperVPS — step-by-step
 
-End-to-end from "I just bought the plan" → "stack running on https://api.yourdomain.com".
+End-to-end: from "I just bought the VPS" to "stack live at https://api.yourdomain.com". Budget ~30–45 minutes the first time. Every command runs **on the VPS** unless noted otherwise.
 
-### 1. Buy + provision
+> These steps work on **any Ubuntu 22.04 VPS** — only Step 1 (buying the box) differs by provider. If you instead picked a HostLelo Cloud VPS, the rest of this guide is identical.
 
-1. Sign in / create account at <https://www.hostlelo.com>
-2. Order page → pick the plan from the table above. Choose:
-   - **Region:** **India (Mumbai)** — 45 ms latency to most Indian users
-   - **OS:** **Ubuntu 22.04 LTS** (or 24.04 if offered — both work). NOT CentOS, NOT Windows
-   - **Hostname:** `aks-prod-1` (any memorable name)
-   - **Add-ons:** skip extra IPs, cPanel, billing add-ons. We don't need them
-3. After payment, the dashboard shows the public IPv4 + initial root password (also emailed)
+### Step 1 — Buy and provision the HyperVPS
 
-If you picked the **VDS or Dedicated** plan, your account also includes 24/7 fully-managed support — note their ticket queue / chat link in the welcome email; that's who you call if the server itself misbehaves.
+1. Order the **HyperVPS** plan (6 vCPU / 12 GB / 150 GB NVMe) from your provider.
+2. At checkout, choose:
+   - **OS:** Ubuntu 22.04 LTS (24.04 also works). Not CentOS, not Windows.
+   - **Region:** India / the POP closest to your users — keeps latency low for real-time order tracking.
+   - **Storage:** the **NVMe** option (not SSD) — Postgres is I/O-sensitive.
+   - Skip extra IPs, cPanel, and managed-backup add-ons.
+3. After payment the provider dashboard shows the **public IPv4** and an **initial root password** (also emailed).
 
-### 2. First SSH
+### Step 2 — First SSH and basic hardening
+
+From your laptop:
 
 ```bash
-ssh root@<public-ip>
-# Use the password from the welcome email
-# You'll be prompted to change it on first login — pick a strong one or
-# move straight to key-based auth (recommended below)
+ssh root@<public-ip>          # use the password from the welcome email
 ```
 
-Once in:
+Then, on the VPS:
 
 ```bash
-# 2.1 Update everything
-apt update && apt upgrade -y
+# 2.1 — Update the OS and make sure git is present
+apt update && apt upgrade -y && apt install -y git
 
-# 2.2 Install Docker if it isn't already
-docker --version 2>/dev/null || curl -fsSL https://get.docker.com | sh
-docker compose version || apt install -y docker-compose-plugin
-
-# 2.3 Set up SSH key auth (kills password attacks)
+# 2.2 — Add your laptop's SSH public key for key-based login
 mkdir -p ~/.ssh && chmod 700 ~/.ssh
-# Paste your laptop's id_ed25519.pub into ~/.ssh/authorized_keys, then:
-sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-systemctl reload sshd
-
-# 2.4 Firewall — open only what we need
-ufw allow 22/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw --force enable
+nano ~/.ssh/authorized_keys      # paste your laptop's ~/.ssh/id_ed25519.pub
+chmod 600 ~/.ssh/authorized_keys
 ```
 
-### 3. Domain + DNS
+Docker, the firewall, fail2ban, and a non-root `deploy` user are all installed by the bootstrap script in Step 4 — no need to do them by hand here.
 
-In your domain registrar's DNS panel (HostLelo's, GoDaddy, Namecheap, whoever) add **two A records** pointing at the VPS IP:
+### Step 3 — Point your domain at the server (DNS)
+
+In your domain registrar's DNS panel, add **two A records** pointing at the VPS IP:
 
 | Host | Type | Value | TTL |
 |---|---|---|---|
 | `api.yourdomain.com` | A | `<your-vps-ip>` | 300 |
 | `admin.yourdomain.com` | A | `<your-vps-ip>` | 300 |
 
-Verify after a few minutes:
+Wait a few minutes, then confirm **both** resolve before continuing — SSL issuance in Step 5 fails otherwise:
 
 ```bash
-dig api.yourdomain.com +short    # should print your VPS IP
-dig admin.yourdomain.com +short  # same
+dig api.yourdomain.com +short      # must print your VPS IP
+dig admin.yourdomain.com +short    # must print your VPS IP
 ```
 
-Don't issue the SSL cert until both records resolve.
-
-### 4. Clone + configure the project
+### Step 4 — Get the code and configure it
 
 ```bash
+# 4.1 — Clone the repo
 git clone https://github.com/your-org/apni-kirana-store.git /opt/apni-kirana-store
 cd /opt/apni-kirana-store
 
-# Optional one-shot bootstrap — installs UFW rules, fail2ban, deploy user
+# 4.2 — One-shot server bootstrap. Installs Docker + Compose, the UFW firewall
+#        (opens 22/80/443 only), fail2ban, a non-root `deploy` user, and
+#        unattended security updates. Idempotent — safe to re-run.
 bash scripts/setup-vps.sh
 
-# Production env
+# 4.3 — Create the production env file from the template
 cp .env.prod.example .env.prod
-nano .env.prod    # see [Environment](#environment) below for what to fill
+nano .env.prod                   # fill in real values — see "Environment" below
 chmod 600 .env.prod
 ```
 
-**Replace the placeholder domain in the nginx configs.** The committed nginx
-files use `api.yourdomain.com` / `admin.yourdomain.com` as placeholders:
+**Set a shell shortcut for the rest of this guide.** Every Compose command must
+pass `--env-file .env.prod` so the Redis password and Postgres settings get
+substituted into the Compose file correctly. Add a persistent alias so you
+can't forget it:
 
 ```bash
-# One-shot rewrite — substitute YOUR domain everywhere
-sed -i 's/api\.yourdomain\.com/api.YOURDOMAIN.com/g'   nginx/conf.d/*.conf
-sed -i 's/admin\.yourdomain\.com/admin.YOURDOMAIN.com/g' nginx/conf.d/*.conf
-
-# Verify
-grep -h "server_name" nginx/conf.d/*.conf
+echo "alias dc='docker compose --env-file .env.prod -f docker-compose.prod.yml'" >> ~/.bashrc
+source ~/.bashrc
 ```
 
-### 5. SSL + first start + smoke test
+From here on, **`dc`** means `docker compose --env-file .env.prod -f docker-compose.prod.yml`.
+
+**Replace the placeholder domain in the Nginx configs.** The committed files in
+`nginx/conf.d/` ship with `api.yourdomain.com` / `admin.yourdomain.com` as
+placeholders:
 
 ```bash
-# 5.1 Issue Let's Encrypt cert (uses certbot inside the nginx container)
+sed -i 's/api\.yourdomain\.com/api.YOURDOMAIN.com/g'     nginx/conf.d/*.conf
+sed -i 's/admin\.yourdomain\.com/admin.YOURDOMAIN.com/g' nginx/conf.d/*.conf
+grep -h server_name nginx/conf.d/*.conf      # verify it now shows YOUR domain
+```
+
+### Step 5 — Issue SSL certificates
+
+```bash
 bash scripts/init-ssl.sh \
   api.yourdomain.com \
   admin.yourdomain.com \
   you@yourdomain.com
-
-# 5.2 Boot the stack
-docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml exec backend npx prisma migrate deploy
-
-# 5.3 Create the first admin user (production has NO seed — by design)
-docker compose -f docker-compose.prod.yml exec postgres psql -U postgres \
-  -d apni_kirana_store -c \
-  "INSERT INTO \"User\" (id, name, phone, role, \"isActive\", \"createdAt\", \"updatedAt\")
-   VALUES ('cl' || md5(random()::text || clock_timestamp()::text), 'Admin User',
-           '9999999999', 'ADMIN', true, NOW(), NOW())
-   ON CONFLICT (phone) DO NOTHING;"
-
-# 5.4 Smoke test
-curl https://api.yourdomain.com/health     # → { "status": "ok" }
-open https://admin.yourdomain.com          # → admin login screen
 ```
 
-> ⚠️ **Do NOT run `prisma db seed` in production.** The seed file creates 11
-> fake users (Zaheer / Baqala / Chotu / etc. with `8888888881`-style phone
-> numbers) — useful in dev, dangerous in prod.
+This serves the ACME HTTP-01 challenge on port 80, calls Certbot for both
+hostnames, and installs the certificates. The `certbot` container then
+auto-renews them on a 12-hour loop.
 
-You're live. Log in to admin via the phone you just inserted (replace the
-`9999999999` placeholder above with **your real phone**). The OTP arrives via
-your configured `SMS_PROVIDER` (or in backend logs if `CONSOLE`). Test the
-full order flow from the customer app pointed at this API to confirm
-matching / notifications / chat all work in production mode.
+### Step 6 — Start the stack
 
-### 6. Day-2 operations
+```bash
+# 6.1 — Build the images and start all six containers
+dc up -d --build
+
+# 6.2 — Apply the database migrations
+dc run --rm backend npx prisma migrate deploy
+
+# 6.3 — Check everything is up
+dc ps
+```
+
+Every service should show `running`, and `healthy` where it has a healthcheck
+(`postgres`, `redis`, `backend`).
+
+### Step 7 — Create the first admin user
+
+Production ships with **no seed data** (by design — the seed creates fake test
+users). Insert one real admin row so you can log in. Replace `9999999999` with
+**your real phone number**, and make sure `-U` / `-d` match `POSTGRES_USER` /
+`POSTGRES_DB` in your `.env.prod`:
+
+```bash
+dc exec -T postgres psql -U postgres -d apni_kirana_store -c \
+ "INSERT INTO \"User\" (id, name, phone, role, \"isActive\", \"createdAt\", \"updatedAt\")
+  VALUES ('cl' || md5(random()::text || clock_timestamp()::text),
+          'Admin User', '9999999999', 'ADMIN', true, NOW(), NOW())
+  ON CONFLICT (phone) DO NOTHING;"
+```
+
+> ⚠️ **Never run `prisma db seed` in production.** It inserts 11 fake users
+> (phones like `8888888881`) — useful in dev, dangerous in prod.
+
+### Step 8 — Smoke test — confirm it's live
+
+```bash
+curl https://api.yourdomain.com/health      # → {"status":"ok"}
+```
+
+Then open `https://admin.yourdomain.com` in a browser — you should see the admin
+login screen. Log in with the phone you inserted in Step 7. The OTP arrives via
+your configured `SMS_PROVIDER` (or in the backend logs if it's still `CONSOLE`):
+
+```bash
+dc logs -f backend | grep OTP
+```
+
+Finally, point a customer app at `https://api.yourdomain.com` and place a test
+order to confirm matching, notifications, and chat all work in production mode.
+
+You're live. 🎉
+
+### Day-2 operations
 
 | Task | Command |
 |---|---|
-| View live logs | `docker compose -f docker-compose.prod.yml logs -f --tail=200` |
-| Deploy a new commit | `bash scripts/deploy.sh` (auto-backs up DB → git pull → rebuild → migrate → rolling restart) |
-| Restart one service | `docker compose -f docker-compose.prod.yml restart backend` |
-| psql shell | `docker compose -f docker-compose.prod.yml exec postgres psql -U postgres -d apni_kirana_store` |
-| Manual DB backup | `docker compose -f docker-compose.prod.yml exec postgres pg_dumpall -U postgres \| gzip > /opt/backups/$(date +%F).sql.gz` |
-| Tail just OTPs | `docker compose -f docker-compose.prod.yml logs -f backend \| grep OTP` |
+| View live logs (all services) | `dc logs -f --tail=200` |
+| Logs for one service | `dc logs -f backend` |
+| Tail just OTPs | `dc logs -f backend \| grep OTP` |
+| Deploy a new commit | `bash scripts/deploy.sh` (DB backup → `git pull` → rebuild → migrate → rolling restart) |
+| Restart one service | `dc restart backend` |
+| Container status | `dc ps` |
+| psql shell | `dc exec postgres psql -U postgres -d apni_kirana_store` |
+| Manual DB backup | `dc exec -T postgres pg_dump -U postgres apni_kirana_store \| gzip > backup-$(date +%F).sql.gz` |
+| Stop everything | `dc down` (data survives — it lives in named volumes) |
 
-### HostLelo-specific gotchas
+`scripts/deploy.sh` already passes `--env-file .env.prod` internally, so day-2
+deploys need no special flags.
 
-- **Mumbai latency is real**: pick India region for India users. UAE region adds ~80 ms RTT — only meaningful if you actually serve UAE customers
-- **Snapshots**: Cloud VPS plans include "1 free snapshot". Use it before any risky upgrade. Set up daily `pg_dump` separately — snapshots are point-in-time of the whole disk, slow to restore item-level
-- **Bandwidth**: VDS plans bundle ~32 TB/mo, Cloud VPS varies — at MVP scale you'll use <100 GB/mo. Don't worry about it
-- **DDoS protection**: included at all data centers per HostLelo's homepage. No extra config needed for the basic level
-- **Managed support tiers**: VDS/Dedicated plans optionally upgrade to **Semi-Managed (+$49/mo)** or **Fully-Managed (+$149/mo)**. Skip these for MVP — you don't need someone managing the box for 5 containers. Reach for them when you have multiple servers
-- **Reverse DNS / PTR**: only matters if you send email directly from the VPS (we don't — email goes via 2Factor / MSG91 / Twilio APIs). Skip
-- **Outgoing port 25**: blocked by default on most providers including HostLelo. Doesn't affect us — we don't send mail
-- **Their support tagline**: "2 min average response" via 24/7 live chat. Useful when the box itself misbehaves; not for app-level help. Phone: +91 9892278936, email: support@hostlelo.com
+### Hosting gotchas
 
-## DNS setup
-
-Point two A records at the VPS public IP:
-
-| Host | Type | Value |
-| --- | --- | --- |
-| `api.yourdomain.com` | A | `203.0.113.10` |
-| `admin.yourdomain.com` | A | `203.0.113.10` |
-
-Wait for propagation (`dig api.yourdomain.com +short`) before issuing the cert.
-
-## VPS bootstrap
-
-SSH in as root, then:
-
-```bash
-git clone https://github.com/your-org/apni-kirana-store.git /opt/apni-kirana-store
-cd /opt/apni-kirana-store
-bash scripts/setup-vps.sh
-```
-
-The script installs:
-
-- Docker Engine + Compose plugin
-- UFW firewall (open 22, 80, 443)
-- fail2ban with the SSH jail enabled
-- A non-root `deploy` user with sudo + docker group
-- Unattended security updates
-
-It is idempotent — safe to re-run.
+- **Always pass `--env-file .env.prod`.** The Compose file substitutes the Redis
+  password and Postgres user/db from it. Run a plain `docker compose -f
+  docker-compose.prod.yml ...` and those values come out blank — Redis ends up
+  with no password and the Postgres healthcheck fails. The `dc` alias from
+  Step 4 and `scripts/deploy.sh` both handle this; only watch out if you type a
+  raw `docker compose` command.
+- **Region matters.** This is a real-time app (Socket.io order tracking). Host
+  in India — a US/EU region adds 200–300 ms to every request.
+- **Snapshots are whole-disk, not item-level.** Take one before a risky upgrade,
+  but also keep the daily `pg_dump` (see [Backups](#backups)) for fast,
+  granular restores.
+- **Bandwidth is a non-issue.** The app moves small JSON payloads — you'll use a
+  tiny fraction of the 32 TB/mo allowance.
+- **Outgoing port 25 is usually blocked** by VPS providers. Doesn't affect us —
+  all SMS and push goes through provider APIs, not direct mail.
 
 ## Environment
+
+`.env.prod` holds every production secret. Create it from the template (this is
+Step 4.3 of the walkthrough above):
 
 ```bash
 cp .env.prod.example .env.prod
 nano .env.prod
+chmod 600 .env.prod
 ```
 
-Required values:
+What to put in each value:
 
-| Var | Source |
-| --- | --- |
-| `POSTGRES_PASSWORD` | Generate with `openssl rand -base64 24` |
-| `JWT_ACCESS_SECRET` | `openssl rand -base64 48` |
-| `JWT_REFRESH_SECRET` | `openssl rand -base64 48` |
-| `SMS_PROVIDER` | `CONSOLE` (dev), `TWOFACTOR` (free 100/day, India), `MSG91` (~₹0.18/OTP, India), `TWILIO` (international) — see [SMS OTP setup](#sms-otp-setup) below |
-| `TWOFACTOR_API_KEY` | 2Factor.in dashboard (only when SMS_PROVIDER=TWOFACTOR) |
-| `MSG91_AUTH_KEY` / `MSG91_TEMPLATE_ID` | MSG91 dashboard (only when SMS_PROVIDER=MSG91) |
-| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | Twilio console (only when SMS_PROVIDER=TWILIO) |
-| `CLOUDINARY_URL` | Cloudinary dashboard |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase console → Project settings → Service accounts (paste full JSON) |
-| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | Razorpay dashboard |
-| `ADMIN_PUBLIC_URL` | `https://admin.yourdomain.com` |
-| `API_PUBLIC_URL` | `https://api.yourdomain.com` |
+| Var | What to put | Notes |
+| --- | --- | --- |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | DB name, user, and a strong password | Generate the password with `openssl rand -base64 24` |
+| `DATABASE_URL` | `postgresql://<user>:<password>@postgres:5432/<db>` | **Must embed the same user/password/db as above.** Host is `postgres` (the container name) |
+| `REDIS_PASSWORD` | A strong password | `openssl rand -base64 24` |
+| `REDIS_URL` | `redis://:<REDIS_PASSWORD>@redis:6379` | **Must embed the same password.** Host is `redis` |
+| `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | Two *different* random strings | `openssl rand -base64 48` for each |
+| `SMS_PROVIDER` | `TWOFACTOR` (free 100/day, India), `MSG91` (~₹0.18/OTP), or `TWILIO` | Never `CONSOLE` in prod. See [SMS OTP setup](#sms-otp-setup) |
+| `TWOFACTOR_API_KEY` / `MSG91_*` / `TWILIO_*` | Credentials for the provider you chose | Only the chosen provider's block needs values |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | From the Cloudinary dashboard | Image uploads |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | `npx web-push generate-vapid-keys --json` | Admin browser push |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | From the Razorpay dashboard | Payments |
+| `FIREBASE_PROJECT_ID` / `FIREBASE_PRIVATE_KEY` / `FIREBASE_CLIENT_EMAIL` | From a Firebase service account | Optional — only for raw FCM tokens. Expo Push needs none of this |
+| `CORS_ORIGIN` | `https://admin.yourdomain.com` | Locks the API to the admin origin |
+| `NEXT_PUBLIC_API_URL` | `https://api.yourdomain.com` | Baked into the admin build — the URL the dashboard calls |
 
-Permissions: `chmod 600 .env.prod`.
+> The database and Redis passwords each appear **twice** — once as the raw
+> value and once embedded in `DATABASE_URL` / `REDIS_URL`. If you change one,
+> change both, or the backend won't be able to connect.
 
 ## SMS OTP setup
 
@@ -295,7 +339,7 @@ Best for early stage / beta. Genuinely free up to 100 OTP/day, no credit card.
    TWOFACTOR_API_KEY=<your-uuid>
    TWOFACTOR_TEMPLATE=OTP1   # or your DLT template name
    ```
-6. Restart backend: `docker compose -f docker-compose.prod.yml restart backend`
+6. Restart backend: `dc restart backend`
 7. Test: hit `POST /api/v1/auth/send-otp` with your real phone — you'll get
    the SMS within ~5 seconds.
 
@@ -350,66 +394,47 @@ Watch with `docker compose logs -f backend | grep OTP`.
 - **Dev (`NODE_ENV=development`):** failures silently fall back to console
   so the local dev flow never breaks.
 
-## TLS certificates
+## Updating production
+
+The initial install — SSL, first start, smoke test — is covered in
+[the step-by-step walkthrough](#deploying-to-the-hypervps--step-by-step) above.
+To deploy a **new commit** afterwards, from `/opt/apni-kirana-store` on the VPS:
 
 ```bash
-bash scripts/init-ssl.sh api.yourdomain.com admin.yourdomain.com you@yourdomain.com
+bash scripts/deploy.sh
 ```
 
-This:
+The script:
 
-1. Spins up a temporary Nginx serving HTTP-01 challenges.
-2. Calls Certbot for both hostnames.
-3. Installs the certs into `./certs/` and configures auto-renew via a daily cron.
+1. `pg_dump`s the current DB to `backups/db_<timestamp>.sql` (14-day rolling retention).
+2. `git pull`s the latest code.
+3. Rebuilds the `backend` and `admin` images.
+4. Runs `prisma migrate deploy`.
+5. Brings the stack up with a healthcheck-gated restart.
 
-## First start
+It already passes `--env-file .env.prod` internally, so no extra flags are needed.
 
-```bash
-docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml exec backend npx prisma migrate deploy
-docker compose -f docker-compose.prod.yml logs -f
-```
-
-Smoke test:
-
-```bash
-curl https://api.yourdomain.com/health
-# { "status": "ok" }
-```
-
-## Updates
-
-```bash
-./scripts/deploy.sh
-```
-
-The deploy script:
-
-1. `pg_dump` the current DB to `/opt/apni-kirana-store/backups/<timestamp>.sql.gz` (rolling 14-day retention).
-2. `git pull`.
-3. `docker compose -f docker-compose.prod.yml build`.
-4. `docker compose -f docker-compose.prod.yml exec -T backend npx prisma migrate deploy`.
-5. Rolling restart of `backend`, then `admin` (each waits for healthcheck before next).
-
-Rollback: re-run `./scripts/deploy.sh <git-sha>` to redeploy a known-good commit; restore DB from the latest pre-deploy dump if needed.
+**Rollback:** restore the latest pre-deploy dump from `backups/`, then
+`git checkout <last-good-sha>` and re-run `bash scripts/deploy.sh`.
 
 ## Backups
 
-Pre-deploy dumps are automatic. For continuous protection add a daily cron:
+`scripts/deploy.sh` already dumps the DB before every deploy. For continuous
+protection add a daily cron (run `crontab -e` on the VPS):
 
 ```cron
-0 2 * * * /usr/bin/docker exec apni-postgres pg_dumpall -U postgres | gzip > /opt/backups/$(date +\%F).sql.gz && \
-          aws s3 cp /opt/backups/$(date +\%F).sql.gz s3://apni-kirana-backups/
+0 2 * * * cd /opt/apni-kirana-store && docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres pg_dump -U postgres apni_kirana_store | gzip > /opt/backups/$(date +\%F).sql.gz && aws s3 cp /opt/backups/$(date +\%F).sql.gz s3://apni-kirana-backups/
 ```
 
-Pair with S3 lifecycle to delete beyond 30 days.
+Match `-U postgres` / `apni_kirana_store` to your `.env.prod`. Pair with an S3
+lifecycle rule to delete dumps beyond 30 days.
 
 ## Monitoring
 
 For an MVP, tail the logs:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs -f --tail=200
+dc logs -f --tail=200      # dc = the alias set up in Step 4
 ```
 
 Once you have users, plug in:
@@ -486,37 +511,30 @@ Android works out of the box without any extra setup; Expo Push relays through G
 
 ## Cost estimate (monthly, INR equivalents in brackets)
 
-### Beta / pilot (~0–500 users, 1 city)
+### Beta / launch (~0–10K users, 1–3 cities) — the HyperVPS
 
 | Item | Cost |
 | --- | --- |
-| HostLelo Multi-Region Cloud VPS (4 vCPU / 4 GB / 100 GB, Mumbai) | $16.52 (~₹1,450) |
-| 2Factor.in SMS (free tier) | ₹0 (up to 100 OTP/day) |
-| Cloudinary | Free tier (25 GB storage, 25 GB bandwidth) |
+| HyperVPS (6 vCPU / 12 GB / 150 GB NVMe, India) | ~₹1,500–2,500 |
+| SMS — 2Factor.in free tier, or MSG91 (~₹0.18/OTP) once you exceed 100/day | ₹0 → ~₹540 |
+| Cloudinary | Free tier (25 GB storage + bandwidth) |
 | Expo Push (mobile) | Free |
 | Web Push for admin (VAPID) | Free |
 | Razorpay | per-transaction fee (~2% UPI/cards) |
 | Domain | ~₹100 |
-| **Total fixed** | **~₹1,550 / mo** |
+| **Total fixed** | **~₹1,600–3,100 / mo** |
 
-### Public launch (~500–10K users, 2-3 cities)
-
-| Item | Cost |
-| --- | --- |
-| HostLelo AMD EPYC VDS (~6 vCPU / 12 GB, India) | ~$50–60 (~₹4,500) |
-| MSG91 SMS (~₹0.18 / OTP × ~3K OTPs/mo) | ~₹540 |
-| Cloudinary Pro (if free tier exceeded) | $89 (~₹7,800) |
-| Razorpay | per-transaction fee (~2%) |
-| Domain | ~₹100 |
-| **Total fixed** | **~₹5,200–₹13,000 / mo** depending on Cloudinary tier |
+The HyperVPS carries you from a closed pilot through public launch — there's no
+mid-stage server upgrade. If image volume outgrows Cloudinary's free tier, add
+Cloudinary Pro (~$89 / ~₹7,800/mo).
 
 ### Scale (10K+ users, 5+ cities)
 
 | Item | Cost |
 | --- | --- |
-| HostLelo Dedicated Server (Ryzen 5950X, 128 GB) | $50.12 (~₹4,360) |
-| Semi-managed support add-on | $49 (~₹4,260) |
-| Separate Postgres VDS | ~$30 (~₹2,600) |
+| Dedicated app server (8+ cores, 32+ GB RAM) | ~₹4,000–6,000 |
+| Optional managed-support add-on | ~₹4,000 |
+| Separate Postgres VPS/server | ~₹2,500–4,000 |
 | Cloudinary, MSG91, Razorpay | as above + linear with volume |
 | **Total fixed** | **~₹15,000+ / mo** before transaction fees |
 

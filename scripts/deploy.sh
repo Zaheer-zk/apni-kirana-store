@@ -93,7 +93,7 @@ if [[ "${SKIP_BACKUP}" == false ]]; then
     BACKUP_FILE="${BACKUP_DIR}/db_${TIMESTAMP}.sql"
 
     echo "  Dumping database to ${BACKUP_FILE} ..."
-    if docker compose -f "${COMPOSE_FILE}" exec -T postgres \
+    if docker compose --env-file .env.prod -f "${COMPOSE_FILE}" exec -T postgres \
         pg_dump -U postgres apni_kirana_store > "${BACKUP_FILE}"; then
         echo "  Backup saved: ${BACKUP_FILE} ($(du -sh "${BACKUP_FILE}" | cut -f1))"
     else
@@ -115,19 +115,19 @@ git pull origin main
 # 4. Build new Docker images (no cache to ensure fresh layers)
 # ---------------------------------------------------------------------------
 print_section "Building backend and admin images (--no-cache)"
-docker compose -f "${COMPOSE_FILE}" build --no-cache backend admin
+docker compose --env-file .env.prod -f "${COMPOSE_FILE}" build --no-cache backend admin
 
 # ---------------------------------------------------------------------------
 # 5. Run database migrations
 # ---------------------------------------------------------------------------
 print_section "Running Prisma database migrations"
-docker compose -f "${COMPOSE_FILE}" run --rm backend npx prisma migrate deploy
+docker compose --env-file .env.prod -f "${COMPOSE_FILE}" run --rm backend npx prisma migrate deploy
 
 # ---------------------------------------------------------------------------
 # 6. Rolling restart — bring up new containers, remove orphans
 # ---------------------------------------------------------------------------
 print_section "Starting updated containers"
-docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans
+docker compose --env-file .env.prod -f "${COMPOSE_FILE}" up -d --remove-orphans
 
 # ---------------------------------------------------------------------------
 # 7. Health check — wait for the backend to be ready
@@ -138,13 +138,13 @@ sleep 10
 echo "  Running health check against backend..."
 # The health endpoint is proxied by nginx, but we hit the backend directly
 # via the docker network to avoid depending on nginx being healthy too.
-if docker compose -f "${COMPOSE_FILE}" exec -T backend \
+if docker compose --env-file .env.prod -f "${COMPOSE_FILE}" exec -T backend \
     curl -sf http://localhost:3000/health > /dev/null; then
     echo -e "  ${GREEN}Health check passed.${NC}"
 else
     print_error "Health check failed after deployment."
     echo "  Check container logs:"
-    echo "    docker compose -f ${COMPOSE_FILE} logs --tail=50 backend"
+    echo "    docker compose --env-file .env.prod -f ${COMPOSE_FILE} logs --tail=50 backend"
     exit 1
 fi
 
@@ -163,5 +163,5 @@ echo    "  Finished at: $(date)"
 echo -e "==============================================${NC}"
 echo
 echo "  Running containers:"
-docker compose -f "${COMPOSE_FILE}" ps
+docker compose --env-file .env.prod -f "${COMPOSE_FILE}" ps
 echo

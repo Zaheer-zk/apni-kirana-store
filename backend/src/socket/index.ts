@@ -36,10 +36,15 @@ async function socketAuthMiddleware(
 /**
  * Registers all Socket.io event handlers and middleware.
  */
-export function setupSocket(io: Server): void {
-  io.use(socketAuthMiddleware);
+// The live Socket.io server instance. setupSocket() assigns it at boot;
+// services/routes import { io } from '../socket' to emit real-time events.
+export let io: Server | undefined;
 
-  io.on('connection', (socket: Socket) => {
+export function setupSocket(server: Server): void {
+  io = server;
+  server.use(socketAuthMiddleware);
+
+  server.on('connection', (socket: Socket) => {
     const userId = socket.data.userId as string;
 
     // Each user joins a personal room for targeted notifications

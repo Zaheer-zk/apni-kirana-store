@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import { useStorePortalStore } from '@/store/store.store';
 import { STORAGE_KEYS } from '@/lib/storage-keys';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { colors } from '@/constants/theme';
 import {
   attachNotificationListeners,
@@ -115,7 +116,9 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <StatusBar style="dark" backgroundColor={colors.background} />
-        <RootLayoutNav />
+        <ErrorBoundary>
+          <RootLayoutNav />
+        </ErrorBoundary>
       </SafeAreaProvider>
     </QueryClientProvider>
   );

@@ -56,3 +56,28 @@ export enum PaymentStatus {
   FAILED = 'FAILED',
   REFUNDED = 'REFUNDED',
 }
+
+// Mirrors the remaining Prisma enums in backend/prisma/schema.prisma so the
+// apps can import them from @aks/shared instead of redeclaring them.
+export enum StoreCategory {
+  GROCERY = 'GROCERY',
+  PHARMACY = 'PHARMACY',
+  GENERAL = 'GENERAL',
+  RESTAURANT = 'RESTAURANT',
+}
+
+export enum VehicleType {
+  BIKE = 'BIKE',
+  SCOOTER = 'SCOOTER',
+  CAR = 'CAR',
+}
+
+export enum DiscountType {
+  FLAT = 'FLAT',
+  PERCENT = 'PERCENT',
+}
+
+export enum SupportThreadStatus {
+  OPEN = 'OPEN',
+  RESOLVED = 'RESOLVED',
+}

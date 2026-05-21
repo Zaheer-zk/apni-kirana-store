@@ -8,6 +8,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { Ionicons } from '@expo/vector-icons';
 import { useDriverStore } from '@/store/driver.store';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import {
   attachNotificationListeners,
   registerForPushNotifications,
@@ -146,7 +147,9 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <StatusBar style="dark" backgroundColor={colors.background} />
-        <RootLayoutNav />
+        <ErrorBoundary>
+          <RootLayoutNav />
+        </ErrorBoundary>
       </SafeAreaProvider>
     </QueryClientProvider>
   );

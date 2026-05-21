@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/prisma';
 import { validate } from '../middleware/validate.middleware';
 import { authenticate } from '../middleware/auth.middleware';
+import { otpLimiter } from '../middleware/rate-limit.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { generateOtp, storeOtp, verifyOtp } from '../utils/otp';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
@@ -36,7 +37,7 @@ const refreshSchema = z.object({
 
 // ─── POST /send-otp ───────────────────────────────────────────────────────────
 
-router.post('/send-otp', validate(sendOtpSchema), async (req: Request, res: Response) => {
+router.post('/send-otp', otpLimiter, validate(sendOtpSchema), async (req: Request, res: Response) => {
   try {
     const { phone } = req.body as { phone: string };
 
@@ -53,7 +54,7 @@ router.post('/send-otp', validate(sendOtpSchema), async (req: Request, res: Resp
 
 // ─── POST /verify-otp ─────────────────────────────────────────────────────────
 
-router.post('/verify-otp', validate(verifyOtpSchema), async (req: Request, res: Response) => {
+router.post('/verify-otp', otpLimiter, validate(verifyOtpSchema), async (req: Request, res: Response) => {
   try {
     const { phone, otp, role, name } = req.body as {
       phone: string;

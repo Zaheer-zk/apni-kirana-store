@@ -13,6 +13,7 @@ import {
   registerForPushNotifications,
 } from '@/lib/notifications';
 import { TransitionOverlay } from '@/components/TransitionOverlay';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { STORAGE_KEYS } from '@/lib/storage-keys';
 
 const queryClient = new QueryClient({
@@ -114,6 +115,7 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <StatusBar style="dark" backgroundColor={colors.background} />
+        <ErrorBoundary>
         <AuthGate>
           <Stack
             screenOptions={{
@@ -157,6 +159,7 @@ export default function RootLayout() {
         </AuthGate>
         {/* Lives outside AuthGate so it covers everything during route changes. */}
         <TransitionOverlay />
+        </ErrorBoundary>
       </SafeAreaProvider>
     </QueryClientProvider>
   );

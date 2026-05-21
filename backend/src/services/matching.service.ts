@@ -244,13 +244,13 @@ async function cascadeToBestStore(orderId: string, scored: ScoredStore[], exclud
   // Resolve item count + total for the templated message
   const orderForCount = await prisma.order.findUnique({
     where: { id: orderId },
-    select: { totalAmount: true, items: { select: { quantity: true } } },
+    select: { total: true, items: { select: { qty: true } } },
   });
-  const itemCount = orderForCount?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
+  const itemCount = orderForCount?.items.reduce((sum, i) => sum + i.qty, 0) ?? 0;
   await notify('STORE_NEW_ORDER', best.ownerId, {
     orderShort: orderId.slice(-6),
     itemCount,
-    total: orderForCount?.totalAmount ?? 0,
+    total: orderForCount?.total ?? 0,
     orderId,
   });
   io?.to(`user:${best.ownerId}`).emit('order:offered', { orderId });

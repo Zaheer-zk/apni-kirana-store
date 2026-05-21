@@ -8,6 +8,7 @@ import { Server } from 'socket.io';
 
 import { config } from './config/env';
 import { errorHandler } from './middleware/error.middleware';
+import { globalLimiter } from './middleware/rate-limit.middleware';
 import { setupSocket } from './socket';
 import { startWorkers } from './queues';
 import { runChatRetention } from './services/chat.service';
@@ -37,7 +38,9 @@ const server = http.createServer(app);
 
 // ─── Socket.io ────────────────────────────────────────────────────────────────
 
-export const io = new Server(server, {
+// The io instance is owned by the socket module — setupSocket() stores it
+// there so services/routes can `import { io } from './socket'`.
+const io = new Server(server, {
   cors: {
     origin: config.cors.origin,
     methods: ['GET', 'POST'],
@@ -66,6 +69,9 @@ app.get('/health', (_req, res) => {
 });
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
+
+// Global rate limit on the whole API surface (health check stays exempt).
+app.use('/api/v1', globalLimiter);
 
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/stores', storesRouter);

@@ -4,6 +4,10 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-21 — Preferred stores
+
+- [x] **Admin can flag a store as "preferred"** — `Store.isPreferred` boolean (migration `20260521_store_preferred`), toggled via `PUT /admin/stores/:id/preferred`. Mirrors the wholesaler-flag pattern. The matching engine gives preferred stores an additive score boost (`PREFERRED_STORE_BOOST = 0.15` in `matching.service.ts`) so they outrank equivalent stores — a boost, not an exclusive filter, so orders still match if no preferred store carries the items. Admin Stores page shows a "Preferred" badge + a Mark/Unset action.
+
 ### 2026-05-21 — Wholesaler restock orders (B2B)
 
 Store owners can now restock from wholesalers/workshops. A "wholesaler" is a `Store` with `isWholesaler = true` (admin sets the flag). A retail store owner places a **RESTOCK** order; the **matching engine** picks the best in-range wholesaler (same engine as customer orders), then the accept → driver → delivery lifecycle moves the stock to the buyer's store.

@@ -39,6 +39,9 @@ import { getSettings } from './settings.service';
 
 const MIN_ITEM_MATCH_PERCENT = 0.6;
 const TOP_N_BROADCAST = 5;
+// Additive score bump for admin-flagged "preferred" stores — they rank above
+// equivalent stores but a preferred store still has to carry the items.
+const PREFERRED_STORE_BOOST = 0.15;
 // SEARCH_RADIUS_KM, STORE_RETRY_DELAY_MS, and MATCHING_MODE all come from
 // PlatformSetting via getSettings() — they used to be env-pinned at module
 // load, which meant changing them required a restart. Now an admin can tune
@@ -53,6 +56,7 @@ interface ScoredStore {
   matchRatio: number;
   matchedItemCount: number;
   rating: number;
+  isPreferred: boolean;
 }
 
 /**
@@ -166,12 +170,19 @@ async function rankStores(
     const proximityScore = Math.max(0, 1 - distanceKm / normalizationKm);
     // Rating score: 0..1 from 0..5 stars
     const ratingScore = (store.rating ?? 0) / 5;
-    // Composite: majority of items first, then proximity, then small rating boost
-    const score = matchRatio * 0.6 + proximityScore * 0.3 + ratingScore * 0.1;
+    // Composite: majority of items first, then proximity, then small rating boost.
+    // Admin-flagged "preferred" stores get an additive bump so they outrank
+    // equivalent stores.
+    const score =
+      matchRatio * 0.6 +
+      proximityScore * 0.3 +
+      ratingScore * 0.1 +
+      (store.isPreferred ? PREFERRED_STORE_BOOST : 0);
 
     scored.push({
       storeId: store.id, ownerId: store.owner.id, score, distanceKm,
       matchRatio, matchedItemCount, rating: store.rating ?? 0,
+      isPreferred: store.isPreferred,
     });
   }
 

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Building2 } from 'lucide-react';
+import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Building2, Star } from 'lucide-react';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
@@ -24,6 +24,7 @@ interface StoreRow {
   city: string;
   rating: number;
   isWholesaler: boolean;
+  isPreferred: boolean;
   ownerName: string;
   ownerPhone: string;
   itemCount: number;
@@ -39,6 +40,7 @@ interface BackendStore {
   city: string;
   rating: number;
   isWholesaler?: boolean;
+  isPreferred?: boolean;
   createdAt: string;
   owner: { id: string; name: string | null; phone: string };
   _count?: { items: number; orders: number };
@@ -70,6 +72,7 @@ export default function StoresPage() {
         city: s.city,
         rating: s.rating ?? 0,
         isWholesaler: s.isWholesaler ?? false,
+        isPreferred: s.isPreferred ?? false,
         ownerName: s.owner?.name ?? 'Unnamed',
         ownerPhone: s.owner?.phone ?? '',
         itemCount: s._count?.items ?? 0,
@@ -102,6 +105,14 @@ export default function StoresPage() {
     },
   });
 
+  const preferredMutation = useMutation({
+    mutationFn: ({ storeId, isPreferred }: { storeId: string; isPreferred: boolean }) =>
+      api.put(`/api/v1/admin/stores/${storeId}/preferred`, { isPreferred }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-stores'], refetchType: 'all' });
+    },
+  });
+
   const filtered = (Array.isArray(data) ? data : []).filter((s) =>
     s.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -117,6 +128,11 @@ export default function StoresPage() {
             {s.isWholesaler && (
               <span className="shrink-0 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
                 Wholesaler
+              </span>
+            )}
+            {s.isPreferred && (
+              <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                Preferred
               </span>
             )}
           </div>
@@ -181,6 +197,15 @@ export default function StoresPage() {
                 loading={wholesalerMutation.isPending}
                 onClick={() =>
                   wholesalerMutation.mutate({ storeId: s.id, isWholesaler: !s.isWholesaler })
+                }
+              />
+              <ActionButton
+                label={s.isPreferred ? 'Unset preferred' : 'Mark preferred'}
+                icon={<Star className="h-3.5 w-3.5" />}
+                variant={s.isPreferred ? 'warning' : 'neutral'}
+                loading={preferredMutation.isPending}
+                onClick={() =>
+                  preferredMutation.mutate({ storeId: s.id, isPreferred: !s.isPreferred })
                 }
               />
               <ActionButton

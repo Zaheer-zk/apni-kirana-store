@@ -143,6 +143,7 @@ model Store {
   pincode      String
   status       StoreStatus   @default(PENDING_APPROVAL)
   isWholesaler Boolean       @default(false) // true = a wholesaler/workshop that retail stores restock from
+  isPreferred  Boolean       @default(false) // admin-flagged; gets a scoring boost in the matching engine
   openTime     String
   closeTime    String
   rating       Float         @default(0)

@@ -193,6 +193,33 @@ router.put('/stores/:id/wholesaler', async (req: Request, res: Response) => {
   }
 });
 
+// ─── PUT /stores/:id/preferred ────────────────────────────────────────────────
+// Flag (or unflag) a store as "preferred". Preferred stores get a scoring boost
+// in the matching engine so they are favoured when assigning orders.
+
+router.put('/stores/:id/preferred', async (req: Request, res: Response) => {
+  try {
+    const isPreferred = Boolean((req.body as { isPreferred?: unknown }).isPreferred);
+
+    const store = await prisma.store.findUnique({ where: { id: req.params['id'] } });
+    if (!store) return sendError(res, 'Store not found', 404);
+
+    const updated = await prisma.store.update({
+      where: { id: req.params['id'] },
+      data: { isPreferred },
+    });
+
+    return sendSuccess(
+      res,
+      updated,
+      isPreferred ? 'Store marked as preferred' : 'Store unmarked as preferred',
+    );
+  } catch (err) {
+    console.error('[Admin] toggle preferred error:', err);
+    return sendError(res, 'Failed to update preferred flag', 500);
+  }
+});
+
 // ─── GET /drivers ─────────────────────────────────────────────────────────────
 // Supports ?status=PENDING_APPROVAL|ACTIVE|ONLINE|OFFLINE|SUSPENDED
 

@@ -6,9 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SecureStore from 'expo-secure-store';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as TaskManager from 'expo-task-manager';
 import { useDriverStore } from '@/store/driver.store';
-import { LOCATION_TASK_NAME } from '@/lib/location';
 import {
   attachNotificationListeners,
   registerForPushNotifications,
@@ -73,15 +71,6 @@ function RootLayoutNav() {
       cancelled = true;
     };
   }, [setAuth]);
-
-  useEffect(() => {
-    // Background location task registration is handled in lib/location.ts
-    return () => {
-      TaskManager.isTaskRegisteredAsync(LOCATION_TASK_NAME).then(() => {
-        // Cleanup handled by stopLocationTracking
-      });
-    };
-  }, []);
 
   useEffect(() => {
     if (!isReady) return;

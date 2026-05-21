@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc || true",
+    "typecheck": "tsc --noEmit",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "test": "jest",

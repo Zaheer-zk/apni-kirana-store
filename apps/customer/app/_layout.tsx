@@ -86,18 +86,26 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return detach;
   }, [accessToken]);
 
-  if (!isReady) return <SplashScreen />;
+  // The Stack (children) must ALWAYS be mounted — otherwise a <Redirect>
+  // fires before any navigator exists ("route (auth) not handled"). So we
+  // render children + the redirect/splash as siblings, never instead of them.
+  if (!isReady) {
+    return (
+      <>
+        {children}
+        <SplashScreen />
+      </>
+    );
+  }
 
-  // Redirect based on auth status. The Stack still mounts so routing works.
   const inAuthGroup = pathname?.startsWith('/(auth)') || pathname === '/login';
-  if (!accessToken && !inAuthGroup) {
-    return <Redirect href="/(auth)/login" />;
-  }
-  if (accessToken && inAuthGroup) {
-    return <Redirect href="/(tabs)/home" />;
-  }
-
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {!accessToken && !inAuthGroup ? <Redirect href="/(auth)/login" /> : null}
+      {accessToken && inAuthGroup ? <Redirect href="/(tabs)/home" /> : null}
+    </>
+  );
 }
 
 export default function RootLayout() {
@@ -155,11 +163,12 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   splash: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.background,
     paddingHorizontal: spacing.xxl,
+    zIndex: 10,
   },
   splashIcon: {
     width: 96,

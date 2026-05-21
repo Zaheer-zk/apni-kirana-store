@@ -61,7 +61,7 @@ describe('POST /api/v1/orders', () => {
     expect(res.body.data.subtotal).toBe(100);
     expect(res.body.data.deliveryFee).toBe(30);
     expect(res.body.data.total).toBe(130);
-    expect(res.body.data.commission).toBe(5);
+    expect(res.body.data.commission).toBe(10); // 10% of ₹100 — platform default
     expect(res.body.data.customerId).toBe(user.id);
     expect(res.body.data.items.length).toBe(1);
   });

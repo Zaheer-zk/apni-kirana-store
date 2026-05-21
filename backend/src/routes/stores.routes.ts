@@ -38,6 +38,23 @@ router.post(
     try {
       const userId = req.user!.id;
 
+      // One operational role per account: only a plain CUSTOMER may register a
+      // store. Blocks flipping an existing driver/admin into a STORE_OWNER.
+      // Checked against the DB (not the JWT) so a stale token can't bypass it.
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      });
+      if (user && user.role !== 'CUSTOMER') {
+        return sendError(
+          res,
+          `This account is already registered as a ${user.role
+            .replace('_', ' ')
+            .toLowerCase()}. Use a different phone number to register a store.`,
+          409,
+        );
+      }
+
       // Check if user already owns a store
       const existing = await prisma.store.findUnique({ where: { ownerId: userId } });
       if (existing) {

@@ -20,6 +20,10 @@ CMD ["npm", "run", "dev"]
 
 # Stage 3: Build
 FROM deps AS builder
+# NEXT_PUBLIC_* vars are inlined into the client bundle at build time, so the
+# API URL must be present during `next build` — passed as a build arg.
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 WORKDIR /app
 COPY shared ./shared
 COPY apps/admin ./apps/admin

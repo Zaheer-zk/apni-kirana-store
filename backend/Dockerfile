@@ -32,6 +32,9 @@ FROM deps AS builder
 WORKDIR /app
 COPY shared ./shared
 COPY backend ./backend
+# Build the @aks/shared workspace — production runs compiled JS (shared/dist),
+# whereas dev resolves @aks/shared from source via tsconfig paths.
+RUN cd shared && npx tsc
 WORKDIR /app/backend
 RUN npx prisma generate
 RUN npm run build
@@ -46,7 +49,9 @@ COPY backend/package.json ./backend/
 RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/backend/dist ./backend/dist
-COPY --from=builder /app/backend/node_modules/.prisma ./backend/node_modules/.prisma
+# node_modules is hoisted to the repo root by npm workspaces — the generated
+# Prisma client lives at /app/node_modules/.prisma, not under backend/.
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY backend/prisma/schema.prisma ./backend/prisma/schema.prisma
 WORKDIR /app/backend
 EXPOSE 3000

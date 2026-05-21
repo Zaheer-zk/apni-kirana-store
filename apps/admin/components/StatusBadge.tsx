@@ -33,7 +33,9 @@ const BADGE_CONFIG: Record<string, { label: string; classes: string }> = {
     classes: 'bg-red-50 text-red-700 border-red-200',
   },
 
-  // StoreStatus
+  // Store & Driver status — PENDING_APPROVAL / ACTIVE / SUSPENDED resolve to
+  // the same string values in both enums, so they're declared once (declaring
+  // them twice was a duplicate-key bug — the later entry silently won).
   [StoreStatus.PENDING_APPROVAL]: {
     label: 'Pending Approval',
     classes: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -47,19 +49,7 @@ const BADGE_CONFIG: Record<string, { label: string; classes: string }> = {
     classes: 'bg-red-50 text-red-700 border-red-200',
   },
 
-  // DriverStatus
-  [DriverStatus.PENDING_APPROVAL]: {
-    label: 'Pending Approval',
-    classes: 'bg-amber-50 text-amber-700 border-amber-200',
-  },
-  [DriverStatus.ACTIVE]: {
-    label: 'Active',
-    classes: 'bg-green-50 text-green-700 border-green-200',
-  },
-  [DriverStatus.SUSPENDED]: {
-    label: 'Suspended',
-    classes: 'bg-red-50 text-red-700 border-red-200',
-  },
+  // DriverStatus — values unique to drivers
   [DriverStatus.ONLINE]: {
     label: 'Online',
     classes: 'bg-teal-50 text-teal-700 border-teal-200',

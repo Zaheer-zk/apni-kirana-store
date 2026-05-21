@@ -1,6 +1,8 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import { router } from 'expo-router';
 import { STORAGE_KEYS } from './storage-keys';
+import { useDriverStore } from '@/store/driver.store';
 
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
@@ -25,10 +27,18 @@ api.interceptors.request.use(
   (error: AxiosError) => Promise.reject(error)
 );
 
-// Response interceptor — surface error messages
+// Response interceptor — handle expired sessions, then surface error messages
 api.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<{ message?: string }>) => {
+  async (error: AxiosError<{ message?: string }>) => {
+    if (error.response?.status === 401) {
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.accessToken);
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.refreshToken);
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.user);
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.driverProfile);
+      useDriverStore.getState().clearAuth();
+      router.replace('/(auth)/login');
+    }
     const message =
       error.response?.data?.message ?? error.message ?? 'An unexpected error occurred';
     return Promise.reject(new Error(message));

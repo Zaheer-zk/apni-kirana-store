@@ -43,6 +43,10 @@ export const config = {
   },
 
   cors: {
-    origin: process.env.CORS_ORIGIN || '*',
+    // Never fall back to '*' in production — an unset CORS_ORIGIN there
+    // disables cross-origin instead of allowing everyone.
+    origin:
+      process.env.CORS_ORIGIN ||
+      ((process.env.NODE_ENV || 'development') === 'production' ? false : '*'),
   },
 } as const;

@@ -42,6 +42,21 @@ export function startWorkers(): void {
     { connection: createRedisConnection(), concurrency: 5 },
   );
 
+  // Surface job failures and worker errors — otherwise a failed matching/
+  // assignment job dies silently and the order is left stuck with no signal.
+  storeMatchingWorker.on('failed', (job, err) => {
+    console.error(`[BullMQ] store-matching job ${job?.id} failed:`, err.message);
+  });
+  storeMatchingWorker.on('error', (err) => {
+    console.error('[BullMQ] store-matching worker error:', err.message);
+  });
+  driverAssignmentWorker.on('failed', (job, err) => {
+    console.error(`[BullMQ] driver-assignment job ${job?.id} failed:`, err.message);
+  });
+  driverAssignmentWorker.on('error', (err) => {
+    console.error('[BullMQ] driver-assignment worker error:', err.message);
+  });
+
   console.log('[BullMQ] Workers started: store-matching, driver-assignment');
 }
 

@@ -61,7 +61,7 @@ export default function LoginPage() {
       );
       if (data.success && data.data?.accessToken) {
         if (data.data.user.role !== 'ADMIN') {
-          setError('This account is not an admin. Use 9999999999 to log in as admin.');
+          setError('This account is not an admin.');
           setLoading(false);
           return;
         }
@@ -110,13 +110,10 @@ export default function LoginPage() {
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                    placeholder="9999999999"
+                    placeholder="10-digit mobile number"
                     className="input rounded-l-none"
                   />
                 </div>
-                <p className="mt-1.5 text-xs text-gray-500">
-                  Use <code className="rounded bg-gray-100 px-1 py-0.5 font-mono">9999999999</code> for the seeded admin
-                </p>
               </div>
 
               {error && (

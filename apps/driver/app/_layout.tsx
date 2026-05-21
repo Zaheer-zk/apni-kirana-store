@@ -100,9 +100,11 @@ function RootLayoutNav() {
     return detach;
   }, [accessToken]);
 
-  if (!isReady) return <SplashScreen />;
-
+  // The Stack must stay mounted even during bootstrap — otherwise the
+  // router.replace() calls above fire before any navigator exists ("route
+  // (auth) not handled"). The splash is layered on top while !isReady.
   return (
+    <>
     <Stack
       screenOptions={{
         // Default: native iOS UIKit-style headers (back button, title) on every screen.
@@ -131,6 +133,8 @@ function RootLayoutNav() {
       <Stack.Screen name="chat/[orderId]" options={{ title: 'Chat' }} />
       <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
     </Stack>
+    {!isReady && <SplashScreen />}
+    </>
   );
 }
 
@@ -147,11 +151,12 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   splash: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.background,
     paddingHorizontal: spacing.xxl,
+    zIndex: 10,
   },
   splashIcon: {
     width: 96,

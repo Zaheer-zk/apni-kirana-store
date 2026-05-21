@@ -52,7 +52,8 @@ COPY --from=builder /app/backend/dist ./backend/dist
 # node_modules is hoisted to the repo root by npm workspaces — the generated
 # Prisma client lives at /app/node_modules/.prisma, not under backend/.
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY backend/prisma/schema.prisma ./backend/prisma/schema.prisma
+# Whole prisma dir (schema + migrations) so `prisma migrate deploy` works in prod
+COPY backend/prisma ./backend/prisma
 WORKDIR /app/backend
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

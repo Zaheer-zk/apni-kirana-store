@@ -25,6 +25,17 @@ function generateOtp4(): string {
 }
 
 async function main() {
+  // HARD STOP in production. This seed calls reset(), which DELETES every row
+  // in every table — running it against a live database would wipe it. It is a
+  // dev-only fixture loader. Override only if you truly mean it.
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_SEED !== 'yes') {
+    console.error(
+      '✋ Refusing to seed: NODE_ENV=production. This seed WIPES the database.\n' +
+        '   It is for local development only.',
+    );
+    process.exit(1);
+  }
+
   console.log('🌱 Resetting database...');
   await reset();
   console.log('🌱 Seeding marketplace catalog...');

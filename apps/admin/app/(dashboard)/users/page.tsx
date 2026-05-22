@@ -12,6 +12,7 @@ import {
   UserPlus,
   Pencil,
   KeyRound,
+  Crown,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { isSuperAdmin } from '@/lib/auth';
@@ -203,6 +204,12 @@ export default function UsersPage() {
                     </td>
                     <td className="px-4 py-3 sm:px-6">
                       <div className="flex flex-wrap gap-1">
+                        {user.isSuperAdmin && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                            <Crown className="h-3 w-3" />
+                            Super Admin
+                          </span>
+                        )}
                         {(user.roles?.length ? user.roles : [user.role]).map((r) => (
                           <span
                             key={r}

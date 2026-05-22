@@ -37,6 +37,7 @@ const USER_SELECT = {
   isActive: true,
   phoneVerified: true,
   mustChangePassword: true,
+  isSuperAdmin: true,
   createdAt: true,
 } as const;
 

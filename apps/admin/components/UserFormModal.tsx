@@ -16,6 +16,7 @@ export interface ManagedUser {
   role: string;
   roles: string[];
   isActive: boolean;
+  isSuperAdmin?: boolean;
 }
 
 const APP_ROLES = [

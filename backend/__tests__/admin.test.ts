@@ -247,9 +247,23 @@ describe('POST /api/v1/admin/users', () => {
     expect(dbUser!.roles).toEqual(['STORE_OWNER']);
   });
 
-  it('returns 409 when the phone is already in use', async () => {
+  it('adds the role to an existing account when the phone is already in use', async () => {
     const token = await adminToken();
-    await createUser({ phone: newUser.phone });
+    // newUser.role is STORE_OWNER; the existing account is a CUSTOMER.
+    const existing = await createUser({ phone: newUser.phone, role: 'CUSTOMER', roles: ['CUSTOMER'] });
+    const res = await request(app)
+      .post('/api/v1/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send(newUser);
+
+    expect(res.status).toBe(200);
+    const dbUser = await prisma.user.findUnique({ where: { id: existing.id } });
+    expect(dbUser!.roles).toEqual(expect.arrayContaining(['CUSTOMER', 'STORE_OWNER']));
+  });
+
+  it('returns 409 when the number already holds that exact role', async () => {
+    const token = await adminToken();
+    await createUser({ phone: newUser.phone, role: 'STORE_OWNER', roles: ['STORE_OWNER'] });
     const res = await request(app)
       .post('/api/v1/admin/users')
       .set('Authorization', `Bearer ${token}`)

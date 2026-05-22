@@ -12,6 +12,7 @@ import { haversineDistance } from '../utils/geo';
 import { notify } from '../services/notification.service';
 import { getSettings, updateSettings } from '../services/settings.service';
 import { generateResetToken, generateTempPassword } from '../utils/token';
+import { grantRole } from '../utils/roles';
 import { sendPasswordResetEmail } from '../services/email.service';
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -127,12 +128,44 @@ router.post('/users', validate(createUserSchema), async (req: Request, res: Resp
       role: 'CUSTOMER' | 'STORE_OWNER' | 'DRIVER';
     };
 
-    const [phoneOwner, emailOwner, usernameOwner] = await Promise.all([
-      prisma.user.findUnique({ where: { phone }, select: { id: true } }),
+    const roleLabel = role.replace('_', ' ').toLowerCase();
+
+    // If the phone already has an account, add the requested role to it
+    // instead of creating a duplicate. One number can hold CUSTOMER +
+    // STORE_OWNER + DRIVER at once — but only one of each.
+    const existing = await prisma.user.findUnique({ where: { phone } });
+    if (existing) {
+      if (existing.roles.includes(role)) {
+        return sendError(res, `This number is already registered as a ${roleLabel}.`, 409);
+      }
+      await grantRole(existing.id, role);
+      await prisma.auditLog
+        .create({
+          data: {
+            actorId: req.user!.id,
+            action: 'USER_ADD_ROLE',
+            targetType: 'User',
+            targetId: existing.id,
+            after: { role },
+          },
+        })
+        .catch(() => undefined);
+      const updated = await prisma.user.findUnique({
+        where: { id: existing.id },
+        select: USER_SELECT,
+      });
+      return sendSuccess(
+        res,
+        { user: updated, roleAdded: role },
+        `${existing.name ?? 'That account'} already exists on this number — added the ${roleLabel} role to it.`,
+      );
+    }
+
+    // Brand-new account — email and username must be unique.
+    const [emailOwner, usernameOwner] = await Promise.all([
       prisma.user.findUnique({ where: { email }, select: { id: true } }),
       prisma.user.findUnique({ where: { username }, select: { id: true } }),
     ]);
-    if (phoneOwner) return sendError(res, 'This mobile number is already in use.', 409);
     if (emailOwner) return sendError(res, 'This email address is already in use.', 409);
     if (usernameOwner) return sendError(res, 'This username is already taken.', 409);
 

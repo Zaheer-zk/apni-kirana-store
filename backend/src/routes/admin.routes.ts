@@ -161,6 +161,15 @@ router.post('/users', validate(createUserSchema), async (req: Request, res: Resp
       if (existing.roles.includes(role)) {
         return sendError(res, `This number is already registered as a ${roleLabel}.`, 409);
       }
+      // Don't quietly add a role to a suspended account — it would stay
+      // locked anyway. Tell the admin to reactivate it instead.
+      if (!existing.isActive) {
+        return sendError(
+          res,
+          'This number belongs to a suspended account. Reactivate that account instead of creating a new one.',
+          409,
+        );
+      }
       await grantRole(existing.id, role);
       await prisma.auditLog
         .create({

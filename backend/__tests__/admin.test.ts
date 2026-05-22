@@ -261,6 +261,16 @@ describe('POST /api/v1/admin/users', () => {
     expect(dbUser!.roles).toEqual(expect.arrayContaining(['CUSTOMER', 'STORE_OWNER']));
   });
 
+  it('returns 409 when the number belongs to a suspended account', async () => {
+    const token = await adminToken();
+    await createUser({ phone: newUser.phone, role: 'CUSTOMER', roles: ['CUSTOMER'], isActive: false });
+    const res = await request(app)
+      .post('/api/v1/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send(newUser);
+    expect(res.status).toBe(409);
+  });
+
   it('returns 409 when the number already holds that exact role', async () => {
     const token = await adminToken();
     await createUser({ phone: newUser.phone, role: 'STORE_OWNER', roles: ['STORE_OWNER'] });

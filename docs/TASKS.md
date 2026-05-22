@@ -4,6 +4,10 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-22 — Admin can edit store & driver details
+
+- [x] **`PUT /admin/stores/:id`** — admin edits a store's name/description/category/location/address/hours (status, open, wholesaler, preferred keep their own endpoints). **`PUT /admin/drivers/:id`** — admin edits a driver's vehicle type / number / licence. Both write `AuditLog` rows (`STORE_UPDATE`, `DRIVER_UPDATE`).
+
 ### 2026-05-22 — Register an extra role on a known number
 
 - [x] **Role-additive registration** — `POST /auth/register` on a number that already has a (verified, active) account no longer 409s; it sends an OTP, and `verify-otp` grants the new role (Redis `addrole:` marker proves it's a deliberate role-add, so login stays strict). One number can become CUSTOMER + STORE_OWNER + DRIVER — and works even when the number is an admin's. Duplicate role and suspended accounts are still rejected. The existing account keeps its own name/email/username/password.

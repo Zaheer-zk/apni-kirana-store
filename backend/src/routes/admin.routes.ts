@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { Prisma, UserRole } from '@prisma/client';
+import { Prisma, UserRole, StoreCategory, VehicleType } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { config } from '../config/env';
 import { authenticate, authorize } from '../middleware/auth.middleware';
@@ -557,6 +557,53 @@ router.put('/stores/:id/preferred', async (req: Request, res: Response) => {
   }
 });
 
+// ─── PUT /stores/:id ──────────────────────────────────────────────────────────
+// Admin edits a store's details. Status / open / wholesaler / preferred have
+// their own dedicated endpoints.
+
+const adminUpdateStoreSchema = z
+  .object({
+    name: z.string().min(2).max(100),
+    description: z.string().max(500),
+    category: z.nativeEnum(StoreCategory),
+    lat: z.number(),
+    lng: z.number(),
+    street: z.string().min(2),
+    city: z.string().min(2),
+    state: z.string().min(2),
+    pincode: z.string().regex(/^\d{6}$/, 'Pincode must be 6 digits'),
+    openTime: z.string().regex(/^\d{2}:\d{2}$/, 'Use HH:MM'),
+    closeTime: z.string().regex(/^\d{2}:\d{2}$/, 'Use HH:MM'),
+  })
+  .partial();
+
+router.put('/stores/:id', validate(adminUpdateStoreSchema), async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const store = await prisma.store.findUnique({ where: { id } });
+    if (!store) return sendError(res, 'Store not found', 404);
+
+    const updated = await prisma.store.update({ where: { id }, data: req.body });
+
+    await prisma.auditLog
+      .create({
+        data: {
+          actorId: req.user!.id,
+          action: 'STORE_UPDATE',
+          targetType: 'Store',
+          targetId: id,
+          after: req.body as Prisma.InputJsonObject,
+        },
+      })
+      .catch(() => undefined);
+
+    return sendSuccess(res, updated, 'Store updated successfully');
+  } catch (err) {
+    console.error('[Admin] update store error:', err);
+    return sendError(res, 'Failed to update store', 500);
+  }
+});
+
 // ─── GET /drivers ─────────────────────────────────────────────────────────────
 // Supports ?status=PENDING_APPROVAL|ACTIVE|ONLINE|OFFLINE|SUSPENDED
 
@@ -652,6 +699,45 @@ router.put('/drivers/:id/approve', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[Admin] approve driver error:', err);
     return sendError(res, 'Failed to approve driver', 500);
+  }
+});
+
+// ─── PUT /drivers/:id ─────────────────────────────────────────────────────────
+// Admin edits a driver's vehicle / licence details. Status has its own
+// dedicated approve/suspend endpoints.
+
+const adminUpdateDriverSchema = z
+  .object({
+    vehicleType: z.nativeEnum(VehicleType),
+    vehicleNumber: z.string().min(2).max(20),
+    licenseNumber: z.string().min(4).max(30),
+  })
+  .partial();
+
+router.put('/drivers/:id', validate(adminUpdateDriverSchema), async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const driver = await prisma.driver.findUnique({ where: { id } });
+    if (!driver) return sendError(res, 'Driver not found', 404);
+
+    const updated = await prisma.driver.update({ where: { id }, data: req.body });
+
+    await prisma.auditLog
+      .create({
+        data: {
+          actorId: req.user!.id,
+          action: 'DRIVER_UPDATE',
+          targetType: 'Driver',
+          targetId: id,
+          after: req.body as Prisma.InputJsonObject,
+        },
+      })
+      .catch(() => undefined);
+
+    return sendSuccess(res, updated, 'Driver updated successfully');
+  } catch (err) {
+    console.error('[Admin] update driver error:', err);
+    return sendError(res, 'Failed to update driver', 500);
   }
 });
 

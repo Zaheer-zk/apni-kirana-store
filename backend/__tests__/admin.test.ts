@@ -373,3 +373,61 @@ describe('POST /api/v1/admin/users/:id/reset-credentials', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('PUT /api/v1/admin/stores/:id', () => {
+  it('updates a store’s details', async () => {
+    const token = await adminToken();
+    const { store } = await createStoreOwner();
+    const res = await request(app)
+      .put(`/api/v1/admin/stores/${store.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Renamed Store', closeTime: '23:30' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.name).toBe('Renamed Store');
+    expect(res.body.data.closeTime).toBe('23:30');
+  });
+
+  it('returns 404 for an unknown store', async () => {
+    const token = await adminToken();
+    const res = await request(app)
+      .put('/api/v1/admin/stores/does-not-exist')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'X store' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 403 for a non-admin caller', async () => {
+    const { token } = await loginAs('CUSTOMER');
+    const { store } = await createStoreOwner();
+    const res = await request(app)
+      .put(`/api/v1/admin/stores/${store.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Hacked' });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('PUT /api/v1/admin/drivers/:id', () => {
+  it('updates a driver’s vehicle details', async () => {
+    const token = await adminToken();
+    const { driver } = await createDriver();
+    const res = await request(app)
+      .put(`/api/v1/admin/drivers/${driver.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ vehicleNumber: 'DL09ZZ9999', vehicleType: 'SCOOTER' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.vehicleNumber).toBe('DL09ZZ9999');
+    expect(res.body.data.vehicleType).toBe('SCOOTER');
+  });
+
+  it('returns 404 for an unknown driver', async () => {
+    const token = await adminToken();
+    const res = await request(app)
+      .put('/api/v1/admin/drivers/does-not-exist')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ vehicleNumber: 'DL09ZZ9999' });
+    expect(res.status).toBe(404);
+  });
+});

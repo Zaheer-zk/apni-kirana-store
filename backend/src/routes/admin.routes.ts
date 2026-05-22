@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
+import { Prisma, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma';
+import { config } from '../config/env';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { validate } from '../middleware/validate.middleware';
@@ -8,6 +11,12 @@ import { broadcastOrderStatus } from '../services/order-events.service';
 import { haversineDistance } from '../utils/geo';
 import { notify } from '../services/notification.service';
 import { getSettings, updateSettings } from '../services/settings.service';
+import { generateResetToken, generateTempPassword } from '../utils/token';
+import { sendPasswordResetEmail } from '../services/email.service';
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+const BCRYPT_ROUNDS = 10;
+const APP_ROLES = ['CUSTOMER', 'STORE_OWNER', 'DRIVER'] as const;
 
 const router = Router();
 
@@ -16,26 +25,49 @@ router.use(authenticate, authorize('ADMIN'));
 
 // ─── GET /users ───────────────────────────────────────────────────────────────
 
+const USER_SELECT = {
+  id: true,
+  name: true,
+  phone: true,
+  email: true,
+  username: true,
+  role: true,
+  roles: true,
+  isActive: true,
+  phoneVerified: true,
+  mustChangePassword: true,
+  createdAt: true,
+} as const;
+
 router.get('/users', async (req: Request, res: Response) => {
   try {
     const search = req.query['search'] as string | undefined;
+    const role = req.query['role'] as string | undefined;
     const page = Math.max(1, parseInt((req.query['page'] as string) || '1', 10));
     const limit = Math.min(100, parseInt((req.query['limit'] as string) || '20', 10));
     const skip = (page - 1) * limit;
 
-    const where = search
-      ? {
-          OR: [
-            { phone: { contains: search, mode: 'insensitive' as const } },
-            { name: { contains: search, mode: 'insensitive' as const } },
-          ],
-        }
-      : {};
+    const conditions: Record<string, unknown>[] = [];
+    if (search) {
+      conditions.push({
+        OR: [
+          { phone: { contains: search, mode: 'insensitive' as const } },
+          { name: { contains: search, mode: 'insensitive' as const } },
+          { email: { contains: search, mode: 'insensitive' as const } },
+          { username: { contains: search, mode: 'insensitive' as const } },
+        ],
+      });
+    }
+    // Filter by a role the account holds (matches multi-role accounts).
+    if (role && (APP_ROLES as readonly string[]).concat('ADMIN').includes(role)) {
+      conditions.push({ roles: { has: role as UserRole } });
+    }
+    const where = conditions.length ? { AND: conditions } : {};
 
     const [users, total] = await prisma.$transaction([
       prisma.user.findMany({
         where,
-        select: { id: true, name: true, phone: true, role: true, isActive: true, createdAt: true },
+        select: USER_SELECT,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
@@ -47,6 +79,220 @@ router.get('/users', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[Admin] get users error:', err);
     return sendError(res, 'Failed to fetch users', 500);
+  }
+});
+
+// ─── GET /users/:id ───────────────────────────────────────────────────────────
+
+router.get('/users/:id', async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.params['id'] },
+      select: { ...USER_SELECT, store: { select: { id: true, name: true, status: true } }, driver: { select: { id: true, status: true } } },
+    });
+    if (!user) return sendError(res, 'User not found', 404);
+    return sendSuccess(res, user);
+  } catch (err) {
+    console.error('[Admin] get user error:', err);
+    return sendError(res, 'Failed to fetch user', 500);
+  }
+});
+
+// ─── POST /users ──────────────────────────────────────────────────────────────
+// Admin creates an account. It gets a temporary password (returned once, in
+// this response) and `mustChangePassword` — the user must set their own on
+// first login. The account is phone-verified up front so the user can log in
+// with the temp password without an OTP step.
+
+const createUserSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(100),
+  phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits'),
+  email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+  username: z
+    .string()
+    .trim()
+    .min(3, 'Username must be at least 3 characters')
+    .max(30)
+    .regex(/^[a-zA-Z0-9_.]+$/, 'Username may only contain letters, numbers, "_" and "."'),
+  role: z.enum(APP_ROLES),
+});
+
+router.post('/users', validate(createUserSchema), async (req: Request, res: Response) => {
+  try {
+    const { name, phone, email, username, role } = req.body as {
+      name: string;
+      phone: string;
+      email: string;
+      username: string;
+      role: 'CUSTOMER' | 'STORE_OWNER' | 'DRIVER';
+    };
+
+    const [phoneOwner, emailOwner, usernameOwner] = await Promise.all([
+      prisma.user.findUnique({ where: { phone }, select: { id: true } }),
+      prisma.user.findUnique({ where: { email }, select: { id: true } }),
+      prisma.user.findUnique({ where: { username }, select: { id: true } }),
+    ]);
+    if (phoneOwner) return sendError(res, 'This mobile number is already in use.', 409);
+    if (emailOwner) return sendError(res, 'This email address is already in use.', 409);
+    if (usernameOwner) return sendError(res, 'This username is already taken.', 409);
+
+    const tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
+
+    const user = await prisma.user.create({
+      data: {
+        name,
+        phone,
+        email,
+        username,
+        passwordHash,
+        role,
+        roles: [role],
+        isActive: true,
+        phoneVerified: true,
+        mustChangePassword: true,
+      },
+      select: USER_SELECT,
+    });
+
+    await prisma.auditLog
+      .create({
+        data: {
+          actorId: req.user!.id,
+          action: 'USER_CREATE',
+          targetType: 'User',
+          targetId: user.id,
+          after: { role, phone, email, username },
+        },
+      })
+      .catch(() => undefined);
+
+    return sendSuccess(
+      res,
+      { user, tempPassword },
+      'User created. Share the temporary password — they must change it on first login.',
+      201,
+    );
+  } catch (err) {
+    console.error('[Admin] create user error:', err);
+    return sendError(res, 'Failed to create user', 500);
+  }
+});
+
+// ─── PUT /users/:id ───────────────────────────────────────────────────────────
+// Edit any user's profile. `roles` lets an admin grant/revoke roles.
+
+const updateUserSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits'),
+    email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+    isActive: z.boolean(),
+    roles: z.array(z.enum(APP_ROLES)).min(1, 'A user must keep at least one role'),
+  })
+  .partial();
+
+router.put('/users/:id', validate(updateUserSchema), async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const body = req.body as Partial<{
+      name: string;
+      phone: string;
+      email: string;
+      isActive: boolean;
+      roles: ('CUSTOMER' | 'STORE_OWNER' | 'DRIVER')[];
+    }>;
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return sendError(res, 'User not found', 404);
+    if (user.role === 'ADMIN') {
+      return sendError(res, 'Admin accounts are managed with the create-admin tool.', 403);
+    }
+    if (body.isActive === false && id === req.user!.id) {
+      return sendError(res, 'You cannot deactivate your own account.', 400);
+    }
+
+    // Uniqueness checks for changed phone / email.
+    if (body.phone && body.phone !== user.phone) {
+      const owner = await prisma.user.findUnique({ where: { phone: body.phone }, select: { id: true } });
+      if (owner) return sendError(res, 'This mobile number is already in use.', 409);
+    }
+    if (body.email && body.email !== user.email) {
+      const owner = await prisma.user.findUnique({ where: { email: body.email }, select: { id: true } });
+      if (owner) return sendError(res, 'This email address is already in use.', 409);
+    }
+
+    const data: Prisma.UserUpdateInput = {};
+    if (body.name !== undefined) data['name'] = body.name;
+    if (body.phone !== undefined) data['phone'] = body.phone;
+    if (body.email !== undefined) data['email'] = body.email;
+    if (body.isActive !== undefined) data['isActive'] = body.isActive;
+    if (body.roles !== undefined) {
+      // Keep the primary `role` valid — if it was dropped, repoint it.
+      data['roles'] = body.roles;
+      if (!body.roles.includes(user.role as 'CUSTOMER' | 'STORE_OWNER' | 'DRIVER')) {
+        data['role'] = body.roles[0];
+      }
+    }
+
+    const updated = await prisma.user.update({ where: { id }, data, select: USER_SELECT });
+
+    await prisma.auditLog
+      .create({
+        data: {
+          actorId: req.user!.id,
+          action: 'USER_UPDATE',
+          targetType: 'User',
+          targetId: id,
+          before: { name: user.name, phone: user.phone, email: user.email, isActive: user.isActive, roles: user.roles },
+          after: data as Prisma.InputJsonObject,
+        },
+      })
+      .catch(() => undefined);
+
+    return sendSuccess(res, updated, 'User updated successfully');
+  } catch (err) {
+    console.error('[Admin] update user error:', err);
+    return sendError(res, 'Failed to update user', 500);
+  }
+});
+
+// ─── POST /users/:id/reset-credentials ────────────────────────────────────────
+// Admin-triggered password reset — emails the user a reset link (same flow as
+// the self-service "forgot password").
+
+router.post('/users/:id/reset-credentials', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return sendError(res, 'User not found', 404);
+    if (!user.email) {
+      return sendError(res, 'This user has no email address on file to send a reset link to.', 400);
+    }
+
+    await prisma.passwordResetToken.deleteMany({ where: { userId: id, usedAt: null } });
+    const { raw, hash } = generateResetToken();
+    await prisma.passwordResetToken.create({
+      data: { userId: id, tokenHash: hash, expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS) },
+    });
+    const link = `${config.webAppUrl}/reset-password?token=${raw}`;
+    await sendPasswordResetEmail(user.email, user.name, link);
+
+    await prisma.auditLog
+      .create({
+        data: {
+          actorId: req.user!.id,
+          action: 'USER_RESET_CREDENTIALS',
+          targetType: 'User',
+          targetId: id,
+        },
+      })
+      .catch(() => undefined);
+
+    return sendSuccess(res, null, `A password-reset link has been emailed to ${user.email}.`);
+  } catch (err) {
+    console.error('[Admin] reset credentials error:', err);
+    return sendError(res, 'Failed to send the reset link', 500);
   }
 });
 

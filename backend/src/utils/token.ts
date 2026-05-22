@@ -14,3 +14,20 @@ export function generateResetToken(): { raw: string; hash: string } {
 export function hashToken(raw: string): string {
   return createHash('sha256').update(raw).digest('hex');
 }
+
+// Excludes visually ambiguous characters (0/O, 1/l/I) so a temp password read
+// off a screen or phone call can't be mistyped.
+const TEMP_PW_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+/**
+ * Generates a human-readable temporary password for admin-created accounts.
+ * The user is forced to change it on first login.
+ */
+export function generateTempPassword(length = 10): string {
+  const bytes = randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += TEMP_PW_ALPHABET[bytes[i]! % TEMP_PW_ALPHABET.length];
+  }
+  return out;
+}

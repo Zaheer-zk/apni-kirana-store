@@ -4,6 +4,13 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-22 — Auth system Phase 3 (admin user management)
+
+- [x] **Admin creates users** — `POST /admin/users` (name, phone, email, username, role) creates a phone-verified account with a readable temp password (returned once) and `mustChangePassword`. The user is forced to set their own password on first login.
+- [x] **Admin edits users** — `PUT /admin/users/:id` updates name / phone / email / isActive / roles (grant or revoke roles); blocks editing ADMIN accounts and self-deactivation; uniqueness-checked. `GET /admin/users/:id` returns full detail incl. linked store/driver.
+- [x] **Admin resets credentials** — `POST /admin/users/:id/reset-credentials` emails the user a reset link (reuses the Phase 2 reset-token flow). `GET /admin/users` now returns email/roles/username/flags and supports `?role=` filter. All three actions write `AuditLog` rows.
+- [x] **Tests** — 9 new admin cases. Full suite 147/147.
+
 ### 2026-05-22 — Auth system Phase 2 (email + password reset)
 
 - [x] **Email service** — pluggable `services/email.service.ts` (`CONSOLE` dev default, `RESEND` for prod). Resend free tier 3,000/mo. New env: `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM`, `WEB_APP_URL` — added to `.env.example`, `.env.prod.example`, and a new "Email setup" section in `docs/deployment.md`.

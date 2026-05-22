@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useHeaderHeight } from '@react-navigation/elements';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import * as Location from 'expo-location';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
@@ -22,6 +22,20 @@ export default function EditStoreProfileScreen() {
   const { storeProfile, setStoreProfile } = useStorePortalStore();
   // Use real header height instead of hardcoded 100 — Android's bar height differs from iOS
   const headerHeight = useHeaderHeight();
+
+  // Self-heal: if the in-memory profile is missing (fresh login / cleared
+  // SecureStore) fetch it from the backend so we always have a store id to
+  // save against — otherwise the update mutation throws "Store id missing".
+  useQuery({
+    queryKey: ['storeProfile'],
+    enabled: !storeProfile?.id,
+    queryFn: async () => {
+      const res = await api.get<{ data?: unknown } | unknown>('/api/v1/stores/me');
+      const store = (res.data as { data?: unknown }).data ?? res.data;
+      if (store) setStoreProfile(store as never);
+      return store;
+    },
+  });
 
   const addr = (storeProfile as any)?.address;
   const initialAddress =

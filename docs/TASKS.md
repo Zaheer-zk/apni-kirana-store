@@ -4,6 +4,10 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-22 — Register an extra role on a known number
+
+- [x] **Role-additive registration** — `POST /auth/register` on a number that already has a (verified, active) account no longer 409s; it sends an OTP, and `verify-otp` grants the new role (Redis `addrole:` marker proves it's a deliberate role-add, so login stays strict). One number can become CUSTOMER + STORE_OWNER + DRIVER — and works even when the number is an admin's. Duplicate role and suspended accounts are still rejected. The existing account keeps its own name/email/username/password.
+
 ### 2026-05-22 — Super admin + create-user role-add
 
 - [x] **Super admin** — new `User.isSuperAdmin` flag (migration `20260522_super_admin`, sets it on `zaheerzk`). A super admin is an ADMIN that can additionally create ADMIN accounts (`POST /admin/users` now accepts `role: ADMIN`, gated to super admins) and edit/suspend other admins. The super admin account itself can't be suspended or deactivated. The flag is never assignable via the API — exactly one super admin by design. Admin web: the Add-User dialog shows "Admin" only to the super admin; a forced `/change-password` page handles the temp-password new-admin gets.

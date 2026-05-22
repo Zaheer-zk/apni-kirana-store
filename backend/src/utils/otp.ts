@@ -47,3 +47,25 @@ export async function verifyOtp(phone: string, otp: string): Promise<boolean> {
   await redis.del(attemptsKey);
   return true;
 }
+
+const PENDING_ROLE_KEY_PREFIX = 'addrole:';
+
+/**
+ * Records that the OTP currently being sent is for ADDING `role` to an
+ * existing account (registering an extra role on a known number). Lives as
+ * long as the OTP itself.
+ */
+export async function setPendingRole(phone: string, role: string): Promise<void> {
+  await redis.set(`${PENDING_ROLE_KEY_PREFIX}${phone}`, role, 'EX', OTP_EXPIRES_IN_SECONDS);
+}
+
+/**
+ * Reads and clears a pending role-add for a phone. Returns null when there
+ * isn't one — i.e. a normal login, not a role-add.
+ */
+export async function consumePendingRole(phone: string): Promise<string | null> {
+  const key = `${PENDING_ROLE_KEY_PREFIX}${phone}`;
+  const role = await redis.get(key);
+  if (role) await redis.del(key);
+  return role;
+}

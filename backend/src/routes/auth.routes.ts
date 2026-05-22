@@ -7,10 +7,16 @@ import { validate } from '../middleware/validate.middleware';
 import { authenticate } from '../middleware/auth.middleware';
 import { otpLimiter } from '../middleware/rate-limit.middleware';
 import { sendSuccess, sendError } from '../utils/response';
-import { publicUser } from '../utils/roles';
+import { publicUser, grantRole } from '../utils/roles';
 import { generateResetToken, hashToken } from '../utils/token';
 import bcrypt from 'bcryptjs';
-import { generateOtp, storeOtp, verifyOtp } from '../utils/otp';
+import {
+  generateOtp,
+  storeOtp,
+  verifyOtp,
+  setPendingRole,
+  consumePendingRole,
+} from '../utils/otp';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { sendSmsOtp } from '../services/sms.service';
 import { sendPasswordResetEmail } from '../services/email.service';
@@ -136,8 +142,7 @@ router.post('/register', otpLimiter, validate(registerSchema), async (req: Reque
 
     const existing = await prisma.user.findUnique({ where: { phone } });
 
-    // A fully-registered account on this number — registration can't proceed.
-    // Additional roles are added from the relevant app once logged in, not here.
+    // The number already has a fully-registered account.
     if (existing && existing.phoneVerified) {
       if (existing.roles.includes(role)) {
         return sendError(
@@ -146,10 +151,22 @@ router.post('/register', otpLimiter, validate(registerSchema), async (req: Reque
           409,
         );
       }
-      return sendError(
+      if (!existing.isActive) {
+        return sendError(res, 'This account has been suspended. Please contact support.', 403);
+      }
+      // The account exists but doesn't hold this role yet. One number can hold
+      // CUSTOMER + STORE_OWNER + DRIVER — so add the role. We just send an OTP;
+      // verifying it proves ownership of the number, and verify-otp grants the
+      // role. The name/email/username/password fields are ignored here — the
+      // existing account keeps its own credentials.
+      const otp = generateOtp();
+      await storeOtp(phone, otp);
+      await setPendingRole(phone, role);
+      await sendSmsOtp(phone, otp);
+      return sendSuccess(
         res,
-        'This mobile number already has an account. Log in, then add the new role from the relevant app.',
-        409,
+        { phone },
+        `Enter the OTP sent to your mobile number to add the ${roleLabel(role)} role to your account.`,
       );
     }
 
@@ -228,15 +245,22 @@ router.post('/verify-otp', otpLimiter, validate(verifyOtpSchema), async (req: Re
       return sendError(res, 'Your account has been suspended', 403);
     }
 
-    // Pick the active role for this session. The app passes the role it serves;
-    // it must be one the account actually holds.
+    // Pick the active role for this session. The app passes the role it serves.
     const activeRole: UserRole = (role as UserRole | undefined) ?? user.role;
     if (role && !user.roles.includes(role as UserRole)) {
-      return sendError(
-        res,
-        `This mobile number is not registered as a ${roleLabel(activeRole)}.`,
-        403,
-      );
+      // The account doesn't hold this role — allowed only if registration just
+      // queued it to be added (the OTP proved ownership of the number).
+      const pending = await consumePendingRole(phone);
+      if (pending === role) {
+        await grantRole(user.id, role as UserRole);
+        user.roles.push(role as UserRole);
+      } else {
+        return sendError(
+          res,
+          `This mobile number is not registered as a ${roleLabel(activeRole)}.`,
+          403,
+        );
+      }
     }
 
     // First successful OTP after registration verifies the number.

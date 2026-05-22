@@ -124,6 +124,17 @@ describe('POST /api/v1/auth/register', () => {
       .send({ ...valid, password: 'short' });
     expect(res.status).toBe(400);
   });
+
+  it('lets an existing account register an additional (different) role', async () => {
+    await createUser({ phone: valid.phone, role: 'CUSTOMER', roles: ['CUSTOMER'] });
+    const res = await request(app)
+      .post('/api/v1/auth/register')
+      .send({ ...valid, role: 'DRIVER' });
+
+    // Not rejected — an OTP is sent to add the new role.
+    expect(res.status).toBe(200);
+    expect(await redis.get(`otp:${valid.phone}`)).toMatch(/^\d{6}$/);
+  });
 });
 
 describe('POST /api/v1/auth/verify-otp', () => {
@@ -198,6 +209,28 @@ describe('POST /api/v1/auth/verify-otp', () => {
       .post('/api/v1/auth/verify-otp')
       .send({ phone: '9000022222', otp: '222222', role: 'DRIVER' });
     expect(res.status).toBe(403);
+  });
+
+  it('grants the new role after an additional-role registration', async () => {
+    await createUser({ phone: '9000033333', role: 'CUSTOMER', roles: ['CUSTOMER'] });
+    // register the DRIVER role on the existing number — queues a pending role
+    await request(app).post('/api/v1/auth/register').send({
+      name: 'Multi Role',
+      phone: '9000033333',
+      email: 'multi.role@example.com',
+      username: 'multirole',
+      password: 'secret123',
+      role: 'DRIVER',
+    });
+    const otp = await redis.get('otp:9000033333');
+
+    const res = await request(app)
+      .post('/api/v1/auth/verify-otp')
+      .send({ phone: '9000033333', otp, role: 'DRIVER' });
+
+    expect(res.status).toBe(200);
+    const dbUser = await prisma.user.findUnique({ where: { phone: '9000033333' } });
+    expect(dbUser!.roles).toEqual(expect.arrayContaining(['CUSTOMER', 'DRIVER']));
   });
 });
 

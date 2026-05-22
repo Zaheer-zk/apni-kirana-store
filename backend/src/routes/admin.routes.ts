@@ -1057,7 +1057,25 @@ router.get('/audit-logs', async (req: Request, res: Response) => {
       prisma.auditLog.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' } }),
       prisma.auditLog.count({ where }),
     ]);
-    return sendSuccess(res, { logs, total, page, limit, pages: Math.ceil(total / limit) });
+
+    // Enrich each row with the acting admin's name/username. AuditLog only
+    // stores actorId — multiple admins exist, so resolve who did each action.
+    const actorIds = [...new Set(logs.map((l) => l.actorId))];
+    const actors = await prisma.user.findMany({
+      where: { id: { in: actorIds } },
+      select: { id: true, name: true, username: true },
+    });
+    const actorById = new Map(actors.map((a) => [a.id, a]));
+    const enriched = logs.map((l) => {
+      const actor = actorById.get(l.actorId);
+      return {
+        ...l,
+        actorName: actor?.name ?? null,
+        actorUsername: actor?.username ?? null,
+      };
+    });
+
+    return sendSuccess(res, { logs: enriched, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (err) {
     console.error('[Admin] audit log error:', err);
     return sendError(res, 'Failed to fetch audit logs', 500);

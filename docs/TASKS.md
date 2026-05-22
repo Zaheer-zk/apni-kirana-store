@@ -4,6 +4,10 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-22 — Audit log shows the acting admin
+
+- [x] **Audit logs name the admin** — `GET /admin/audit-logs` now resolves each row's `actorId` to the admin's name + username (multiple admins exist). The admin Audit Logs page shows "Admin" (name + @username) instead of a raw id, in both the table and the diff modal; the timestamp column already shows relative + exact time. Added the new `USER_CREATE` / `USER_UPDATE` / `USER_RESET_CREDENTIALS` actions to the filter dropdown.
+
 ### 2026-05-22 — Auth system Phase 4 (app UIs)
 
 - [x] **Admin web** — public `/reset-password` page (validates the emailed token, sets a new password); Users page gained Add user (create + temp-password reveal), Edit (name/phone/email/roles/active) and Reset (emails a reset link), multi-role badges, email/username columns, `?role=` filter.

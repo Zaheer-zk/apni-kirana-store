@@ -15,6 +15,8 @@ import DataTable, { Column } from '@/components/DataTable';
 interface AuditLog {
   id: string;
   actorId: string | null;
+  actorName: string | null;
+  actorUsername: string | null;
   action: string;
   targetType: string | null;
   targetId: string | null;
@@ -40,6 +42,9 @@ const ACTION_OPTIONS: { value: string; label: string }[] = [
   { value: 'ZONE_CREATE', label: 'Zone: Create' },
   { value: 'ZONE_UPDATE', label: 'Zone: Update' },
   { value: 'ZONE_DELETE', label: 'Zone: Delete' },
+  { value: 'USER_CREATE', label: 'User: Create' },
+  { value: 'USER_UPDATE', label: 'User: Update' },
+  { value: 'USER_RESET_CREDENTIALS', label: 'User: Reset credentials' },
 ];
 
 const TARGET_TYPE_OPTIONS: { value: string; label: string }[] = [
@@ -59,6 +64,9 @@ const ACTION_BADGE_COLORS: Record<string, string> = {
   ZONE_CREATE: 'bg-green-50 text-green-700 border-green-200',
   ZONE_UPDATE: 'bg-amber-50 text-amber-700 border-amber-200',
   ZONE_DELETE: 'bg-red-50 text-red-700 border-red-200',
+  USER_CREATE: 'bg-green-50 text-green-700 border-green-200',
+  USER_UPDATE: 'bg-amber-50 text-amber-700 border-amber-200',
+  USER_RESET_CREDENTIALS: 'bg-indigo-50 text-indigo-700 border-indigo-200',
 };
 
 function formatRelative(iso: string): string {
@@ -175,14 +183,16 @@ export default function AuditLogsPage() {
       },
       {
         key: 'actor',
-        header: 'Actor',
+        header: 'Admin',
         render: (log) => (
-          <span
-            className="font-mono text-xs text-gray-600"
-            title={log.actorId ?? ''}
-          >
-            {truncateId(log.actorId)}
-          </span>
+          <div className="flex flex-col" title={log.actorId ?? ''}>
+            <span className="text-sm font-medium text-gray-900">
+              {log.actorName ?? 'Unknown'}
+            </span>
+            <span className="font-mono text-[10px] text-gray-400">
+              {log.actorUsername ? `@${log.actorUsername}` : truncateId(log.actorId)}
+            </span>
+          </div>
         ),
       },
       {
@@ -339,10 +349,11 @@ export default function AuditLogsPage() {
             <div className="mb-4 grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
               <div className="rounded-md bg-gray-50 px-3 py-2">
                 <p className="font-semibold uppercase tracking-wider text-gray-400">
-                  Actor
+                  Admin
                 </p>
-                <p className="font-mono text-gray-800">
-                  {diffLog.actorId ?? '—'}
+                <p className="text-gray-800">{diffLog.actorName ?? 'Unknown'}</p>
+                <p className="font-mono text-[10px] text-gray-500">
+                  {diffLog.actorUsername ? `@${diffLog.actorUsername}` : diffLog.actorId ?? '—'}
                 </p>
               </div>
               <div className="rounded-md bg-gray-50 px-3 py-2">

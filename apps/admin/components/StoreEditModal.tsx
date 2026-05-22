@@ -1,10 +1,21 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
+import dynamic from 'next/dynamic';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { ApiResponse } from '@aks/shared';
+
+// Leaflet uses window/document at module scope — must be client-only
+const LocationMap = dynamic(() => import('@/components/LocationMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[280px] items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-500">
+      Loading map…
+    </div>
+  ),
+});
 
 /** The subset of store fields an admin can edit via PUT /admin/stores/:id. */
 export interface EditableStore {
@@ -129,6 +140,20 @@ export default function StoreEditModal({ store, onClose }: Props) {
               </option>
             ))}
           </select>
+        </Field>
+
+        <Field label="Location">
+          <LocationMap
+            lat={Number(lat)}
+            lng={Number(lng)}
+            onChange={(nextLat, nextLng) => {
+              setLat(String(Number(nextLat.toFixed(6))));
+              setLng(String(Number(nextLng.toFixed(6))));
+            }}
+          />
+          <p className="mt-1.5 text-xs text-gray-400">
+            Tap or drag the marker, or paste coordinates below.
+          </p>
         </Field>
 
         <div className="grid grid-cols-2 gap-3">

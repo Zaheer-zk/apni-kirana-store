@@ -1,10 +1,21 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
+import dynamic from 'next/dynamic';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Loader2 } from 'lucide-react';
+import { X, Loader2, MapPin } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { ApiResponse } from '@aks/shared';
+
+// Leaflet uses window/document at module scope — must be client-only
+const LocationMap = dynamic(() => import('@/components/LocationMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[240px] items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-500">
+      Loading map…
+    </div>
+  ),
+});
 
 /** The subset of driver fields an admin can edit via PUT /admin/drivers/:id. */
 export interface EditableDriver {
@@ -13,6 +24,9 @@ export interface EditableDriver {
   vehicleType: string;
   vehicleNumber: string;
   licenseNumber?: string | null;
+  /** Last-known GPS location — nullable, read-only. */
+  currentLat?: number | null;
+  currentLng?: number | null;
 }
 
 const VEHICLE_TYPES = [
@@ -102,6 +116,17 @@ export default function DriverEditModal({ driver, onClose }: Props) {
           />
         </Field>
 
+        <Field label="Last-known location">
+          {driver.currentLat != null && driver.currentLng != null ? (
+            <LocationMap lat={driver.currentLat} lng={driver.currentLng} height={240} />
+          ) : (
+            <div className="flex h-[240px] flex-col items-center justify-center gap-2 rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-500">
+              <MapPin className="h-6 w-6 text-gray-300" />
+              No location reported yet
+            </div>
+          )}
+        </Field>
+
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
@@ -136,7 +161,7 @@ function Shell({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
           <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">

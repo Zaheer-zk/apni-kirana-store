@@ -4,6 +4,11 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-22 — Maps on every location touchpoint
+
+- [x] **Admin maps** — new reusable `LocationMap` Leaflet component (picker + read-only modes, mirrors `ZoneMapPicker`'s SSR-safe setup). Store edit form gets a click/drag location picker (synced with the lat/lng inputs); store detail page shows the store on a read-only map; driver edit modal shows the driver's last-known GPS position (or a placeholder when none).
+- [x] **Store-portal map** — the store-profile edit screen replaced its text lat/lng inputs with a `react-native-maps` pan-to-set picker + GPS recenter + reverse-geocoded address, matching the registration screen. (Customer address screens, customer order tracking, store-portal registration and admin zones already had maps.)
+
 ### 2026-05-22 — Admin can edit store & driver details
 
 - [x] **`PUT /admin/stores/:id`** — admin edits a store's name/description/category/location/address/hours (status, open, wholesaler, preferred keep their own endpoints). **`PUT /admin/drivers/:id`** — admin edits a driver's vehicle type / number / licence. Both write `AuditLog` rows (`STORE_UPDATE`, `DRIVER_UPDATE`).

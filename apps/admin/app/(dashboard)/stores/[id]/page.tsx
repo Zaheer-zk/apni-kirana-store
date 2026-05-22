@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Star, Package, ShoppingBag, MapPin, Phone, User, Pencil } from 'lucide-react';
 import Link from 'next/link';
@@ -9,6 +10,16 @@ import StatusBadge from '@/components/StatusBadge';
 import StoreEditModal from '@/components/StoreEditModal';
 import type { StoreProfile, InventoryItem, Order } from '@aks/shared';
 import { OrderStatus } from '@aks/shared';
+
+// Leaflet uses window/document at module scope — must be client-only
+const LocationMap = dynamic(() => import('@/components/LocationMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[240px] items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-500">
+      Loading map…
+    </div>
+  ),
+});
 
 interface StoreDetail extends StoreProfile {
   ownerName: string;
@@ -131,6 +142,10 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
             label="Total Revenue"
             value={`₹${store.totalRevenue.toLocaleString('en-IN')}`}
           />
+          <div>
+            <p className="mb-1.5 text-xs text-gray-400">Location</p>
+            <LocationMap lat={store.lat} lng={store.lng} height={240} />
+          </div>
           <div className="pt-2 border-t border-gray-100 text-xs text-gray-400">
             Registered on {new Date(store.createdAt).toLocaleDateString('en-IN', { dateStyle: 'long' })}
           </div>

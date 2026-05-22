@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,16 +7,41 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import * as Location from 'expo-location';
+import MapView, { Region } from 'react-native-maps';
 import { api } from '@/lib/api';
 import { useStorePortalStore } from '@/store/store.store';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
+
+// Delhi fallback — used only when the store has no coordinates and GPS fails.
+const DEFAULT_REGION: Region = {
+  latitude: 28.6315,
+  longitude: 77.2167,
+  latitudeDelta: 0.04,
+  longitudeDelta: 0.04,
+};
+
+// Pull street/city/state/pincode out of a reverse-geocode result.
+function geocodeAddress(parts: Location.LocationGeocodedAddress | undefined) {
+  if (!parts) return { street: '', city: '', state: '', pincode: '' };
+  const streetParts = [parts.name, parts.street, parts.district].filter(Boolean);
+  const street =
+    streetParts.join(', ') || parts.formattedAddress?.split(',')[0] || '';
+  return {
+    street: street.slice(0, 200),
+    city: parts.city || parts.subregion || '',
+    state: parts.region || '',
+    pincode: (parts.postalCode || '').replace(/\D/g, '').slice(0, 6),
+  };
+}
 
 export default function EditStoreProfileScreen() {
   const { storeProfile, setStoreProfile } = useStorePortalStore();
@@ -51,23 +76,105 @@ export default function EditStoreProfileScreen() {
   const [city, setCity] = useState<string>(initialAddress.city ?? '');
   const [stateName, setStateName] = useState<string>(initialAddress.state ?? '');
   const [pincode, setPincode] = useState<string>(initialAddress.pincode ?? '');
-  // Lat/Lng — without these the matching engine can't find this store.
-  // Stored as strings here so empty input doesn't show 0,0.
+
+  // Map picker — the pinned centre of the map IS the store's lat/lng.
   const initialLat = (storeProfile as any)?.lat;
   const initialLng = (storeProfile as any)?.lng;
-  const [lat, setLat] = useState<string>(
-    typeof initialLat === 'number' ? String(initialLat) : ''
+  const hasInitialCoords =
+    typeof initialLat === 'number' && typeof initialLng === 'number';
+  const [region, setRegion] = useState<Region>(
+    hasInitialCoords
+      ? {
+          latitude: initialLat,
+          longitude: initialLng,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }
+      : DEFAULT_REGION
   );
-  const [lng, setLng] = useState<string>(
-    typeof initialLng === 'number' ? String(initialLng) : ''
-  );
+  // Whether the store has a real (non-fallback) location pinned.
+  const [hasLocation, setHasLocation] = useState<boolean>(hasInitialCoords);
+  const [resolving, setResolving] = useState(false);
   const [locating, setLocating] = useState(false);
+  const mapRef = useRef<MapView>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Skip the very first reverse-geocode pass so we don't clobber the saved
+  // address with whatever the existing coordinates resolve to.
+  const skipNextGeocode = useRef<boolean>(hasInitialCoords);
 
   const [errors, setErrors] = useState<{
     name?: string;
     pincode?: string;
     location?: string;
   }>({});
+
+  // If the store has no coordinates yet, seed the map from device GPS once.
+  useEffect(() => {
+    if (hasInitialCoords) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        const next: Region = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        };
+        setRegion(next);
+        setHasLocation(true);
+        mapRef.current?.animateToRegion(next, 400);
+      } catch {
+        // ignore — fall back to the default Delhi region
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reverse-geocode the pinned centre after the user stops moving the map and
+  // keep the address fields in sync. The first pass (existing coords) is
+  // skipped so we don't overwrite the saved address on mount.
+  useEffect(() => {
+    if (skipNextGeocode.current) {
+      skipNextGeocode.current = false;
+      return undefined;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        setResolving(true);
+        const results = await Location.reverseGeocodeAsync({
+          latitude: region.latitude,
+          longitude: region.longitude,
+        });
+        const resolved = geocodeAddress(results[0]);
+        // Auto-fill but keep fields editable — only overwrite when resolved.
+        if (resolved.street) setStreet(resolved.street);
+        if (resolved.city) setCity(resolved.city);
+        if (resolved.state) setStateName(resolved.state);
+        if (resolved.pincode) {
+          setPincode(resolved.pincode);
+          setErrors((e) => ({ ...e, pincode: undefined }));
+        }
+      } catch (err) {
+        console.warn('[EditStore] reverse geocode failed', err);
+      } finally {
+        setResolving(false);
+      }
+    }, 600);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [region.latitude, region.longitude]);
 
   const validate = (): boolean => {
     const next: { name?: string; pincode?: string; location?: string } = {};
@@ -77,13 +184,16 @@ export default function EditStoreProfileScreen() {
     if (!/^\d{6}$/.test(pincode.trim())) {
       next.pincode = 'Pincode must be exactly 6 digits';
     }
-    // Coordinates are required for the dispatch engine to find this store
-    const latNum = parseFloat(lat);
-    const lngNum = parseFloat(lng);
-    if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
-      next.location = 'Tap "Use current location" or enter latitude / longitude';
-    } else if (latNum < 6 || latNum > 38 || lngNum < 68 || lngNum > 98) {
-      next.location = 'Coordinates look invalid (must be inside India)';
+    // Coordinates are required for the dispatch engine to find this store.
+    if (!hasLocation) {
+      next.location = 'Pan the map onto your store, or tap "Use current location"';
+    } else if (
+      region.latitude < 6 ||
+      region.latitude > 38 ||
+      region.longitude < 68 ||
+      region.longitude > 98
+    ) {
+      next.location = 'Map pin looks invalid (must be inside India)';
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -97,15 +207,22 @@ export default function EditStoreProfileScreen() {
       if (status !== 'granted') {
         Alert.alert(
           'Location permission denied',
-          'Allow location access in settings, or enter latitude / longitude manually.',
+          'Allow location access in settings, or pan the map onto your store manually.',
         );
         return;
       }
       const pos = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-      setLat(pos.coords.latitude.toFixed(6));
-      setLng(pos.coords.longitude.toFixed(6));
+      const next: Region = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      };
+      setRegion(next);
+      setHasLocation(true);
+      mapRef.current?.animateToRegion(next, 400);
     } catch (err) {
       Alert.alert('Could not get location', (err as Error).message);
     } finally {
@@ -124,8 +241,8 @@ export default function EditStoreProfileScreen() {
         city: city.trim(),
         state: stateName.trim(),
         pincode: pincode.trim(),
-        lat: parseFloat(lat),
-        lng: parseFloat(lng),
+        lat: region.latitude,
+        lng: region.longitude,
       };
       const res = await api.put(`/api/v1/stores/${id}`, body);
       return res.data;
@@ -136,6 +253,8 @@ export default function EditStoreProfileScreen() {
         ...(data ?? {}),
         name: name.trim(),
         description: description.trim(),
+        lat: region.latitude,
+        lng: region.longitude,
         address: {
           ...(typeof (storeProfile as any)?.address === 'object'
             ? (storeProfile as any).address
@@ -192,6 +311,67 @@ export default function EditStoreProfileScreen() {
           />
         </View>
 
+        <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>
+          Store location *
+        </Text>
+        <Text style={styles.locationHelp}>
+          Pan the map so the pin sits exactly on your store. Customers within
+          ~5 km of this pin will see you. We&apos;ll auto-fill the address below.
+        </Text>
+        <View style={styles.mapWrap}>
+          <MapView
+            ref={mapRef}
+            style={styles.map}
+            initialRegion={region}
+            onRegionChangeComplete={(r) => {
+              setRegion(r);
+              setHasLocation(true);
+              if (errors.location) setErrors((e) => ({ ...e, location: undefined }));
+            }}
+            showsUserLocation
+            showsMyLocationButton={false}
+          />
+          <View pointerEvents="none" style={styles.crosshair}>
+            <Text style={styles.pinEmoji}>📍</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.recenterBtn}
+            activeOpacity={0.8}
+            onPress={captureCurrentLocation}
+            disabled={locating}
+          >
+            {locating ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Text style={styles.recenterText}>◎</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+        <View style={styles.coordsRow}>
+          <Text style={styles.coords}>
+            {region.latitude.toFixed(5)}, {region.longitude.toFixed(5)}
+          </Text>
+          {resolving ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+        </View>
+        <View style={styles.formGroup}>
+          <Button
+            title={locating ? 'Getting location…' : 'Use current location'}
+            icon="locate-outline"
+            onPress={captureCurrentLocation}
+            loading={locating}
+            disabled={locating}
+            variant="outline"
+            fullWidth
+          />
+          {errors.location ? (
+            <Text style={styles.locationError}>{errors.location}</Text>
+          ) : hasLocation ? (
+            <Text style={styles.locationOk}>
+              ✓ Pinned at {region.latitude.toFixed(4)}, {region.longitude.toFixed(4)}
+            </Text>
+          ) : null}
+        </View>
+
         <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>Address</Text>
         <View style={styles.formGroup}>
           <Input
@@ -228,58 +408,6 @@ export default function EditStoreProfileScreen() {
           />
         </View>
 
-        <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>
-          Store location *
-        </Text>
-        <Text style={styles.locationHelp}>
-          Customers within ~5 km of this pin will see your store. Without
-          a location, the order dispatcher can't find you.
-        </Text>
-        <View style={styles.formGroup}>
-          <Button
-            title={locating ? 'Getting location…' : 'Use current location'}
-            icon="locate-outline"
-            onPress={captureCurrentLocation}
-            loading={locating}
-            disabled={locating}
-            variant="outline"
-            fullWidth
-          />
-          <View style={styles.coordRow}>
-            <View style={styles.coordCell}>
-              <Input
-                label="Latitude"
-                value={lat}
-                onChangeText={(v) => {
-                  setLat(v);
-                  if (errors.location) setErrors({ ...errors, location: undefined });
-                }}
-                placeholder="28.6155"
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.coordCell}>
-              <Input
-                label="Longitude"
-                value={lng}
-                onChangeText={(v) => {
-                  setLng(v);
-                  if (errors.location) setErrors({ ...errors, location: undefined });
-                }}
-                placeholder="77.2095"
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
-          {errors.location ? (
-            <Text style={styles.locationError}>{errors.location}</Text>
-          ) : lat && lng ? (
-            <Text style={styles.locationOk}>
-              ✓ Pinned at {parseFloat(lat).toFixed(4)}, {parseFloat(lng).toFixed(4)}
-            </Text>
-          ) : null}
-        </View>
-
         <Button
           title="Save changes"
           icon="save-outline"
@@ -294,6 +422,8 @@ export default function EditStoreProfileScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+const MAP_HEIGHT = 280;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
@@ -316,13 +446,50 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     lineHeight: 20,
   },
-  coordRow: {
+  mapWrap: {
+    height: MAP_HEIGHT,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: colors.gray100,
+    marginBottom: spacing.sm,
+  },
+  map: { ...StyleSheet.absoluteFillObject },
+  crosshair: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pinEmoji: {
+    fontSize: 44,
+    // Offset so the tip of the pin sits on the centre of the map
+    transform: [{ translateY: -16 }],
+  },
+  recenterBtn: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  recenterText: { fontSize: 22, color: colors.primary, fontWeight: '700' },
+  coordsRow: {
     flexDirection: 'row',
-    gap: spacing.md,
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  coordCell: {
-    flex: 1,
-  },
+  coords: { fontSize: fontSize.xs, color: colors.textSecondary },
   locationError: {
     fontSize: fontSize.sm,
     color: colors.error,

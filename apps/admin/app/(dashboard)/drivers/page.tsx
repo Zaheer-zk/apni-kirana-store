@@ -28,6 +28,8 @@ interface DriverRow {
   rating: number;
   totalDeliveries: number;
   createdAt: string;
+  currentLat: number | null;
+  currentLng: number | null;
 }
 
 interface BackendDriver {
@@ -38,6 +40,8 @@ interface BackendDriver {
   status: string;
   rating: number;
   createdAt: string;
+  currentLat?: number | null;
+  currentLng?: number | null;
   user: { id: string; name: string | null; phone: string };
   _count?: { orders: number };
 }
@@ -89,6 +93,8 @@ export default function DriversPage() {
           rating: d.rating ?? 0,
           totalDeliveries: d._count?.orders ?? 0,
           createdAt: d.createdAt,
+          currentLat: d.currentLat ?? null,
+          currentLng: d.currentLng ?? null,
         })),
         total: res.data?.data?.total ?? 0,
         pages: res.data?.data?.pages ?? 1,
@@ -312,6 +318,8 @@ export default function DriversPage() {
             vehicleType: editingDriver.vehicleType,
             vehicleNumber: editingDriver.vehicleNumber,
             licenseNumber: editingDriver.licenseNumber,
+            currentLat: editingDriver.currentLat,
+            currentLng: editingDriver.currentLng,
           }}
           onClose={() => setEditingDriver(null)}
         />

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Stack, router } from 'expo-router';
+import { Stack, router, usePathname } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -24,6 +24,7 @@ const queryClient = new QueryClient({
 
 function RootLayoutNav() {
   const { accessToken, setAuth } = useStorePortalStore();
+  const pathname = usePathname();
 
   useEffect(() => {
     async function bootstrap() {
@@ -36,24 +37,30 @@ function RootLayoutNav() {
           const user = JSON.parse(userRaw);
           const storeProfile = storeProfileRaw ? JSON.parse(storeProfileRaw) : null;
           setAuth(token, user, storeProfile);
-        } else {
-          router.replace('/(auth)/login');
         }
       } catch {
-        router.replace('/(auth)/login');
+        // SecureStore failed — fall through to the redirect logic below.
       }
     }
     bootstrap();
-  }, []);
+  }, [setAuth]);
 
+  // expo-router strips route groups from the pathname, so (auth) screens show
+  // up as plain "/login", "/register", etc.
   useEffect(() => {
-    if (accessToken === null) return;
-    if (accessToken) {
-      router.replace('/(tabs)/dashboard');
-    } else {
+    const path = pathname ?? '';
+    // Unauthenticated users may sit on login / register / forgot-password.
+    const inAuthGroup = ['/login', '/register', '/forgot-password'].includes(path);
+    // register (store-detail step) and change-password are in the (auth) group
+    // but are reached AFTER auth — an authenticated owner must stay on them.
+    const isPostAuthScreen = path === '/change-password' || path === '/register';
+
+    if (!accessToken && !inAuthGroup) {
       router.replace('/(auth)/login');
+    } else if (accessToken && inAuthGroup && !isPostAuthScreen) {
+      router.replace('/(tabs)/dashboard');
     }
-  }, [accessToken]);
+  }, [accessToken, pathname]);
 
   // Register for push notifications and attach tap listener once authenticated.
   useEffect(() => {

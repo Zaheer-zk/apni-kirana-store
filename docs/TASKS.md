@@ -4,6 +4,12 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-22 — Auth system Phase 4 (app UIs)
+
+- [x] **Admin web** — public `/reset-password` page (validates the emailed token, sets a new password); Users page gained Add user (create + temp-password reveal), Edit (name/phone/email/roles/active) and Reset (emails a reset link), multi-role badges, email/username columns, `?role=` filter.
+- [x] **Customer app** — rewrote `(auth)`: login with a Password/OTP toggle, `register` (name/phone/email/username/password → OTP), `forgot-password`, and a forced `change-password` screen for admin-created accounts. Shared `AuthScaffold` + `OtpInput` components and a `persistSession` helper. `AuthGate` updated to allow unauthenticated register/forgot screens.
+- [x] **Store-portal + driver apps** — same four auth screens, adapted: role `STORE_OWNER`/`DRIVER`, namespaced storage keys, two-part registration (account → OTP → existing store-detail / vehicle-detail step), and each app's existing post-login routing (store setup, driver `pending`) preserved.
+
 ### 2026-05-22 — Auth system Phase 3 (admin user management)
 
 - [x] **Admin creates users** — `POST /admin/users` (name, phone, email, username, role) creates a phone-verified account with a readable temp password (returned once) and `mustChangePassword`. The user is forced to set their own password on first login.

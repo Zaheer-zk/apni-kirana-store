@@ -1,25 +1,22 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
-import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import * as SecureStore from 'expo-secure-store';
-import { useMutation } from '@tanstack/react-query';
-import { api } from '@/lib/api';
-import { STORAGE_KEYS } from '@/lib/storage-keys';
+import { router } from 'expo-router';
+import { useState } from 'react';
+import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { AuthScaffold, authStyles } from '@/components/AuthScaffold';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
-import { EmptyState } from '@/components/EmptyState';
-import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
-import type { VehicleType, UserProfile } from '@aks/shared';
+import { OtpInput } from '@/components/OtpInput';
+import { api } from '@/lib/api';
+import { persistSession } from '@/lib/session';
+import { colors, fontSize, radius, spacing } from '@/constants/theme';
+import type { UserProfile, VehicleType } from '@aks/shared';
+
+interface AuthResponse {
+  user: UserProfile;
+  accessToken: string;
+  refreshToken: string;
+  hasAddress: boolean;
+}
 
 interface VehicleOption {
   label: string;
@@ -33,553 +30,362 @@ const VEHICLE_OPTIONS: VehicleOption[] = [
   { label: 'Car', value: 'CAR', icon: 'car' },
 ];
 
-const OTP_LENGTH = 6;
+type Step = 'form' | 'otp' | 'vehicle' | 'submitted';
 
-interface RegisterPayload {
-  vehicleType: VehicleType;
-  vehicleNumber: string;
-  licenseNumber: string;
-}
+export default function RegisterScreen() {
+  const [step, setStep] = useState<Step>('form');
 
-interface RegisterResponse {
-  message: string;
-  driverId: string;
-}
-
-interface SendOtpResponse {
-  message: string;
-}
-
-interface VerifyOtpResponse {
-  accessToken: string;
-  refreshToken?: string;
-  user: UserProfile;
-}
-
-export default function DriverRegisterScreen() {
-  // Step 1 — phone verification
-  const [step, setStep] = useState<'phone' | 'otp' | 'form'>('phone');
+  // Account details
+  const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
-  const [error, setError] = useState<string | null>(null);
-  const otpRefs = useRef<Array<TextInput | null>>([]);
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
 
-  // Step 2 — registration form
+  // Driver / vehicle details
   const [vehicleType, setVehicleType] = useState<VehicleType>('BIKE');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [licenseNumber, setLicenseNumber] = useState('');
-  const [submitted, setSubmitted] = useState(false);
-  const [errors, setErrors] = useState<{ vehicle?: string; license?: string }>({});
+  const [vehicleErrors, setVehicleErrors] = useState<{ vehicle?: string; license?: string }>({});
 
-  const otpString = otp.join('');
-  const isValidPhone = phone.length === 10 && /^\d+$/.test(phone);
-  const isValidOtp = otpString.length === OTP_LENGTH && /^\d+$/.test(otpString);
-
-  useEffect(() => {
-    if (step === 'otp') {
-      const t = setTimeout(() => otpRefs.current[0]?.focus(), 200);
-      return () => clearTimeout(t);
-    }
-    return undefined;
-  }, [step]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function showError(message: string) {
     setError(message);
-    setTimeout(() => setError(null), 4000);
+    setTimeout(() => setError(null), 5000);
   }
 
-  function handleOtpChange(index: number, value: string) {
-    const sanitized = value.replaceAll(/\D/g, '');
+  function errMessage(err: unknown, fallback: string) {
+    if (typeof err === 'object' && err && 'response' in err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      if (e.response?.data?.error) return e.response.data.error;
+    }
+    return err instanceof Error ? err.message : fallback;
+  }
 
-    if (sanitized.length > 1) {
-      const chars = sanitized.slice(0, OTP_LENGTH - index).split('');
-      const next = [...otp];
-      chars.forEach((ch, i) => {
-        next[index + i] = ch;
+  async function handleRegister() {
+    if (name.trim().length < 2) return showError('Enter your full name');
+    if (phone.length !== 10) return showError('Enter a valid 10-digit mobile number');
+    if (!/^\S+@\S+\.\S+$/.test(email)) return showError('Enter a valid email address');
+    if (username.trim().length < 3) return showError('Username must be at least 3 characters');
+    if (password.length < 8) return showError('Password must be at least 8 characters');
+
+    setLoading(true);
+    setError(null);
+    try {
+      await api.post('/api/v1/auth/register', {
+        name: name.trim(),
+        phone,
+        email: email.trim(),
+        username: username.trim(),
+        password,
+        role: 'DRIVER',
       });
-      setOtp(next);
-      const lastIndex = Math.min(index + chars.length, OTP_LENGTH - 1);
-      otpRefs.current[lastIndex]?.focus();
-      return;
-    }
-
-    const next = [...otp];
-    next[index] = sanitized;
-    setOtp(next);
-
-    if (sanitized && index < OTP_LENGTH - 1) {
-      otpRefs.current[index + 1]?.focus();
+      setStep('otp');
+    } catch (err: unknown) {
+      showError(errMessage(err, 'Registration failed. Please try again.'));
+    } finally {
+      setLoading(false);
     }
   }
 
-  function handleOtpKey(index: number, key: string) {
-    if (key === 'Backspace' && !otp[index] && index > 0) {
-      otpRefs.current[index - 1]?.focus();
+  async function handleVerify() {
+    if (otp.length !== 6) return showError('Enter the complete 6-digit OTP');
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.post<{ success: boolean; data: AuthResponse; error?: string }>(
+        '/api/v1/auth/verify-otp',
+        { phone, otp, role: 'DRIVER' },
+      );
+      const payload = res.data?.data;
+      if (!payload?.accessToken) throw new Error(res.data?.error ?? 'Verification failed');
+      // Account is verified and we're now logged in. Next: collect the
+      // vehicle/licence details that create the driver entity.
+      await persistSession(payload.user, payload.accessToken, payload.refreshToken);
+      setStep('vehicle');
+    } catch (err: unknown) {
+      showError(errMessage(err, 'Invalid OTP. Please try again.'));
+    } finally {
+      setLoading(false);
     }
   }
 
-  const sendOtpMutation = useMutation<SendOtpResponse, Error, string>({
-    mutationFn: (phoneNumber: string) =>
-      api
-        .post<SendOtpResponse>('/api/v1/auth/send-otp', { phone: phoneNumber })
-        .then((r) => r.data),
-    onSuccess: () => setStep('otp'),
-    onError: (err) => showError(err.message || 'Failed to send OTP'),
-  });
-
-  // Verify OTP with NO role field — backend auto-creates a CUSTOMER account
-  // and returns a token. The /drivers/register call below then promotes the
-  // role to DRIVER.
-  const verifyOtpMutation = useMutation<
-    VerifyOtpResponse,
-    Error,
-    { phone: string; otp: string }
-  >({
-    mutationFn: async (payload) => {
-      const res = await api.post<{
-        success: boolean;
-        data: VerifyOtpResponse;
-        error?: string;
-      }>('/api/v1/auth/verify-otp', payload);
-      const inner =
-        (res.data as { data?: VerifyOtpResponse }).data ??
-        (res.data as VerifyOtpResponse);
-      if (!inner?.accessToken || !inner?.user) {
-        throw new Error(res.data?.error ?? 'Invalid response from server');
-      }
-      return inner;
-    },
-    onSuccess: async (data) => {
-      await SecureStore.setItemAsync(STORAGE_KEYS.accessToken, data.accessToken);
-      if (data.refreshToken) {
-        await SecureStore.setItemAsync(STORAGE_KEYS.refreshToken, data.refreshToken);
-      }
-      await SecureStore.setItemAsync(STORAGE_KEYS.user, JSON.stringify(data.user));
-      setStep('form');
-    },
-    onError: (err) => showError(err.message || 'Invalid OTP'),
-  });
-
-  const registerMutation = useMutation<RegisterResponse, Error, RegisterPayload>({
-    mutationFn: (payload) =>
-      api
-        .post<RegisterResponse>('/api/v1/drivers/register', payload)
-        .then((r) => r.data),
-    onSuccess: () => setSubmitted(true),
-    onError: (err) =>
-      Alert.alert('Registration failed', err.message || 'Please try again'),
-  });
-
-  const handleSendOtp = () => {
-    if (!isValidPhone) {
-      showError('Please enter a valid 10-digit phone number');
-      return;
+  async function handleResendOtp() {
+    setError(null);
+    try {
+      await api.post('/api/v1/auth/send-otp', { phone });
+      showError('A new OTP has been sent to your number');
+    } catch {
+      showError('Could not resend the OTP');
     }
-    setError(null);
-    sendOtpMutation.mutate(phone);
-  };
+  }
 
-  const handleVerifyOtp = () => {
-    if (!isValidOtp) {
-      showError('Please enter the complete 6-digit OTP');
-      return;
-    }
-    setError(null);
-    verifyOtpMutation.mutate({ phone, otp: otpString });
-  };
-
-  const handleChangeNumber = () => {
-    setStep('phone');
-    setOtp(Array(OTP_LENGTH).fill(''));
-    setError(null);
-  };
-
-  const handleSubmit = () => {
+  async function handleSubmitVehicle() {
     const nextErrors: { vehicle?: string; license?: string } = {};
     if (!vehicleNumber.trim()) nextErrors.vehicle = 'Vehicle number is required';
     if (!licenseNumber.trim()) nextErrors.license = 'License number is required';
-    setErrors(nextErrors);
+    setVehicleErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    registerMutation.mutate({
-      vehicleType,
-      vehicleNumber: vehicleNumber.trim().toUpperCase(),
-      licenseNumber: licenseNumber.trim().toUpperCase(),
-    });
-  };
-
-  if (submitted) {
-    return (
-      // Android: full edges so success state isn't clipped by system bars
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
-        <View style={styles.pendingContainer}>
-          <EmptyState
-            icon="time-outline"
-            title="Application submitted!"
-            subtitle={
-              "Your driver application is under review. Our admin team will verify your documents and approve your account within 24-48 hours. You'll get a notification once approved."
-            }
-            actionLabel="Back to Login"
-            onAction={() => router.replace('/(auth)/login')}
-          />
-        </View>
-      </SafeAreaView>
-    );
+    setLoading(true);
+    setError(null);
+    try {
+      // Authenticated — this also grants the DRIVER role on the backend.
+      await api.post('/api/v1/drivers/register', {
+        vehicleType,
+        vehicleNumber: vehicleNumber.trim().toUpperCase(),
+        licenseNumber: licenseNumber.trim().toUpperCase(),
+      });
+      setStep('submitted');
+    } catch (err: unknown) {
+      showError(errMessage(err, 'Could not submit your application. Please try again.'));
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    // Android: include left/right edges so content respects horizontal insets
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View style={styles.headerRow}>
+    <AuthScaffold>
+      {step === 'form' ? (
+        <>
+          <Text style={authStyles.title}>Apply to drive</Text>
+          <Text style={authStyles.subtitle}>
+            We&apos;ll send a one-time code to verify your mobile number.
+          </Text>
+
+          <Input
+            label="Full name"
+            value={name}
+            onChangeText={setName}
+            placeholder="e.g. Chotu Singh"
+            autoCapitalize="words"
+            leftIcon="person-outline"
+            containerStyle={styles.field}
+          />
+          <Input
+            label="Mobile number"
+            value={phone}
+            onChangeText={(t) => setPhone(t.replace(/\D/g, '').slice(0, 10))}
+            placeholder="10-digit number"
+            keyboardType="number-pad"
+            leftIcon="call-outline"
+            containerStyle={styles.field}
+          />
+          <Input
+            label="Email"
+            value={email}
+            onChangeText={setEmail}
+            placeholder="you@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            leftIcon="mail-outline"
+            containerStyle={styles.field}
+          />
+          <Input
+            label="Username"
+            value={username}
+            onChangeText={(t) => setUsername(t.replace(/\s/g, ''))}
+            placeholder="Used to log in"
+            autoCapitalize="none"
+            leftIcon="at-outline"
+            containerStyle={styles.field}
+          />
+          <Input
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            placeholder="At least 8 characters"
+            secureTextEntry
+            leftIcon="lock-closed-outline"
+            containerStyle={styles.field}
+          />
+
+          <Button
+            title="Continue"
+            onPress={handleRegister}
+            loading={loading}
+            fullWidth
+            size="lg"
+            style={{ marginTop: spacing.lg }}
+          />
+
+          <View style={authStyles.footerRow}>
+            <Text style={authStyles.footerMuted}>Already have an account? </Text>
+            <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
+              <Text style={authStyles.linkText}>Log in</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      ) : null}
+
+      {step === 'otp' ? (
+        <>
+          <Text style={authStyles.title}>Verify your number</Text>
+          <Text style={authStyles.subtitle}>Enter the 6-digit OTP sent to +91 {phone}</Text>
+
+          <OtpInput value={otp} onChange={setOtp} />
+
+          <Button
+            title="Verify & continue"
+            onPress={handleVerify}
+            loading={loading}
+            disabled={otp.length !== 6}
+            fullWidth
+            size="lg"
+            style={{ marginTop: spacing.lg }}
+          />
+
+          <TouchableOpacity style={authStyles.link} onPress={handleResendOtp}>
+            <Ionicons name="refresh" size={16} color={colors.primary} />
+            <Text style={authStyles.linkText}>Resend OTP</Text>
+          </TouchableOpacity>
           <TouchableOpacity
-            activeOpacity={0.7}
+            style={authStyles.link}
             onPress={() => {
-              if (step === 'form') {
-                handleChangeNumber();
-                setStep('phone');
-              } else {
-                router.back();
+              setStep('form');
+              setOtp('');
+            }}
+          >
+            <Ionicons name="arrow-back" size={16} color={colors.primary} />
+            <Text style={authStyles.linkText}>Edit details</Text>
+          </TouchableOpacity>
+        </>
+      ) : null}
+
+      {step === 'vehicle' ? (
+        <>
+          <Text style={authStyles.title}>Tell us about your vehicle</Text>
+          <Text style={authStyles.subtitle}>
+            We need these details to review your driver application.
+          </Text>
+
+          <Text style={styles.sectionLabel}>Vehicle type</Text>
+          <View style={styles.vehiclePicker}>
+            {VEHICLE_OPTIONS.map((opt) => {
+              const selected = vehicleType === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  activeOpacity={0.7}
+                  style={[styles.vehicleOption, selected && styles.vehicleOptionSelected]}
+                  onPress={() => setVehicleType(opt.value)}
+                >
+                  <Ionicons
+                    name={opt.icon}
+                    size={28}
+                    color={selected ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.vehicleOptionText,
+                      selected && styles.vehicleOptionTextSelected,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                  {selected ? (
+                    <View style={styles.vehicleCheck}>
+                      <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.formGap} />
+          <Input
+            label="Vehicle number"
+            placeholder="e.g. MH01AB1234"
+            autoCapitalize="characters"
+            value={vehicleNumber}
+            onChangeText={(t) => {
+              setVehicleNumber(t);
+              if (vehicleErrors.vehicle) {
+                setVehicleErrors((e) => ({ ...e, vehicle: undefined }));
               }
             }}
-            style={styles.backBtn}
-            hitSlop={10}
-          >
-            <Ionicons name="chevron-back" size={26} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <View style={styles.backBtn} />
-        </View>
+            leftIcon="card-outline"
+            error={vehicleErrors.vehicle}
+            containerStyle={styles.field}
+          />
+          <Input
+            label="Driving license number"
+            placeholder="e.g. MH0120200012345"
+            autoCapitalize="characters"
+            value={licenseNumber}
+            onChangeText={(t) => {
+              setLicenseNumber(t);
+              if (vehicleErrors.license) {
+                setVehicleErrors((e) => ({ ...e, license: undefined }));
+              }
+            }}
+            leftIcon="document-text-outline"
+            error={vehicleErrors.license}
+          />
 
-        <View style={styles.headerHero}>
-          <View style={styles.heroIconWrap}>
-            <Ionicons name="bicycle" size={32} color={colors.primary} />
+          <Button
+            title="Submit application"
+            icon="paper-plane"
+            iconPosition="right"
+            onPress={handleSubmitVehicle}
+            loading={loading}
+            fullWidth
+            size="lg"
+            style={{ marginTop: spacing.xl }}
+          />
+
+          <View style={authStyles.noticeBox}>
+            <Ionicons name="information-circle" size={18} color={colors.info} />
+            <Text style={authStyles.noticeText}>
+              Your details will be reviewed by our team. We approve most drivers within
+              24-48 hours.
+            </Text>
           </View>
-          <Text style={styles.title}>Become a driver</Text>
-          <Text style={styles.subtitle}>
-            {step === 'form'
-              ? 'Tell us about your vehicle to get started'
-              : 'Verify your phone number to begin'}
+        </>
+      ) : null}
+
+      {step === 'submitted' ? (
+        <View style={{ alignItems: 'center', paddingVertical: spacing.lg }}>
+          <Ionicons name="checkmark-circle-outline" size={56} color={colors.primary} />
+          <Text style={[authStyles.title, { marginTop: spacing.lg, textAlign: 'center' }]}>
+            Application submitted!
           </Text>
+          <Text style={[authStyles.subtitle, { textAlign: 'center' }]}>
+            Your driver application is under review. Our team will verify your documents and
+            approve your account within 24-48 hours.
+          </Text>
+          <Button
+            title="Check application status"
+            onPress={() => router.replace('/(auth)/pending')}
+            fullWidth
+            size="lg"
+          />
         </View>
+      ) : null}
 
-        {step === 'phone' ? (
-          <>
-            <Text style={styles.sectionLabel}>Phone number</Text>
-            <View style={styles.phoneRow}>
-              <View style={styles.prefixBox}>
-                <Text style={styles.prefixText}>+91</Text>
-              </View>
-              <TextInput
-                style={styles.phoneInput}
-                placeholder="Enter your phone number"
-                placeholderTextColor={colors.textMuted}
-                keyboardType="number-pad"
-                maxLength={10}
-                value={phone}
-                onChangeText={(t) => setPhone(t.replaceAll(/\D/g, ''))}
-                autoFocus
-              />
-            </View>
-
-            <Button
-              title="Send OTP"
-              onPress={handleSendOtp}
-              loading={sendOtpMutation.isPending}
-              disabled={!isValidPhone}
-              fullWidth
-              size="lg"
-              style={{ marginTop: spacing.lg }}
-            />
-
-            <View style={styles.infoBox}>
-              <Ionicons name="shield-checkmark" size={18} color={colors.info} />
-              <Text style={styles.infoText}>
-                We'll send a 6-digit code to verify your number.
-              </Text>
-            </View>
-          </>
-        ) : null}
-
-        {step === 'otp' ? (
-          <>
-            <Text style={styles.sectionLabel}>Enter OTP</Text>
-            <Text style={styles.otpHint}>OTP sent to +91 {phone}</Text>
-            <View style={styles.otpRow}>
-              {otp.map((digit, idx) => (
-                <TextInput
-                  key={idx}
-                  ref={(r) => {
-                    otpRefs.current[idx] = r;
-                  }}
-                  style={[styles.otpBox, digit ? styles.otpBoxFilled : null]}
-                  keyboardType="number-pad"
-                  maxLength={1}
-                  value={digit}
-                  onChangeText={(t) => handleOtpChange(idx, t)}
-                  onKeyPress={({ nativeEvent }) =>
-                    handleOtpKey(idx, nativeEvent.key)
-                  }
-                  selectTextOnFocus
-                  textContentType="oneTimeCode"
-                  autoComplete="sms-otp"
-                />
-              ))}
-            </View>
-
-            <Button
-              title="Verify & Continue"
-              onPress={handleVerifyOtp}
-              loading={verifyOtpMutation.isPending}
-              disabled={!isValidOtp}
-              fullWidth
-              size="lg"
-              style={{ marginTop: spacing.lg }}
-            />
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              style={styles.changeNumberBtn}
-              onPress={handleChangeNumber}
-            >
-              <Ionicons name="arrow-back" size={16} color={colors.primary} />
-              <Text style={styles.changeNumberText}>Change number</Text>
-            </TouchableOpacity>
-          </>
-        ) : null}
-
-        {step === 'form' ? (
-          <>
-            {/* Vehicle Type Picker */}
-            <Text style={styles.sectionLabel}>Vehicle Type</Text>
-            <View style={styles.vehiclePicker}>
-              {VEHICLE_OPTIONS.map((opt) => {
-                const selected = vehicleType === opt.value;
-                return (
-                  <TouchableOpacity
-                    key={opt.value}
-                    activeOpacity={0.7}
-                    style={[
-                      styles.vehicleOption,
-                      selected && styles.vehicleOptionSelected,
-                    ]}
-                    onPress={() => setVehicleType(opt.value)}
-                  >
-                    <Ionicons
-                      name={opt.icon}
-                      size={28}
-                      color={selected ? colors.primary : colors.textSecondary}
-                    />
-                    <Text
-                      style={[
-                        styles.vehicleOptionText,
-                        selected && styles.vehicleOptionTextSelected,
-                      ]}
-                    >
-                      {opt.label}
-                    </Text>
-                    {selected ? (
-                      <View style={styles.vehicleCheck}>
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={18}
-                          color={colors.primary}
-                        />
-                      </View>
-                    ) : null}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Form fields */}
-            <View style={styles.formGap} />
-            <Input
-              label="Vehicle number"
-              placeholder="e.g. MH01AB1234"
-              autoCapitalize="characters"
-              value={vehicleNumber}
-              onChangeText={(t) => {
-                setVehicleNumber(t);
-                if (errors.vehicle) setErrors((e) => ({ ...e, vehicle: undefined }));
-              }}
-              leftIcon="card-outline"
-              error={errors.vehicle}
-              containerStyle={{ marginBottom: spacing.lg }}
-            />
-
-            <Input
-              label="Driving license number"
-              placeholder="e.g. MH0120200012345"
-              autoCapitalize="characters"
-              value={licenseNumber}
-              onChangeText={(t) => {
-                setLicenseNumber(t);
-                if (errors.license) setErrors((e) => ({ ...e, license: undefined }));
-              }}
-              leftIcon="document-text-outline"
-              error={errors.license}
-            />
-
-            <Button
-              title="Submit Application"
-              icon="paper-plane"
-              iconPosition="right"
-              onPress={handleSubmit}
-              loading={registerMutation.isPending}
-              fullWidth
-              size="lg"
-              style={{ marginTop: spacing.xxl }}
-            />
-
-            <View style={styles.infoBox}>
-              <Ionicons name="information-circle" size={18} color={colors.info} />
-              <Text style={styles.infoText}>
-                Your details will be reviewed by our team. We approve most
-                drivers within 24-48 hours.
-              </Text>
-            </View>
-          </>
-        ) : null}
-
-        {error ? (
-          <View style={styles.errorBox}>
-            <Ionicons name="alert-circle" size={18} color={colors.error} />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-      </ScrollView>
-    </SafeAreaView>
+      {error ? (
+        <View style={authStyles.errorBox}>
+          <Ionicons name="alert-circle" size={18} color={colors.error} />
+          <Text style={authStyles.errorText}>{error}</Text>
+        </View>
+      ) : null}
+    </AuthScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  container: { flex: 1 },
-  contentContainer: {
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xxxl + spacing.lg,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.full,
-  },
-  headerHero: {
-    alignItems: 'center',
-    marginBottom: spacing.xxl,
-  },
-  heroIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.xl,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-    ...shadow.small,
-  },
-  title: {
-    fontSize: fontSize.xxl,
-    fontWeight: '800',
-    color: colors.textPrimary,
-  },
-  subtitle: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-  },
+  field: { marginBottom: spacing.lg },
   sectionLabel: {
     fontSize: fontSize.sm,
     fontWeight: '600',
     color: colors.textPrimary,
     marginBottom: spacing.sm,
   },
-  phoneRow: {
-    flexDirection: 'row',
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    overflow: 'hidden',
-  },
-  prefixBox: {
-    backgroundColor: colors.gray100,
-    paddingHorizontal: spacing.lg,
-    justifyContent: 'center',
-    borderRightWidth: 1.5,
-    borderRightColor: colors.border,
-  },
-  prefixText: {
-    fontSize: fontSize.md,
-    color: colors.textPrimary,
-    fontWeight: '700',
-  },
-  phoneInput: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: fontSize.md,
-    color: colors.textPrimary,
-    minHeight: 52,
-  },
-  otpHint: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginBottom: spacing.md,
-  },
-  otpRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  otpBox: {
-    flex: 1,
-    height: 56,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    textAlign: 'center',
-    fontSize: fontSize.xxl,
-    fontWeight: '800',
-    color: colors.textPrimary,
-  },
-  otpBoxFilled: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryTint,
-  },
-  changeNumberBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  changeNumberText: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-  },
-  vehiclePicker: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
+  vehiclePicker: { flexDirection: 'row', gap: spacing.sm },
   vehicleOption: {
     flex: 1,
     paddingVertical: spacing.lg,
@@ -602,46 +408,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   vehicleOptionTextSelected: { color: colors.primary, fontWeight: '700' },
-  vehicleCheck: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-  },
-  formGap: { height: spacing.xl },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: colors.infoLight,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    marginTop: spacing.xl,
-  },
-  infoText: {
-    flex: 1,
-    color: colors.infoDark,
-    fontSize: fontSize.xs,
-    fontWeight: '500',
-    lineHeight: 18,
-  },
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.errorLight,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    marginTop: spacing.lg,
-  },
-  errorText: {
-    flex: 1,
-    color: colors.error,
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-  },
-  pendingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-  },
+  vehicleCheck: { position: 'absolute', top: 6, right: 6 },
+  formGap: { height: spacing.lg },
 });
-

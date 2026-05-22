@@ -12,14 +12,20 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
 import MapView, { Region } from 'react-native-maps';
 import { useMutation } from '@tanstack/react-query';
-import { STORAGE_KEYS } from '@/lib/storage-keys';
+import { AuthScaffold, authStyles } from '@/components/AuthScaffold';
+import { Button } from '@/components/Button';
+import { Input } from '@/components/Input';
+import { OtpInput } from '@/components/OtpInput';
 import { api } from '@/lib/api';
-import type { StoreCategory, UserProfile } from '@aks/shared';
+import { persistSession } from '@/lib/session';
+import { useStorePortalStore } from '@/store/store.store';
+import { colors, spacing } from '@/constants/theme';
+import type { StoreCategory, StoreProfile, UserProfile } from '@aks/shared';
 
 const CATEGORIES: { label: string; value: StoreCategory }[] = [
   { label: 'Grocery', value: 'GROCERY' },
@@ -50,19 +56,18 @@ interface RegisterPayload {
   closeTime: string;
 }
 
-interface RegisterResponse {
+interface StoreRegisterResponse {
   message: string;
   storeId: string;
 }
 
-interface SendOtpResponse {
-  message: string;
-}
-
-interface VerifyOtpResponse {
+interface AuthResponse {
   accessToken: string;
-  refreshToken?: string;
+  refreshToken: string;
   user: UserProfile;
+  hasAddress: boolean;
+  mustChangePassword?: boolean;
+  storeProfile?: StoreProfile | null;
 }
 
 function geocodePincode(parts: Location.LocationGeocodedAddress | undefined) {
@@ -78,14 +83,37 @@ function geocodePincode(parts: Location.LocationGeocodedAddress | undefined) {
   };
 }
 
+/**
+ * Two-part store-owner registration:
+ *  1. `account` → collect name/phone/email/username/password, call
+ *     POST /auth/register (sends OTP).
+ *  2. `otp` → verify OTP with role STORE_OWNER; the owner is now logged in.
+ *  3. `form` → collect store details + location, call POST /stores/register
+ *     (now authenticated — it grants the STORE_OWNER role for this account).
+ *
+ * An already-authenticated owner (e.g. routed here from login because they
+ * have no store yet) skips straight to the `form` step.
+ */
 export default function StoreRegisterScreen() {
-  // Step 1 — phone verification
-  const [step, setStep] = useState<'phone' | 'otp' | 'form'>('phone');
-  const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
+  const existingToken = useStorePortalStore((s) => s.accessToken);
 
-  // Step 2 — registration form
+  // Step state
+  const [step, setStep] = useState<'account' | 'otp' | 'form'>(
+    existingToken ? 'form' : 'account',
+  );
+
+  // Step 1 — account fields
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Step 3 — store details form
+  const [storeName, setStoreName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<StoreCategory>('GROCERY');
   const [street, setStreet] = useState('');
@@ -101,6 +129,19 @@ export default function StoreRegisterScreen() {
   const [resolving, setResolving] = useState(false);
   const mapRef = useRef<MapView>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showAuthError(message: string) {
+    setAuthError(message);
+    setTimeout(() => setAuthError(null), 5000);
+  }
+
+  function errMessage(err: unknown, fallback: string) {
+    if (typeof err === 'object' && err && 'response' in err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      if (e.response?.data?.error) return e.response.data.error;
+    }
+    return err instanceof Error ? err.message : fallback;
+  }
 
   // Seed the map with the device GPS location once the form step opens
   useEffect(() => {
@@ -160,71 +201,80 @@ export default function StoreRegisterScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [region.latitude, region.longitude, step]);
 
-  const sendOtpMutation = useMutation<SendOtpResponse, Error, string>({
-    mutationFn: (phoneNumber) =>
-      api
-        .post<SendOtpResponse>('/api/v1/auth/send-otp', { phone: phoneNumber })
-        .then((r) => r.data),
-    onSuccess: () => setStep('otp'),
-    onError: (err) => Alert.alert('Error', err.message || 'Failed to send OTP'),
-  });
+  // --- Step 1/2: account registration + OTP verification ---
 
-  // Verify OTP with NO role field — backend auto-creates a CUSTOMER account
-  // and returns a token. The /stores/register call then promotes the role to
-  // STORE_OWNER.
-  const verifyOtpMutation = useMutation<
-    VerifyOtpResponse,
-    Error,
-    { phone: string; otp: string }
-  >({
-    mutationFn: async (payload) => {
-      const res = await api.post<{
-        success: boolean;
-        data: VerifyOtpResponse;
-        error?: string;
-      }>('/api/v1/auth/verify-otp', payload);
-      const inner =
-        (res.data as { data?: VerifyOtpResponse }).data ??
-        (res.data as VerifyOtpResponse);
-      if (!inner?.accessToken || !inner?.user) {
-        throw new Error(res.data?.error ?? 'Invalid response from server');
-      }
-      return inner;
-    },
-    onSuccess: async (data) => {
-      await SecureStore.setItemAsync(STORAGE_KEYS.accessToken, data.accessToken);
-      if (data.refreshToken) {
-        await SecureStore.setItemAsync(STORAGE_KEYS.refreshToken, data.refreshToken);
-      }
-      await SecureStore.setItemAsync(STORAGE_KEYS.user, JSON.stringify(data.user));
+  async function handleRegister() {
+    if (name.trim().length < 2) return showAuthError('Enter your full name');
+    if (phone.length !== 10) return showAuthError('Enter a valid 10-digit mobile number');
+    if (!/^\S+@\S+\.\S+$/.test(email)) return showAuthError('Enter a valid email address');
+    if (username.trim().length < 3)
+      return showAuthError('Username must be at least 3 characters');
+    if (password.length < 8) return showAuthError('Password must be at least 8 characters');
+
+    setAuthLoading(true);
+    setAuthError(null);
+    try {
+      await api.post('/api/v1/auth/register', {
+        name: name.trim(),
+        phone,
+        email: email.trim(),
+        username: username.trim(),
+        password,
+        role: 'STORE_OWNER',
+      });
+      setStep('otp');
+    } catch (err: unknown) {
+      showAuthError(errMessage(err, 'Registration failed. Please try again.'));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleVerify() {
+    if (otp.length !== 6) return showAuthError('Enter the complete 6-digit OTP');
+    setAuthLoading(true);
+    setAuthError(null);
+    try {
+      const res = await api.post<{ success: boolean; data: AuthResponse; error?: string }>(
+        '/api/v1/auth/verify-otp',
+        { phone, otp, role: 'STORE_OWNER' },
+      );
+      const payload = res.data?.data;
+      if (!payload?.accessToken) throw new Error(res.data?.error ?? 'Verification failed');
+      // Account verified — owner is now logged in. Persist the session, then
+      // continue to the store-detail creation step.
+      await persistSession(
+        payload.user,
+        payload.accessToken,
+        payload.refreshToken,
+        payload.storeProfile ?? null,
+      );
       setStep('form');
-    },
-    onError: (err) => Alert.alert('Error', err.message || 'Invalid OTP'),
-  });
+    } catch (err: unknown) {
+      showAuthError(errMessage(err, 'Invalid OTP. Please try again.'));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
 
-  const registerMutation = useMutation<RegisterResponse, Error, RegisterPayload>({
+  async function handleResendOtp() {
+    setAuthError(null);
+    try {
+      await api.post('/api/v1/auth/send-otp', { phone });
+      showAuthError('A new OTP has been sent to your number');
+    } catch {
+      showAuthError('Could not resend the OTP');
+    }
+  }
+
+  // --- Step 3: store details ---
+
+  const registerStoreMutation = useMutation<StoreRegisterResponse, Error, RegisterPayload>({
     mutationFn: (payload) =>
-      api.post<RegisterResponse>('/api/v1/stores/register', payload).then((r) => r.data),
+      api.post<StoreRegisterResponse>('/api/v1/stores/register', payload).then((r) => r.data),
     onSuccess: () => setSubmitted(true),
     onError: (err) => Alert.alert('Registration Failed', err.message || 'Please try again'),
   });
-
-  const handleSendOtp = () => {
-    const trimmed = phone.trim();
-    if (trimmed.length < 10) {
-      Alert.alert('Validation', 'Enter a valid 10-digit phone number');
-      return;
-    }
-    sendOtpMutation.mutate(trimmed);
-  };
-
-  const handleVerifyOtp = () => {
-    if (otp.trim().length !== 6) {
-      Alert.alert('Validation', 'Enter the 6-digit OTP');
-      return;
-    }
-    verifyOtpMutation.mutate({ phone: phone.trim(), otp: otp.trim() });
-  };
 
   async function handleRecenter() {
     try {
@@ -248,7 +298,7 @@ export default function StoreRegisterScreen() {
   }
 
   const handleSubmit = () => {
-    if (name.trim().length < 2) return Alert.alert('Validation', 'Store name is required');
+    if (storeName.trim().length < 2) return Alert.alert('Validation', 'Store name is required');
     if (street.trim().length < 2) return Alert.alert('Validation', 'Street address is required');
     if (city.trim().length < 2) return Alert.alert('Validation', 'City is required');
     if (state.trim().length < 2) return Alert.alert('Validation', 'State is required');
@@ -259,8 +309,8 @@ export default function StoreRegisterScreen() {
     if (!/^\d{2}:\d{2}$/.test(closeTime.trim()))
       return Alert.alert('Validation', 'Closing time must be in HH:MM format');
 
-    registerMutation.mutate({
-      name: name.trim(),
+    registerStoreMutation.mutate({
+      name: storeName.trim(),
       description: description.trim(),
       category,
       lat: region.latitude,
@@ -274,6 +324,130 @@ export default function StoreRegisterScreen() {
     });
   };
 
+  // --- Render: account / otp steps use the shared AuthScaffold ---
+
+  if (step === 'account') {
+    return (
+      <AuthScaffold>
+        <Text style={authStyles.title}>Create your account</Text>
+        <Text style={authStyles.subtitle}>
+          We&apos;ll send a one-time code to verify your mobile number. You&apos;ll add your
+          store details next.
+        </Text>
+
+        <Input
+          label="Full name"
+          value={name}
+          onChangeText={setName}
+          placeholder="e.g. Ramesh Sharma"
+          autoCapitalize="words"
+          leftIcon="person-outline"
+        />
+        <Input
+          label="Mobile number"
+          value={phone}
+          onChangeText={(t) => setPhone(t.replace(/\D/g, '').slice(0, 10))}
+          placeholder="10-digit number"
+          keyboardType="number-pad"
+          leftIcon="call-outline"
+        />
+        <Input
+          label="Email"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="you@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          leftIcon="mail-outline"
+        />
+        <Input
+          label="Username"
+          value={username}
+          onChangeText={(t) => setUsername(t.replace(/\s/g, ''))}
+          placeholder="Used to log in"
+          autoCapitalize="none"
+          leftIcon="at-outline"
+        />
+        <Input
+          label="Password"
+          value={password}
+          onChangeText={setPassword}
+          placeholder="At least 8 characters"
+          secureTextEntry
+          leftIcon="lock-closed-outline"
+        />
+
+        <Button
+          title="Create account"
+          onPress={handleRegister}
+          loading={authLoading}
+          fullWidth
+          size="lg"
+          style={{ marginTop: spacing.lg }}
+        />
+
+        {authError ? (
+          <View style={authStyles.errorBox}>
+            <Ionicons name="alert-circle" size={18} color={colors.error} />
+            <Text style={authStyles.errorText}>{authError}</Text>
+          </View>
+        ) : null}
+
+        <View style={authStyles.footerRow}>
+          <Text style={authStyles.footerMuted}>Already have an account? </Text>
+          <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
+            <Text style={authStyles.linkText}>Log in</Text>
+          </TouchableOpacity>
+        </View>
+      </AuthScaffold>
+    );
+  }
+
+  if (step === 'otp') {
+    return (
+      <AuthScaffold>
+        <Text style={authStyles.title}>Verify your number</Text>
+        <Text style={authStyles.subtitle}>Enter the 6-digit OTP sent to +91 {phone}</Text>
+
+        <OtpInput value={otp} onChange={setOtp} />
+
+        <Button
+          title="Verify & continue"
+          onPress={handleVerify}
+          loading={authLoading}
+          disabled={otp.length !== 6}
+          fullWidth
+          size="lg"
+          style={{ marginTop: spacing.lg }}
+        />
+
+        <TouchableOpacity style={authStyles.link} onPress={handleResendOtp}>
+          <Ionicons name="refresh" size={16} color={colors.primary} />
+          <Text style={authStyles.linkText}>Resend OTP</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={authStyles.link}
+          onPress={() => {
+            setStep('account');
+            setOtp('');
+          }}
+        >
+          <Ionicons name="arrow-back" size={16} color={colors.primary} />
+          <Text style={authStyles.linkText}>Edit details</Text>
+        </TouchableOpacity>
+
+        {authError ? (
+          <View style={authStyles.errorBox}>
+            <Ionicons name="alert-circle" size={18} color={colors.error} />
+            <Text style={authStyles.errorText}>{authError}</Text>
+          </View>
+        ) : null}
+      </AuthScaffold>
+    );
+  }
+
+  // --- Step 3: store-detail form (with map picker) ---
+
   if (submitted) {
     return (
       // SafeAreaView so the success screen respects Android status bar
@@ -281,8 +455,8 @@ export default function StoreRegisterScreen() {
         <Text style={styles.pendingIcon}>⏳</Text>
         <Text style={styles.pendingTitle}>Store Registered!</Text>
         <Text style={styles.pendingDesc}>
-          Your store application is pending admin approval. You'll be able to start accepting orders
-          once approved. This usually takes 24–48 hours.
+          Your store application is pending admin approval. You&apos;ll be able to start
+          accepting orders once approved. This usually takes 24–48 hours.
         </Text>
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(auth)/login')}>
           <Text style={styles.backButtonText}>Back to Login</Text>
@@ -303,234 +477,158 @@ export default function StoreRegisterScreen() {
           contentContainerStyle={styles.contentContainer}
           keyboardShouldPersistTaps="handled"
         >
-          <TouchableOpacity
-            onPress={() => {
-              if (step === 'otp') setStep('phone');
-              else if (step === 'form') setStep('phone');
-              else router.back();
-            }}
-            style={styles.backArrow}
-          >
-            <Text style={styles.backArrowText}>← Back</Text>
-          </TouchableOpacity>
+          <Text style={styles.title}>Set up your store</Text>
+          <Text style={styles.subtitle}>Fill in your store details to get started</Text>
 
-          {step === 'phone' ? (
-            <>
-              <Text style={styles.title}>Register Your Store</Text>
-              <Text style={styles.subtitle}>Verify your phone number to get started</Text>
+          {/* Store Info */}
+          <Text style={styles.sectionHeader}>Store Information</Text>
 
-              <Text style={styles.label}>Phone Number</Text>
-              <View style={styles.phoneRow}>
-                <Text style={styles.countryCode}>+91</Text>
-                <TextInput
-                  style={styles.phoneInput}
-                  placeholder="Enter your phone number"
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  value={phone}
-                  onChangeText={setPhone}
-                  autoFocus
-                />
-              </View>
+          <Text style={styles.label}>Store Name *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. Sharma Kirana Store"
+            value={storeName}
+            onChangeText={setStoreName}
+          />
+
+          <Text style={styles.label}>Description</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="Brief description of your store..."
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            numberOfLines={3}
+          />
+
+          <Text style={styles.label}>Category *</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+            {CATEGORIES.map((cat) => (
               <TouchableOpacity
-                style={[styles.submitButton, sendOtpMutation.isPending && styles.submitButtonDisabled]}
-                onPress={handleSendOtp}
-                disabled={sendOtpMutation.isPending}
+                key={cat.value}
+                style={[styles.categoryChip, category === cat.value && styles.categoryChipSelected]}
+                onPress={() => setCategory(cat.value)}
               >
-                {sendOtpMutation.isPending ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Send OTP</Text>
-                )}
-              </TouchableOpacity>
-            </>
-          ) : null}
-
-          {step === 'otp' ? (
-            <>
-              <Text style={styles.title}>Verify Your Number</Text>
-              <Text style={styles.subtitle}>Enter the 6-digit code we sent you</Text>
-
-              <Text style={styles.label}>Enter OTP sent to +91 {phone}</Text>
-              <TextInput
-                style={styles.otpInput}
-                placeholder="6-digit OTP"
-                keyboardType="number-pad"
-                maxLength={6}
-                value={otp}
-                onChangeText={setOtp}
-                autoFocus
-              />
-              <TouchableOpacity
-                style={[styles.submitButton, verifyOtpMutation.isPending && styles.submitButtonDisabled]}
-                onPress={handleVerifyOtp}
-                disabled={verifyOtpMutation.isPending}
-              >
-                {verifyOtpMutation.isPending ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Verify OTP</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setStep('phone')} style={styles.backLink}>
-                <Text style={styles.backLinkText}>Change number</Text>
-              </TouchableOpacity>
-            </>
-          ) : null}
-
-          {step === 'form' ? (
-            <>
-              <Text style={styles.title}>Register Your Store</Text>
-              <Text style={styles.subtitle}>Fill in your store details to get started</Text>
-
-              {/* Store Info */}
-              <Text style={styles.sectionHeader}>Store Information</Text>
-
-              <Text style={styles.label}>Store Name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Sharma Kirana Store"
-                value={name}
-                onChangeText={setName}
-              />
-
-              <Text style={styles.label}>Description</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Brief description of your store..."
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                numberOfLines={3}
-              />
-
-              <Text style={styles.label}>Category *</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-                {CATEGORIES.map((cat) => (
-                  <TouchableOpacity
-                    key={cat.value}
-                    style={[styles.categoryChip, category === cat.value && styles.categoryChipSelected]}
-                    onPress={() => setCategory(cat.value)}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryChipText,
-                        category === cat.value && styles.categoryChipTextSelected,
-                      ]}
-                    >
-                      {cat.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              {/* Location — drag the map so the pin sits on your store */}
-              <Text style={styles.sectionHeader}>Store Location</Text>
-              <Text style={styles.hint}>
-                Pan the map so the pin sits exactly on your store. We use this to send you nearby
-                orders.
-              </Text>
-
-              <View style={styles.mapWrap}>
-                <MapView
-                  ref={mapRef}
-                  style={styles.map}
-                  initialRegion={region}
-                  onRegionChangeComplete={(r) => setRegion(r)}
-                  showsUserLocation
-                  showsMyLocationButton={false}
-                />
-                <View pointerEvents="none" style={styles.crosshair}>
-                  <Text style={styles.pinEmoji}>📍</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.recenterBtn}
-                  activeOpacity={0.8}
-                  onPress={handleRecenter}
+                <Text
+                  style={[
+                    styles.categoryChipText,
+                    category === cat.value && styles.categoryChipTextSelected,
+                  ]}
                 >
-                  <Text style={styles.recenterText}>◎</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.coordsRow}>
-                <Text style={styles.coords}>
-                  {region.latitude.toFixed(5)}, {region.longitude.toFixed(5)}
+                  {cat.label}
                 </Text>
-                {resolving ? <ActivityIndicator size="small" color="#2563EB" /> : null}
-              </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
 
-              {/* Address — auto-filled from the pin, still editable */}
-              <Text style={styles.sectionHeader}>Address</Text>
+          {/* Location — drag the map so the pin sits on your store */}
+          <Text style={styles.sectionHeader}>Store Location</Text>
+          <Text style={styles.hint}>
+            Pan the map so the pin sits exactly on your store. We use this to send you nearby
+            orders.
+          </Text>
 
-              <Text style={styles.label}>Street Address *</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Shop number, building, street name"
-                value={street}
-                onChangeText={setStreet}
-                multiline
-                numberOfLines={2}
-              />
+          <View style={styles.mapWrap}>
+            <MapView
+              ref={mapRef}
+              style={styles.map}
+              initialRegion={region}
+              onRegionChangeComplete={(r) => setRegion(r)}
+              showsUserLocation
+              showsMyLocationButton={false}
+            />
+            <View pointerEvents="none" style={styles.crosshair}>
+              <Text style={styles.pinEmoji}>📍</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.recenterBtn}
+              activeOpacity={0.8}
+              onPress={handleRecenter}
+            >
+              <Text style={styles.recenterText}>◎</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.coordsRow}>
+            <Text style={styles.coords}>
+              {region.latitude.toFixed(5)}, {region.longitude.toFixed(5)}
+            </Text>
+            {resolving ? <ActivityIndicator size="small" color="#2563EB" /> : null}
+          </View>
 
-              <View style={styles.row}>
-                <View style={styles.rowField}>
-                  <Text style={styles.label}>City *</Text>
-                  <TextInput style={styles.input} placeholder="City" value={city} onChangeText={setCity} />
-                </View>
-                <View style={styles.rowField}>
-                  <Text style={styles.label}>State *</Text>
-                  <TextInput style={styles.input} placeholder="State" value={state} onChangeText={setState} />
-                </View>
-              </View>
+          {/* Address — auto-filled from the pin, still editable */}
+          <Text style={styles.sectionHeader}>Address</Text>
 
-              <Text style={styles.label}>Pincode *</Text>
+          <Text style={styles.label}>Street Address *</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="Shop number, building, street name"
+            value={street}
+            onChangeText={setStreet}
+            multiline
+            numberOfLines={2}
+          />
+
+          <View style={styles.row}>
+            <View style={styles.rowField}>
+              <Text style={styles.label}>City *</Text>
+              <TextInput style={styles.input} placeholder="City" value={city} onChangeText={setCity} />
+            </View>
+            <View style={styles.rowField}>
+              <Text style={styles.label}>State *</Text>
+              <TextInput style={styles.input} placeholder="State" value={state} onChangeText={setState} />
+            </View>
+          </View>
+
+          <Text style={styles.label}>Pincode *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="6-digit pincode"
+            keyboardType="number-pad"
+            maxLength={6}
+            value={pincode}
+            onChangeText={setPincode}
+          />
+
+          {/* Operating Hours */}
+          <Text style={styles.sectionHeader}>Operating Hours</Text>
+
+          <View style={styles.row}>
+            <View style={styles.rowField}>
+              <Text style={styles.label}>Opening Time</Text>
               <TextInput
                 style={styles.input}
-                placeholder="6-digit pincode"
-                keyboardType="number-pad"
-                maxLength={6}
-                value={pincode}
-                onChangeText={setPincode}
+                placeholder="HH:MM"
+                value={openTime}
+                onChangeText={setOpenTime}
+                keyboardType="numbers-and-punctuation"
               />
+            </View>
+            <View style={styles.rowField}>
+              <Text style={styles.label}>Closing Time</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="HH:MM"
+                value={closeTime}
+                onChangeText={setCloseTime}
+                keyboardType="numbers-and-punctuation"
+              />
+            </View>
+          </View>
 
-              {/* Operating Hours */}
-              <Text style={styles.sectionHeader}>Operating Hours</Text>
-
-              <View style={styles.row}>
-                <View style={styles.rowField}>
-                  <Text style={styles.label}>Opening Time</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="HH:MM"
-                    value={openTime}
-                    onChangeText={setOpenTime}
-                    keyboardType="numbers-and-punctuation"
-                  />
-                </View>
-                <View style={styles.rowField}>
-                  <Text style={styles.label}>Closing Time</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="HH:MM"
-                    value={closeTime}
-                    onChangeText={setCloseTime}
-                    keyboardType="numbers-and-punctuation"
-                  />
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.submitButton, registerMutation.isPending && styles.submitButtonDisabled]}
-                onPress={handleSubmit}
-                disabled={registerMutation.isPending}
-              >
-                {registerMutation.isPending ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Submit Registration</Text>
-                )}
-              </TouchableOpacity>
-            </>
-          ) : null}
+          <TouchableOpacity
+            style={[
+              styles.submitButton,
+              registerStoreMutation.isPending && styles.submitButtonDisabled,
+            ]}
+            onPress={handleSubmit}
+            disabled={registerStoreMutation.isPending}
+          >
+            {registerStoreMutation.isPending ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.submitButtonText}>Submit Registration</Text>
+            )}
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -542,8 +640,6 @@ const MAP_HEIGHT = 280;
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   contentContainer: { padding: 24, paddingBottom: 48 },
-  backArrow: { marginBottom: 20 },
-  backArrowText: { color: '#2563EB', fontSize: 16, fontWeight: '600' },
   title: { fontSize: 26, fontWeight: '700', color: '#111827', marginBottom: 6 },
   subtitle: { fontSize: 14, color: '#6B7280', marginBottom: 24 },
   sectionHeader: { fontSize: 15, fontWeight: '700', color: '#2563EB', marginTop: 20, marginBottom: 12 },
@@ -619,32 +715,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   coords: { fontSize: 12, color: '#6B7280' },
-  phoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 52,
-    marginBottom: 16,
-  },
-  countryCode: { fontSize: 16, color: '#374151', marginRight: 8, fontWeight: '600' },
-  phoneInput: { flex: 1, fontSize: 16, color: '#111827' },
-  otpInput: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    height: 52,
-    fontSize: 22,
-    letterSpacing: 8,
-    textAlign: 'center',
-    color: '#111827',
-    marginBottom: 16,
-  },
-  backLink: { alignItems: 'center', marginTop: 8 },
-  backLinkText: { color: '#2563EB', fontSize: 14 },
   submitButton: {
     backgroundColor: '#2563EB',
     borderRadius: 12,
@@ -668,4 +738,3 @@ const styles = StyleSheet.create({
   backButton: { backgroundColor: '#2563EB', borderRadius: 10, paddingHorizontal: 32, paddingVertical: 14 },
   backButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });
-

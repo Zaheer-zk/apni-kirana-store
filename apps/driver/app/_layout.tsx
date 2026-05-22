@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Stack, router } from 'expo-router';
+import { Redirect, Stack, router, usePathname } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -44,6 +44,7 @@ function SplashScreen() {
 function RootLayoutNav() {
   const { accessToken, setAuth } = useDriverStore();
   const [isReady, setIsReady] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     let cancelled = false;
@@ -58,14 +59,16 @@ function RootLayoutNav() {
         if (cancelled) return;
 
         if (token && userRaw) {
-          const user = JSON.parse(userRaw);
-          const driverProfile = driverProfileRaw ? JSON.parse(driverProfileRaw) : null;
-          setAuth(token, user, driverProfile);
-        } else {
-          router.replace('/(auth)/login');
+          try {
+            const user = JSON.parse(userRaw);
+            const driverProfile = driverProfileRaw ? JSON.parse(driverProfileRaw) : null;
+            setAuth(token, user, driverProfile);
+          } catch {
+            // corrupt session — fall through to login
+          }
         }
       } catch {
-        router.replace('/(auth)/login');
+        // SecureStore failed — fall through to login
       } finally {
         if (!cancelled) setIsReady(true);
       }
@@ -75,16 +78,6 @@ function RootLayoutNav() {
       cancelled = true;
     };
   }, [setAuth]);
-
-  useEffect(() => {
-    if (!isReady) return;
-    if (accessToken === null) return;
-    if (accessToken) {
-      router.replace('/(tabs)/dashboard');
-    } else {
-      router.replace('/(auth)/login');
-    }
-  }, [accessToken, isReady]);
 
   // Register for push notifications and attach tap listener once authenticated.
   useEffect(() => {
@@ -104,9 +97,19 @@ function RootLayoutNav() {
     return detach;
   }, [accessToken]);
 
-  // The Stack must stay mounted even during bootstrap — otherwise the
-  // router.replace() calls above fire before any navigator exists ("route
-  // (auth) not handled"). The splash is layered on top while !isReady.
+  // expo-router strips route groups from the pathname, so (auth) screens show
+  // up as plain "/login", "/register", etc.
+  const path = pathname ?? '';
+  // Screens an unauthenticated user is allowed to reach.
+  const inAuthGroup = ['/login', '/register', '/forgot-password'].includes(path);
+  // change-password and pending are in the (auth) group but are reached AFTER
+  // login (forced password change / awaiting approval) — an authenticated user
+  // must be allowed to stay on them rather than be bounced to the dashboard.
+  const isPostLoginAuthScreen = path === '/change-password' || path === '/pending';
+
+  // The Stack must stay mounted even during bootstrap — otherwise a <Redirect>
+  // fires before any navigator exists ("route (auth) not handled"). So the
+  // Stack + redirect/splash render as siblings, never one instead of the other.
   return (
     <>
     <Stack
@@ -137,6 +140,12 @@ function RootLayoutNav() {
       <Stack.Screen name="chat/[orderId]" options={{ title: 'Chat' }} />
       <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
     </Stack>
+    {isReady && !accessToken && !inAuthGroup && !isPostLoginAuthScreen ? (
+      <Redirect href="/(auth)/login" />
+    ) : null}
+    {isReady && accessToken && inAuthGroup ? (
+      <Redirect href="/(tabs)/dashboard" />
+    ) : null}
     {!isReady && <SplashScreen />}
     </>
   );

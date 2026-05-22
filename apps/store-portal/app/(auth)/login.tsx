@@ -1,230 +1,296 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Link, router } from 'expo-router';
+import { useState } from 'react';
+import { Text, TouchableOpacity, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { useMutation } from '@tanstack/react-query';
+import { AuthScaffold, authStyles } from '@/components/AuthScaffold';
+import { Button } from '@/components/Button';
+import { Input } from '@/components/Input';
+import { OtpInput } from '@/components/OtpInput';
 import { api } from '@/lib/api';
-import { useStorePortalStore } from '@/store/store.store';
+import { persistSession } from '@/lib/session';
 import { STORAGE_KEYS } from '@/lib/storage-keys';
-import type { UserProfile, StoreProfile } from '@aks/shared';
+import { useStorePortalStore } from '@/store/store.store';
+import { colors, spacing } from '@/constants/theme';
+import type { StoreProfile, UserProfile } from '@aks/shared';
 
-interface SendOtpResponse {
-  message: string;
-}
-
-interface VerifyOtpResponse {
-  accessToken: string;
+interface AuthResponse {
   user: UserProfile;
-  storeProfile: StoreProfile | null;
+  accessToken: string;
+  refreshToken: string;
+  hasAddress: boolean;
+  mustChangePassword?: boolean;
+  storeProfile?: StoreProfile | null;
 }
+
+type Mode = 'password' | 'otp';
 
 export default function StoreLoginScreen() {
+  const [mode, setMode] = useState<Mode>('password');
+
+  // Password login
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+
+  // OTP login
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
-  const { setAuth } = useStorePortalStore();
 
-  const sendOtpMutation = useMutation<SendOtpResponse, Error, string>({
-    mutationFn: (phoneNumber) =>
-      api.post<SendOtpResponse>('/api/v1/auth/send-otp', { phone: phoneNumber }).then((r) => r.data),
-    onSuccess: () => setOtpSent(true),
-    onError: (err) => Alert.alert('Error', err.message || 'Failed to send OTP'),
-  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const verifyOtpMutation = useMutation<VerifyOtpResponse, Error, { phone: string; otp: string }>({
-    mutationFn: async (payload) => {
-      const res = await api.post<{ success: boolean; data: VerifyOtpResponse; error?: string }>(
-        '/api/v1/auth/verify-otp',
-        { ...payload, role: 'STORE_OWNER' },
+  function showError(message: string) {
+    setError(message);
+    setTimeout(() => setError(null), 4500);
+  }
+
+  function errMessage(err: unknown, fallback: string) {
+    if (typeof err === 'object' && err && 'response' in err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      if (e.response?.data?.error) return e.response.data.error;
+    }
+    return err instanceof Error ? err.message : fallback;
+  }
+
+  /**
+   * Resolves the destination after a successful store-owner login. If the
+   * owner has no store yet → store registration form; otherwise → dashboard.
+   * Returns the destination route so `mustChangePassword` can forward to it.
+   */
+  async function resolveStoreDestination(
+    user: UserProfile,
+    storeProfile: StoreProfile | null,
+  ): Promise<string> {
+    let profile = storeProfile;
+    if (!profile) {
+      try {
+        const meRes = await api.get<{ data?: StoreProfile } | StoreProfile>('/api/v1/stores/me');
+        profile =
+          (meRes.data as { data?: StoreProfile })?.data ?? (meRes.data as StoreProfile) ?? null;
+      } catch {
+        // 404 — owner without a store; fall through to store registration
+        profile = null;
+      }
+    }
+    if (profile && profile.id) {
+      await SecureStore.setItemAsync(STORAGE_KEYS.storeProfile, JSON.stringify(profile));
+      useStorePortalStore.getState().setStoreProfile(profile);
+      return '/(tabs)/dashboard';
+    }
+    // No store yet — send the owner to the store-detail creation step.
+    return '/(auth)/register';
+  }
+
+  /** Routes onward after a successful login / OTP verify. */
+  async function completeAuth(payload: AuthResponse) {
+    await persistSession(
+      payload.user,
+      payload.accessToken,
+      payload.refreshToken,
+      payload.storeProfile ?? null,
+    );
+
+    const destination = await resolveStoreDestination(
+      payload.user,
+      payload.storeProfile ?? null,
+    );
+
+    if (payload.mustChangePassword) {
+      router.replace(`/(auth)/change-password?next=${encodeURIComponent(destination)}`);
+      return;
+    }
+    router.replace(destination as never);
+  }
+
+  async function handlePasswordLogin() {
+    if (!identifier.trim() || !password) {
+      showError('Enter your username/mobile number and password');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.post<{ success: boolean; data: AuthResponse; error?: string }>(
+        '/api/v1/auth/login',
+        { identifier: identifier.trim(), password, role: 'STORE_OWNER' },
       );
-      // Backend wraps as { success, data, message } — unwrap to the inner payload
-      const inner = (res.data as { data?: VerifyOtpResponse }).data ?? (res.data as VerifyOtpResponse);
-      if (!inner?.accessToken || !inner?.user) {
-        throw new Error(res.data?.error ?? 'Invalid response from server');
-      }
-      return inner;
-    },
-    onSuccess: async (data) => {
-      await SecureStore.setItemAsync(STORAGE_KEYS.accessToken, data.accessToken);
-      await SecureStore.setItemAsync(STORAGE_KEYS.user, JSON.stringify(data.user));
+      const payload = res.data?.data;
+      if (!payload?.accessToken) throw new Error(res.data?.error ?? 'Login failed');
+      await completeAuth(payload);
+    } catch (err: unknown) {
+      showError(errMessage(err, 'Login failed. Please try again.'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      // Store owner: load their store profile (if any) so we can decide where to route
-      let storeProfile = data.storeProfile;
-      if (!storeProfile && data.user.role === 'STORE_OWNER') {
-        try {
-          const meRes = await api.get<any>('/api/v1/stores/me');
-          storeProfile = (meRes.data as { data?: any }).data ?? meRes.data;
-        } catch {
-          // 404 is fine — owner without a store goes to /register below
-        }
-      }
-      if (storeProfile) {
-        await SecureStore.setItemAsync(STORAGE_KEYS.storeProfile, JSON.stringify(storeProfile));
-      }
-      setAuth(data.accessToken, data.user, storeProfile);
-
-      if (!storeProfile && data.user.role !== 'STORE_OWNER') {
-        router.replace('/(auth)/register');
-        return;
-      }
-
-      router.replace('/(tabs)/dashboard');
-    },
-    onError: (err) => Alert.alert('Error', err.message || 'Invalid OTP'),
-  });
-
-  const handleSendOtp = () => {
-    const trimmed = phone.trim();
-    if (trimmed.length < 10) {
-      Alert.alert('Validation', 'Enter a valid 10-digit phone number');
+  async function handleSendOtp() {
+    if (phone.length !== 10) {
+      showError('Enter a valid 10-digit mobile number');
       return;
     }
-    sendOtpMutation.mutate(trimmed);
-  };
+    setLoading(true);
+    setError(null);
+    try {
+      await api.post('/api/v1/auth/send-otp', { phone });
+      setOtpSent(true);
+    } catch (err: unknown) {
+      showError(errMessage(err, 'Could not send OTP. Please try again.'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  const handleVerifyOtp = () => {
-    if (otp.trim().length !== 6) {
-      Alert.alert('Validation', 'Enter the 6-digit OTP');
+  async function handleVerifyOtp() {
+    if (otp.length !== 6) {
+      showError('Enter the complete 6-digit OTP');
       return;
     }
-    verifyOtpMutation.mutate({ phone: phone.trim(), otp: otp.trim() });
-  };
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.post<{ success: boolean; data: AuthResponse; error?: string }>(
+        '/api/v1/auth/verify-otp',
+        { phone, otp, role: 'STORE_OWNER' },
+      );
+      const payload = res.data?.data;
+      if (!payload?.accessToken) throw new Error(res.data?.error ?? 'Verification failed');
+      await completeAuth(payload);
+    } catch (err: unknown) {
+      showError(errMessage(err, 'Invalid OTP. Please try again.'));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    // SafeAreaView prevents content rendering under Android status bar (auth has no native header)
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <View style={styles.inner}>
-        <View style={styles.header}>
-          <Text style={styles.logo}>🏪</Text>
-          <Text style={styles.title}>AKS Store</Text>
-          <Text style={styles.subtitle}>Apni Kirana Store — Store Portal</Text>
-        </View>
+    <AuthScaffold>
+      <Text style={authStyles.title}>Welcome back</Text>
+      <Text style={authStyles.subtitle}>Log in to manage your store</Text>
 
-        <View style={styles.form}>
-          {!otpSent ? (
-            <>
-              <Text style={styles.label}>Phone Number</Text>
-              <View style={styles.phoneRow}>
-                <Text style={styles.countryCode}>+91</Text>
-                <TextInput
-                  style={styles.phoneInput}
-                  placeholder="Enter your phone number"
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  value={phone}
-                  onChangeText={setPhone}
-                  autoFocus
-                />
-              </View>
-              <TouchableOpacity
-                style={[styles.button, sendOtpMutation.isPending && styles.buttonDisabled]}
-                onPress={handleSendOtp}
-                disabled={sendOtpMutation.isPending}
-              >
-                {sendOtpMutation.isPending ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Send OTP</Text>
-                )}
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <Text style={styles.label}>Enter OTP sent to +91 {phone}</Text>
-              <TextInput
-                style={styles.otpInput}
-                placeholder="6-digit OTP"
-                keyboardType="number-pad"
-                maxLength={6}
-                value={otp}
-                onChangeText={setOtp}
-                autoFocus
-              />
-              <TouchableOpacity
-                style={[styles.button, verifyOtpMutation.isPending && styles.buttonDisabled]}
-                onPress={handleVerifyOtp}
-                disabled={verifyOtpMutation.isPending}
-              >
-                {verifyOtpMutation.isPending ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Verify OTP</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setOtpSent(false)} style={styles.backLink}>
-                <Text style={styles.backLinkText}>Change number</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-
-        <TouchableOpacity onPress={() => router.push('/(auth)/register')} style={styles.registerLink}>
-          <Text style={styles.registerLinkText}>Register your store</Text>
+      {/* Mode switch */}
+      <View style={authStyles.segment}>
+        <TouchableOpacity
+          style={[authStyles.segmentBtn, mode === 'password' && authStyles.segmentBtnActive]}
+          onPress={() => {
+            setMode('password');
+            setError(null);
+          }}
+        >
+          <Text style={[authStyles.segmentText, mode === 'password' && authStyles.segmentTextActive]}>
+            Password
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[authStyles.segmentBtn, mode === 'otp' && authStyles.segmentBtnActive]}
+          onPress={() => {
+            setMode('otp');
+            setError(null);
+          }}
+        >
+          <Text style={[authStyles.segmentText, mode === 'otp' && authStyles.segmentTextActive]}>
+            OTP
+          </Text>
         </TouchableOpacity>
       </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+
+      {mode === 'password' ? (
+        <>
+          <Input
+            label="Username or mobile number"
+            value={identifier}
+            onChangeText={setIdentifier}
+            placeholder="e.g. sharma or 9876543210"
+            autoCapitalize="none"
+            leftIcon="person-outline"
+          />
+          <Input
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Your password"
+            secureTextEntry
+            leftIcon="lock-closed-outline"
+            returnKeyType="done"
+            onSubmitEditing={handlePasswordLogin}
+          />
+          <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')}>
+            <Text style={[authStyles.linkText, { textAlign: 'right', marginTop: spacing.xs }]}>
+              Forgot password?
+            </Text>
+          </TouchableOpacity>
+          <Button
+            title="Log in"
+            onPress={handlePasswordLogin}
+            loading={loading}
+            disabled={!identifier.trim() || !password}
+            fullWidth
+            size="lg"
+            style={{ marginTop: spacing.lg }}
+          />
+        </>
+      ) : !otpSent ? (
+        <>
+          <Input
+            label="Mobile number"
+            value={phone}
+            onChangeText={(t) => setPhone(t.replace(/\D/g, '').slice(0, 10))}
+            placeholder="10-digit number"
+            keyboardType="number-pad"
+            leftIcon="call-outline"
+          />
+          <Button
+            title="Send OTP"
+            onPress={handleSendOtp}
+            loading={loading}
+            disabled={phone.length !== 10}
+            fullWidth
+            size="lg"
+            style={{ marginTop: spacing.lg }}
+          />
+        </>
+      ) : (
+        <>
+          <Text style={authStyles.subtitle}>OTP sent to +91 {phone}</Text>
+          <OtpInput value={otp} onChange={setOtp} />
+          <Button
+            title="Verify & log in"
+            onPress={handleVerifyOtp}
+            loading={loading}
+            disabled={otp.length !== 6}
+            fullWidth
+            size="lg"
+            style={{ marginTop: spacing.lg }}
+          />
+          <TouchableOpacity
+            style={authStyles.link}
+            onPress={() => {
+              setOtpSent(false);
+              setOtp('');
+            }}
+          >
+            <Ionicons name="arrow-back" size={16} color={colors.primary} />
+            <Text style={authStyles.linkText}>Change number</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
+      {error ? (
+        <View style={authStyles.errorBox}>
+          <Ionicons name="alert-circle" size={18} color={colors.error} />
+          <Text style={authStyles.errorText}>{error}</Text>
+        </View>
+      ) : null}
+
+      <View style={authStyles.footerRow}>
+        <Text style={authStyles.footerMuted}>New store owner? </Text>
+        <Link href="/(auth)/register" asChild>
+          <TouchableOpacity>
+            <Text style={authStyles.linkText}>Register your store</Text>
+          </TouchableOpacity>
+        </Link>
+      </View>
+    </AuthScaffold>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  inner: { flex: 1, justifyContent: 'center', paddingHorizontal: 28 },
-  header: { alignItems: 'center', marginBottom: 40 },
-  logo: { fontSize: 56, marginBottom: 8 },
-  title: { fontSize: 28, fontWeight: '700', color: '#2563EB' },
-  subtitle: { fontSize: 14, color: '#6B7280', marginTop: 4 },
-  form: { gap: 12 },
-  label: { fontSize: 14, color: '#374151', fontWeight: '500' },
-  phoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 52,
-  },
-  countryCode: { fontSize: 16, color: '#374151', marginRight: 8, fontWeight: '600' },
-  phoneInput: { flex: 1, fontSize: 16, color: '#111827' },
-  otpInput: {
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    height: 52,
-    fontSize: 22,
-    letterSpacing: 8,
-    textAlign: 'center',
-    color: '#111827',
-  },
-  button: {
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    height: 52,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  backLink: { alignItems: 'center', marginTop: 8 },
-  backLinkText: { color: '#2563EB', fontSize: 14 },
-  registerLink: { alignItems: 'center', marginTop: 32 },
-  registerLinkText: { color: '#2563EB', fontSize: 15, fontWeight: '600' },
-});

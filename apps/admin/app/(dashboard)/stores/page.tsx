@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Building2, Star, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Building2, Star, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
+import StoreEditModal from '@/components/StoreEditModal';
 import { StoreStatus } from '@aks/shared';
 
 type TabKey = 'PENDING_APPROVAL' | 'ACTIVE' | 'SUSPENDED';
@@ -30,6 +31,15 @@ interface StoreRow {
   itemCount: number;
   orderCount: number;
   createdAt: string;
+  // Editable fields — carried so the Edit modal can pre-fill without a second fetch.
+  description: string | null;
+  lat: number;
+  lng: number;
+  street: string;
+  state: string;
+  pincode: string;
+  openTime: string;
+  closeTime: string;
 }
 
 interface BackendStore {
@@ -42,6 +52,14 @@ interface BackendStore {
   isWholesaler?: boolean;
   isPreferred?: boolean;
   createdAt: string;
+  description?: string | null;
+  lat?: number;
+  lng?: number;
+  street?: string;
+  state?: string;
+  pincode?: string;
+  openTime?: string;
+  closeTime?: string;
   owner: { id: string; name: string | null; phone: string };
   _count?: { items: number; orders: number };
 }
@@ -66,6 +84,7 @@ export default function StoresPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('PENDING_APPROVAL');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [editing, setEditing] = useState<StoreRow | null>(null);
   const queryClient = useQueryClient();
 
   // Reset to page 1 when the tab or search changes
@@ -95,6 +114,14 @@ export default function StoresPage() {
           itemCount: s._count?.items ?? 0,
           orderCount: s._count?.orders ?? 0,
           createdAt: s.createdAt,
+          description: s.description ?? null,
+          lat: s.lat ?? 0,
+          lng: s.lng ?? 0,
+          street: s.street ?? '',
+          state: s.state ?? '',
+          pincode: s.pincode ?? '',
+          openTime: s.openTime ?? '',
+          closeTime: s.closeTime ?? '',
         })),
         total: res.data?.data?.total ?? 0,
         pages: res.data?.data?.pages ?? 1,
@@ -193,6 +220,13 @@ export default function StoresPage() {
       header: 'Actions',
       render: (s) => (
         <div className="flex items-center gap-2">
+          <ActionButton
+            label="Edit"
+            icon={<Pencil className="h-3.5 w-3.5" />}
+            variant="neutral"
+            loading={false}
+            onClick={() => setEditing(s)}
+          />
           {activeTab === 'PENDING_APPROVAL' && (
             <>
               <ActionButton
@@ -330,6 +364,10 @@ export default function StoresPage() {
           </div>
         )}
       </div>
+
+      {editing && (
+        <StoreEditModal store={editing} onClose={() => setEditing(null)} />
+      )}
     </div>
   );
 }

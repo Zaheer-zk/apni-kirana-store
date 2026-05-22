@@ -100,6 +100,10 @@ model User {
   // Admin-created accounts get a temporary password and must set their own on
   // first login. Also set when an admin resets a user's credentials.
   mustChangePassword Boolean @default(false)
+  // Exactly one account carries this. The super admin is an ADMIN that can
+  // additionally create and manage other ADMIN accounts. Never exposed for
+  // assignment via the API — set once, by migration.
+  isSuperAdmin Boolean @default(false)
   // false until the registration OTP is verified. Existing users are backfilled
   // to true by the migration.
   phoneVerified Boolean   @default(false)

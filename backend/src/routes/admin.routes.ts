@@ -115,7 +115,9 @@ const createUserSchema = z.object({
     .min(3, 'Username must be at least 3 characters')
     .max(30)
     .regex(/^[a-zA-Z0-9_.]+$/, 'Username may only contain letters, numbers, "_" and "."'),
-  role: z.enum(APP_ROLES),
+  // ADMIN is allowed here too, but only the super admin may use it (enforced
+  // in the handler, not the schema).
+  role: z.enum(['CUSTOMER', 'STORE_OWNER', 'DRIVER', 'ADMIN']),
 });
 
 router.post('/users', validate(createUserSchema), async (req: Request, res: Response) => {
@@ -125,16 +127,36 @@ router.post('/users', validate(createUserSchema), async (req: Request, res: Resp
       phone: string;
       email: string;
       username: string;
-      role: 'CUSTOMER' | 'STORE_OWNER' | 'DRIVER';
+      role: 'CUSTOMER' | 'STORE_OWNER' | 'DRIVER' | 'ADMIN';
     };
 
     const roleLabel = role.replace('_', ' ').toLowerCase();
+
+    // Creating an ADMIN is reserved for the super admin.
+    if (role === 'ADMIN') {
+      const me = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { isSuperAdmin: true },
+      });
+      if (!me?.isSuperAdmin) {
+        return sendError(res, 'Only the super admin can create admin accounts.', 403);
+      }
+    }
 
     // If the phone already has an account, add the requested role to it
     // instead of creating a duplicate. One number can hold CUSTOMER +
     // STORE_OWNER + DRIVER at once — but only one of each.
     const existing = await prisma.user.findUnique({ where: { phone } });
     if (existing) {
+      // Admin accounts are kept separate — they don't share a number with a
+      // customer/store/driver account.
+      if (role === 'ADMIN') {
+        return sendError(
+          res,
+          'This mobile number already belongs to an account. Use a separate number for an admin.',
+          409,
+        );
+      }
       if (existing.roles.includes(role)) {
         return sendError(res, `This number is already registered as a ${roleLabel}.`, 409);
       }
@@ -238,8 +260,19 @@ router.put('/users/:id', validate(updateUserSchema), async (req: Request, res: R
 
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) return sendError(res, 'User not found', 404);
+    // Only the super admin may edit admin accounts.
     if (user.role === 'ADMIN') {
-      return sendError(res, 'Admin accounts are managed with the create-admin tool.', 403);
+      const me = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { isSuperAdmin: true },
+      });
+      if (!me?.isSuperAdmin) {
+        return sendError(res, 'Only the super admin can manage admin accounts.', 403);
+      }
+    }
+    // The super admin account itself can't be deactivated.
+    if (body.isActive === false && user.isSuperAdmin) {
+      return sendError(res, 'The super admin account cannot be deactivated.', 400);
     }
     if (body.isActive === false && id === req.user!.id) {
       return sendError(res, 'You cannot deactivate your own account.', 400);
@@ -335,6 +368,21 @@ router.put('/users/:id/suspend', async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.params['id'] } });
     if (!user) return sendError(res, 'User not found', 404);
+
+    // The super admin can never be suspended.
+    if (user.isSuperAdmin) {
+      return sendError(res, 'The super admin account cannot be suspended.', 403);
+    }
+    // Only the super admin may suspend/reactivate another admin.
+    if (user.role === 'ADMIN') {
+      const me = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { isSuperAdmin: true },
+      });
+      if (!me?.isSuperAdmin) {
+        return sendError(res, 'Only the super admin can suspend admin accounts.', 403);
+      }
+    }
 
     const updated = await prisma.user.update({
       where: { id: req.params['id'] },

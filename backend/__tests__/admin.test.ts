@@ -279,6 +279,30 @@ describe('POST /api/v1/admin/users', () => {
       .send(newUser);
     expect(res.status).toBe(403);
   });
+
+  it('lets the super admin create an ADMIN account', async () => {
+    const su = await createUser({ role: 'ADMIN', roles: ['ADMIN'], isSuperAdmin: true });
+    const res = await request(app)
+      .post('/api/v1/admin/users')
+      .set('Authorization', `Bearer ${tokenFor(su)}`)
+      .send({ ...newUser, phone: '9700000099', email: 'made.admin@example.com', username: 'madeadmin', role: 'ADMIN' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.tempPassword).toBeTruthy();
+    const dbUser = await prisma.user.findUnique({ where: { phone: '9700000099' } });
+    expect(dbUser!.role).toBe('ADMIN');
+    expect(dbUser!.isSuperAdmin).toBe(false);
+    expect(dbUser!.mustChangePassword).toBe(true);
+  });
+
+  it('forbids a regular admin from creating an ADMIN account', async () => {
+    const token = await adminToken(); // a plain ADMIN, not super admin
+    const res = await request(app)
+      .post('/api/v1/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...newUser, phone: '9700000098', email: 'nope@example.com', username: 'nopeadmin', role: 'ADMIN' });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('PUT /api/v1/admin/users/:id', () => {

@@ -4,6 +4,7 @@ import { useState, FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Loader2, Copy, Check } from 'lucide-react';
 import { api } from '@/lib/api';
+import { isSuperAdmin } from '@/lib/auth';
 import type { ApiResponse } from '@aks/shared';
 
 export interface ManagedUser {
@@ -60,7 +61,8 @@ export default function UserFormModal({ mode, user, onClose }: Props) {
         phone,
         email,
         isActive,
-        roles,
+        // An admin's role set isn't editable via the role checkboxes.
+        ...(user!.role === 'ADMIN' ? {} : { roles }),
       });
       return data;
     },
@@ -93,7 +95,7 @@ export default function UserFormModal({ mode, user, onClose }: Props) {
     if (mode === 'create' && username.trim().length < 3) {
       return setError('Username must be at least 3 characters.');
     }
-    if (mode === 'edit' && roles.length === 0) {
+    if (mode === 'edit' && user?.role !== 'ADMIN' && roles.length === 0) {
       return setError('The user must keep at least one role.');
     }
     mutation.mutate();
@@ -179,26 +181,30 @@ export default function UserFormModal({ mode, user, onClose }: Props) {
                     {r.label}
                   </option>
                 ))}
+                {/* Only the super admin may create other admin accounts. */}
+                {isSuperAdmin() && <option value="ADMIN">Admin</option>}
               </select>
             </Field>
           </>
         ) : (
           <>
-            <Field label="Roles">
-              <div className="flex flex-wrap gap-3">
-                {APP_ROLES.map((r) => (
-                  <label key={r.value} className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={roles.includes(r.value)}
-                      onChange={() => toggleRole(r.value)}
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                    {r.label}
-                  </label>
-                ))}
-              </div>
-            </Field>
+            {user?.role !== 'ADMIN' && (
+              <Field label="Roles">
+                <div className="flex flex-wrap gap-3">
+                  {APP_ROLES.map((r) => (
+                    <label key={r.value} className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={roles.includes(r.value)}
+                        onChange={() => toggleRole(r.value)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      {r.label}
+                    </label>
+                  ))}
+                </div>
+              </Field>
+            )}
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"

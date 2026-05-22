@@ -4,13 +4,20 @@ import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ShoppingBasket, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { setToken } from '@/lib/auth';
+import { setToken, setSuperAdmin } from '@/lib/auth';
 import type { ApiResponse } from '@aks/shared';
 
 interface AdminLoginResponse {
   accessToken: string;
   refreshToken: string;
-  user: { id: string; phone: string; role: string; name: string | null };
+  user: {
+    id: string;
+    phone: string;
+    role: string;
+    name: string | null;
+    isSuperAdmin?: boolean;
+    mustChangePassword?: boolean;
+  };
 }
 
 export default function LoginPage() {
@@ -35,7 +42,9 @@ export default function LoginPage() {
       );
       if (data.success && data.data?.accessToken) {
         setToken(data.data.accessToken);
-        router.replace('/');
+        setSuperAdmin(!!data.data.user?.isSuperAdmin);
+        // Admin-created accounts must replace their temporary password first.
+        router.replace(data.data.user?.mustChangePassword ? '/change-password' : '/');
       } else {
         setError(data.error ?? 'Invalid username or password');
       }

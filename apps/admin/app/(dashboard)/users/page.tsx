@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search,
@@ -14,6 +14,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { isSuperAdmin } from '@/lib/auth';
 import type { ApiResponse } from '@aks/shared';
 import UserFormModal, { type ManagedUser } from '@/components/UserFormModal';
 
@@ -44,6 +45,9 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; user?: ManagedUser } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Read once on the client — gates Edit on admin rows. Backend enforces too.
+  const [superAdmin, setSuperAdmin] = useState(false);
+  useEffect(() => setSuperAdmin(isSuperAdmin()), []);
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError } = useQuery<{ users: UserRow[]; total: number; pages: number }>({
@@ -222,7 +226,7 @@ export default function UsersPage() {
                     </td>
                     <td className="px-4 py-3 sm:px-6">
                       <div className="flex items-center gap-1.5">
-                        {user.role !== 'ADMIN' && (
+                        {(user.role !== 'ADMIN' || superAdmin) && (
                           <button
                             onClick={() => setModal({ mode: 'edit', user })}
                             className="inline-flex min-h-[32px] items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"

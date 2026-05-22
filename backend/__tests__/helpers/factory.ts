@@ -32,6 +32,7 @@ export async function createUser(overrides: Partial<{
   passwordHash: string;
   phoneVerified: boolean;
   mustChangePassword: boolean;
+  isSuperAdmin: boolean;
 }> = {}) {
   const role = overrides.role ?? 'CUSTOMER';
   return prisma.user.create({
@@ -42,6 +43,7 @@ export async function createUser(overrides: Partial<{
       roles: overrides.roles ?? [role],
       isActive: overrides.isActive ?? true,
       phoneVerified: overrides.phoneVerified ?? true,
+      isSuperAdmin: overrides.isSuperAdmin ?? false,
       ...(overrides.email ? { email: overrides.email } : {}),
       ...(overrides.username ? { username: overrides.username } : {}),
       ...(overrides.passwordHash ? { passwordHash: overrides.passwordHash } : {}),

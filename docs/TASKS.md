@@ -4,6 +4,11 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-22 — Super admin + create-user role-add
+
+- [x] **Super admin** — new `User.isSuperAdmin` flag (migration `20260522_super_admin`, sets it on `zaheerzk`). A super admin is an ADMIN that can additionally create ADMIN accounts (`POST /admin/users` now accepts `role: ADMIN`, gated to super admins) and edit/suspend other admins. The super admin account itself can't be suspended or deactivated. The flag is never assignable via the API — exactly one super admin by design. Admin web: the Add-User dialog shows "Admin" only to the super admin; a forced `/change-password` page handles the temp-password new-admin gets.
+- [x] **create-user is role-additive** — `POST /admin/users` for a phone that already exists now grants the requested role to that account instead of rejecting it (one number = one of each of CUSTOMER/STORE_OWNER/DRIVER). Only a true duplicate role 409s; ADMIN still requires a fresh number.
+
 ### 2026-05-22 — Audit log shows the acting admin
 
 - [x] **Audit logs name the admin** — `GET /admin/audit-logs` now resolves each row's `actorId` to the admin's name + username (multiple admins exist). The admin Audit Logs page shows "Admin" (name + @username) instead of a raw id, in both the table and the diff modal; the timestamp column already shows relative + exact time. Added the new `USER_CREATE` / `USER_UPDATE` / `USER_RESET_CREDENTIALS` actions to the filter dropdown.

@@ -12,6 +12,10 @@ export const config = {
   databaseUrl: requireEnv('DATABASE_URL'),
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
 
+  // Base URL of the web app that hosts the public /reset-password page.
+  // Password-reset emails link here. Defaults to the local admin dev server.
+  webAppUrl: process.env.WEB_APP_URL || 'http://localhost:3000',
+
   jwt: {
     accessSecret: requireEnv('JWT_ACCESS_SECRET'),
     refreshSecret: requireEnv('JWT_REFRESH_SECRET'),

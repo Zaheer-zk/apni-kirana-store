@@ -2,15 +2,18 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma';
+import { config } from '../config/env';
 import { validate } from '../middleware/validate.middleware';
 import { authenticate } from '../middleware/auth.middleware';
 import { otpLimiter } from '../middleware/rate-limit.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { publicUser } from '../utils/roles';
+import { generateResetToken, hashToken } from '../utils/token';
 import bcrypt from 'bcryptjs';
 import { generateOtp, storeOtp, verifyOtp } from '../utils/otp';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { sendSmsOtp } from '../services/sms.service';
+import { sendPasswordResetEmail } from '../services/email.service';
 
 const router = Router();
 
@@ -20,6 +23,7 @@ type AppRole = 'CUSTOMER' | 'STORE_OWNER' | 'DRIVER';
 const APP_ROLES = ['CUSTOMER', 'STORE_OWNER', 'DRIVER'] as const;
 
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const BCRYPT_ROUNDS = 10;
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -63,6 +67,15 @@ const loginSchema = z.object({
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1).optional(),
+  newPassword: passwordRule,
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Reset token is required'),
   newPassword: passwordRule,
 });
 
@@ -357,6 +370,108 @@ router.post(
     } catch (err) {
       console.error('[Auth] change-password error:', err);
       return sendError(res, 'Failed to change password', 500);
+    }
+  },
+);
+
+// ─── POST /forgot-password ────────────────────────────────────────────────────
+// Emails a password-reset link. Always responds with the same generic message
+// so the endpoint can't be used to discover which emails have accounts.
+
+router.post(
+  '/forgot-password',
+  otpLimiter,
+  validate(forgotPasswordSchema),
+  async (req: Request, res: Response) => {
+    const generic =
+      'If an account exists for that email, a password-reset link has been sent to it.';
+    try {
+      const { email } = req.body as { email: string };
+
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (user && user.isActive) {
+        // Only one live reset link per user — drop any earlier unused ones.
+        await prisma.passwordResetToken.deleteMany({
+          where: { userId: user.id, usedAt: null },
+        });
+        const { raw, hash } = generateResetToken();
+        await prisma.passwordResetToken.create({
+          data: {
+            userId: user.id,
+            tokenHash: hash,
+            expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
+          },
+        });
+        const link = `${config.webAppUrl}/reset-password?token=${raw}`;
+        await sendPasswordResetEmail(email, user.name, link);
+      }
+
+      return sendSuccess(res, null, generic);
+    } catch (err) {
+      console.error('[Auth] forgot-password error:', err);
+      // Still return the generic message — never leak that something failed
+      // for a particular email.
+      return sendSuccess(res, null, generic);
+    }
+  },
+);
+
+// ─── GET /reset-password/validate ─────────────────────────────────────────────
+// Lets the reset page check a token before showing the new-password form.
+
+router.get('/reset-password/validate', async (req: Request, res: Response) => {
+  try {
+    const token = typeof req.query['token'] === 'string' ? req.query['token'] : '';
+    if (!token) {
+      return sendError(res, 'Reset token is required', 400);
+    }
+    const record = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash: hashToken(token) },
+    });
+    const valid = !!record && !record.usedAt && record.expiresAt > new Date();
+    return sendSuccess(res, { valid }, valid ? 'Token is valid' : 'Token is invalid or expired');
+  } catch (err) {
+    console.error('[Auth] reset-password validate error:', err);
+    return sendError(res, 'Could not validate the reset token', 500);
+  }
+});
+
+// ─── POST /reset-password ─────────────────────────────────────────────────────
+// Consumes a reset token and sets a new password. Single-use; all of the
+// user's sessions are revoked so the old password stops working everywhere.
+
+router.post(
+  '/reset-password',
+  otpLimiter,
+  validate(resetPasswordSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const { token, newPassword } = req.body as { token: string; newPassword: string };
+
+      const record = await prisma.passwordResetToken.findUnique({
+        where: { tokenHash: hashToken(token) },
+      });
+      if (!record || record.usedAt || record.expiresAt < new Date()) {
+        return sendError(res, 'This password-reset link is invalid or has expired.', 400);
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: record.userId },
+          data: { passwordHash, mustChangePassword: false },
+        }),
+        prisma.passwordResetToken.update({
+          where: { id: record.id },
+          data: { usedAt: new Date() },
+        }),
+        prisma.refreshToken.deleteMany({ where: { userId: record.userId } }),
+      ]);
+
+      return sendSuccess(res, null, 'Your password has been reset. You can now log in.');
+    } catch (err) {
+      console.error('[Auth] reset-password error:', err);
+      return sendError(res, 'Failed to reset password', 500);
     }
   },
 );

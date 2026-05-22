@@ -17,6 +17,10 @@ jest.mock('../src/queues/queues', () => ({
 jest.mock('../src/services/notification.service', () => ({
   sendNotification: jest.fn().mockResolvedValue(undefined),
 }));
+jest.mock('../src/services/email.service', () => ({
+  sendEmail: jest.fn().mockResolvedValue(undefined),
+  sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
+}));
 
 import request from 'supertest';
 import bcrypt from 'bcryptjs';
@@ -24,7 +28,11 @@ import { createTestApp } from './helpers/app';
 import { prisma } from '../src/config/prisma';
 import { redis } from '../src/config/redis';
 import { signRefreshToken } from '../src/utils/jwt';
+import { generateResetToken } from '../src/utils/token';
+import { sendPasswordResetEmail } from '../src/services/email.service';
 import { loginAs, createUser, tokenFor } from './helpers/factory';
+
+const mockSendResetEmail = sendPasswordResetEmail as jest.Mock;
 
 const app = createTestApp();
 
@@ -320,6 +328,117 @@ describe('POST /api/v1/auth/change-password', () => {
       .post('/api/v1/auth/change-password')
       .send({ currentPassword: 'x', newPassword: 'brandnew123' });
     expect(res.status).toBe(401);
+  });
+});
+
+describe('POST /api/v1/auth/forgot-password', () => {
+  beforeEach(() => mockSendResetEmail.mockClear());
+
+  it('creates a reset token and emails a link for a known account', async () => {
+    const user = await createUser({ phone: '9888888881', email: 'reset.me@example.com' });
+
+    const res = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ email: 'reset.me@example.com' });
+
+    expect(res.status).toBe(200);
+    expect(mockSendResetEmail).toHaveBeenCalledTimes(1);
+    const tokens = await prisma.passwordResetToken.count({ where: { userId: user.id } });
+    expect(tokens).toBe(1);
+  });
+
+  it('returns the same generic response for an unknown email (no enumeration)', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ email: 'nobody@example.com' });
+
+    expect(res.status).toBe(200);
+    expect(mockSendResetEmail).not.toHaveBeenCalled();
+  });
+
+  it('keeps only one live reset token per user', async () => {
+    const user = await createUser({ phone: '9888888882', email: 'twice@example.com' });
+    await request(app).post('/api/v1/auth/forgot-password').send({ email: 'twice@example.com' });
+    await request(app).post('/api/v1/auth/forgot-password').send({ email: 'twice@example.com' });
+
+    const live = await prisma.passwordResetToken.count({
+      where: { userId: user.id, usedAt: null },
+    });
+    expect(live).toBe(1);
+  });
+});
+
+describe('POST /api/v1/auth/reset-password', () => {
+  beforeEach(() => mockSendResetEmail.mockClear());
+
+  it('resets the password, consumes the token, and revokes sessions', async () => {
+    const user = await createUser({ phone: '9888888883', email: 'do.reset@example.com' });
+    await prisma.refreshToken.create({
+      data: {
+        token: signRefreshToken({ id: user.id }),
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ email: 'do.reset@example.com' });
+    // The reset link (with the raw token) is the 3rd arg passed to the email.
+    const link = mockSendResetEmail.mock.calls[0][2] as string;
+    const token = new URL(link).searchParams.get('token');
+
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token, newPassword: 'freshpass123' });
+
+    expect(res.status).toBe(200);
+    const updated = await prisma.user.findUnique({ where: { id: user.id } });
+    expect(await bcrypt.compare('freshpass123', updated!.passwordHash!)).toBe(true);
+    expect(await prisma.refreshToken.count({ where: { userId: user.id } })).toBe(0);
+
+    // The token is single-use — a second attempt fails.
+    const second = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token, newPassword: 'anotherone123' });
+    expect(second.status).toBe(400);
+  });
+
+  it('returns 400 for an unknown token', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: 'deadbeef'.repeat(8), newPassword: 'freshpass123' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for an expired token', async () => {
+    const user = await createUser({ phone: '9888888884', email: 'expired@example.com' });
+    const { raw, hash } = generateResetToken();
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hash,
+        expiresAt: new Date(Date.now() - 1000), // already expired
+      },
+    });
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: raw, newPassword: 'freshpass123' });
+    expect(res.status).toBe(400);
+  });
+
+  it('validate endpoint reports token validity', async () => {
+    const user = await createUser({ phone: '9888888885', email: 'validate@example.com' });
+    const { raw, hash } = generateResetToken();
+    await prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + 60_000) },
+    });
+
+    const good = await request(app).get(`/api/v1/auth/reset-password/validate?token=${raw}`);
+    expect(good.status).toBe(200);
+    expect(good.body.data.valid).toBe(true);
+
+    const bad = await request(app).get('/api/v1/auth/reset-password/validate?token=nope');
+    expect(bad.body.data.valid).toBe(false);
   });
 });
 

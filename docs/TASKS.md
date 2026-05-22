@@ -4,6 +4,12 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-22 — Auth system Phase 2 (email + password reset)
+
+- [x] **Email service** — pluggable `services/email.service.ts` (`CONSOLE` dev default, `RESEND` for prod). Resend free tier 3,000/mo. New env: `EMAIL_PROVIDER`, `RESEND_API_KEY`, `EMAIL_FROM`, `WEB_APP_URL` — added to `.env.example`, `.env.prod.example`, and a new "Email setup" section in `docs/deployment.md`.
+- [x] **Forgot password** — `POST /auth/forgot-password` (by email) mints a single-use, 1-hour, SHA-256-hashed `PasswordResetToken` and emails the link. Always returns the same generic response so it can't enumerate accounts. `POST /auth/reset-password` consumes the token, sets the new password, and revokes all sessions. `GET /auth/reset-password/validate` lets the reset page pre-check a token.
+- [x] **Tests** — 7 new cases (forgot/reset/validate, expiry, single-use, no-enumeration). Full suite 139/139.
+
 ### 2026-05-22 — Auth system Phase 1 (backend core)
 
 - [x] **Multi-role accounts** — `User.roles UserRole[]` (migration `20260522_auth_system`). One phone can be CUSTOMER + STORE_OWNER + DRIVER at once. `User.role` stays the primary role; login picks an active role out of `roles` and the JWT (access + refresh) carries it. `grantRole()` helper in `utils/roles.ts`. `/stores/register` and `/drivers/register` now *add* the role instead of rejecting non-customers.

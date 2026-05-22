@@ -312,6 +312,9 @@ What to put in each value:
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | `npx web-push generate-vapid-keys --json` | Admin browser push |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | From the Razorpay dashboard | Payments |
 | `FIREBASE_PROJECT_ID` / `FIREBASE_PRIVATE_KEY` / `FIREBASE_CLIENT_EMAIL` | From a Firebase service account | Optional — only for raw FCM tokens. Expo Push needs none of this |
+| `EMAIL_PROVIDER` | `RESEND` | Never `CONSOLE` in prod. See [Email setup](#email-setup) |
+| `RESEND_API_KEY` / `EMAIL_FROM` | Resend API key + verified sender | Powers password-reset emails. See [Email setup](#email-setup) |
+| `WEB_APP_URL` | `https://admin.yourdomain.com` | Base URL the password-reset links point at |
 | `CORS_ORIGIN` | `https://admin.yourdomain.com` | Locks the API to the admin origin |
 | `NEXT_PUBLIC_API_URL` | `https://api.yourdomain.com` | Baked into the admin build — the URL the dashboard calls |
 
@@ -394,6 +397,45 @@ Watch with `docker compose logs -f backend | grep OTP`.
   logs for `[SMS] <PROVIDER> send failed:` and verify your API key + template.
 - **Dev (`NODE_ENV=development`):** failures silently fall back to console
   so the local dev flow never breaks.
+
+## Email setup
+
+Password-reset emails (the "forgot password" flow for customers, store owners
+and drivers, and admin-triggered credential resets) go out through
+**[Resend](https://resend.com)** — free tier 3,000 emails/month, 100/day. The
+backend's `services/email.service.ts` handles delivery; you just supply a key.
+
+### Steps
+
+1. Sign up at **resend.com** (free, no card).
+2. **Create an API key:** dashboard → **API Keys** → **Create API Key** → name
+   it `apni-kirana` → copy the value (starts with `re_…`). It is shown once.
+3. **Choose a sender:**
+   - *Quick start / testing:* leave `EMAIL_FROM` blank — the backend falls back
+     to Resend's shared `onboarding@resend.dev` sender. Works immediately.
+   - *Production:* dashboard → **Domains** → **Add Domain** → add the DNS
+     records Resend shows (SPF + DKIM) at your domain registrar → wait for
+     "Verified". Then set `EMAIL_FROM=Apni Kirana Store <noreply@yourdomain.com>`.
+4. In `.env.prod` set:
+   ```
+   EMAIL_PROVIDER=RESEND
+   RESEND_API_KEY=re_your_key_here
+   EMAIL_FROM=Apni Kirana Store <noreply@yourdomain.com>   # or leave blank
+   WEB_APP_URL=https://admin.yourdomain.com
+   ```
+5. Copy the env into the container and restart:
+   `docker compose cp .env.prod backend:/app/backend/.env && docker compose restart backend`.
+
+`WEB_APP_URL` is the base of the link inside the reset email — it must point at
+wherever the public `/reset-password` page is served (the admin web app).
+
+### What if email sending fails?
+
+- **Production:** the reset request still returns its generic success message
+  (so the endpoint can't be used to probe which emails have accounts), but the
+  email won't arrive. Check backend logs for `[Email] RESEND send failed:`.
+- **Dev (`EMAIL_PROVIDER` unset / `CONSOLE`):** the email — including the reset
+  link — is printed to the backend console, so local testing needs no key.
 
 ## Updating production
 

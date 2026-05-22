@@ -100,11 +100,19 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const inAuthGroup = pathname?.startsWith('/(auth)') || pathname === '/login';
+  // expo-router strips route groups from the pathname, so (auth) screens show
+  // up as plain "/login", "/register", etc.
+  const path = pathname ?? '';
+  const inAuthGroup = ['/login', '/register', '/forgot-password'].includes(path);
+  // change-password is in the (auth) group but is reached AFTER login (forced
+  // password change) — an authenticated user must be allowed to stay on it.
+  const isChangePassword = path === '/change-password';
   return (
     <>
       {children}
-      {!accessToken && !inAuthGroup ? <Redirect href="/(auth)/login" /> : null}
+      {!accessToken && !inAuthGroup && !isChangePassword ? (
+        <Redirect href="/(auth)/login" />
+      ) : null}
       {accessToken && inAuthGroup ? <Redirect href="/(tabs)/home" /> : null}
     </>
   );

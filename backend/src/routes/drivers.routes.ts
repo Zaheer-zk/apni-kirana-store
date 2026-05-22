@@ -8,6 +8,7 @@ import { sendSuccess, sendError } from '../utils/response';
 import { assignDriverForOrder } from '../services/driver.service';
 import { sendNotification } from '../services/notification.service';
 import { broadcastOrderStatus } from '../services/order-events.service';
+import { grantRole } from '../utils/roles';
 
 const router = Router();
 
@@ -42,36 +43,15 @@ router.post(
   validate(registerDriverSchema),
   async (req: Request, res: Response) => {
     try {
-      // One operational role per account: only a plain CUSTOMER may register
-      // as a driver. Blocks flipping an existing store owner/admin into a
-      // DRIVER. Checked against the DB so a stale token can't bypass it.
-      const user = await prisma.user.findUnique({
-        where: { id: req.user!.id },
-        select: { role: true },
-      });
-      if (user && user.role !== 'CUSTOMER') {
-        return sendError(
-          res,
-          `This account is already registered as a ${user.role
-            .replace('_', ' ')
-            .toLowerCase()}. Use a different phone number to register as a driver.`,
-          409,
-        );
-      }
-
       const existing = await getDriverByUser(req.user!.id);
       if (existing) return sendError(res, 'You are already registered as a driver', 409);
 
-      const driver = await prisma.$transaction(async (tx) => {
-        const created = await tx.driver.create({
-          data: { ...req.body, userId: req.user!.id, status: 'PENDING_APPROVAL' },
-        });
-        await tx.user.update({
-          where: { id: req.user!.id },
-          data: { role: 'DRIVER' },
-        });
-        return created;
+      const driver = await prisma.driver.create({
+        data: { ...req.body, userId: req.user!.id, status: 'PENDING_APPROVAL' },
       });
+      // Grant the DRIVER role (multi-role: keeps any other roles the account
+      // already holds, e.g. CUSTOMER / STORE_OWNER).
+      await grantRole(req.user!.id, 'DRIVER');
 
       return sendSuccess(res, driver, 'Driver registered. Awaiting approval.', 201);
     } catch (err) {

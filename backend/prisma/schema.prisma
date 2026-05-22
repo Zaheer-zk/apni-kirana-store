@@ -84,24 +84,54 @@ enum DriverStatus {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id           String    @id @default(cuid())
+  id           String     @id @default(cuid())
   name         String?
-  phone        String    @unique
-  role         UserRole  @default(CUSTOMER)
-  username     String?   @unique // admin login id (admins only; null for everyone else)
-  passwordHash String?   // bcrypt hash for admin username/password login
+  phone        String     @unique
+  email        String?    @unique // used for password-reset links; optional for legacy/admin
+  // `role` is the user's PRIMARY role (first one they registered with) and is
+  // what authorize() checks for single-role surfaces. `roles` is the full set
+  // of roles granted to this account — one phone can be CUSTOMER + STORE_OWNER
+  // + DRIVER at once. Login picks an active role out of `roles` and the JWT
+  // carries that one. Always keep `role` ∈ `roles`.
+  role         UserRole   @default(CUSTOMER)
+  roles        UserRole[] @default([])
+  username     String?    @unique // login id for username/password login
+  passwordHash String?    // bcrypt hash for username/password login
+  // Admin-created accounts get a temporary password and must set their own on
+  // first login. Also set when an admin resets a user's credentials.
+  mustChangePassword Boolean @default(false)
+  // false until the registration OTP is verified. Existing users are backfilled
+  // to true by the migration.
+  phoneVerified Boolean   @default(false)
   fcmToken     String?
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  addresses     Address[]
-  orders        Order[]         @relation("CustomerOrders")
-  refreshTokens RefreshToken[]
-  store         Store?
-  driver        Driver?
+  addresses           Address[]
+  orders              Order[]              @relation("CustomerOrders")
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  store               Store?
+  driver              Driver?
 
   @@index([phone])
+}
+
+// One row per password-reset request. The raw token is emailed to the user as
+// a link; only its SHA-256 hash is stored here so a DB leak can't be used to
+// reset accounts. Single-use (`usedAt`) and short-lived (`expiresAt`).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model RefreshToken {

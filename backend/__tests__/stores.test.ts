@@ -37,7 +37,7 @@ const validStorePayload = {
 };
 
 describe('POST /api/v1/stores/register', () => {
-  it('creates a store in PENDING_APPROVAL and promotes user to STORE_OWNER', async () => {
+  it('creates a store in PENDING_APPROVAL and grants the STORE_OWNER role', async () => {
     const { token, user } = await loginAs('CUSTOMER');
     const res = await request(app)
       .post('/api/v1/stores/register')
@@ -47,8 +47,9 @@ describe('POST /api/v1/stores/register', () => {
     expect(res.status).toBe(201);
     expect(res.body.data.status).toBe('PENDING_APPROVAL');
 
+    // Multi-role: STORE_OWNER is added without dropping the existing role.
     const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
-    expect(dbUser?.role).toBe('STORE_OWNER');
+    expect(dbUser?.roles).toEqual(expect.arrayContaining(['CUSTOMER', 'STORE_OWNER']));
   });
 
   it('returns 401 when no auth token is provided', async () => {

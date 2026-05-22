@@ -25,14 +25,29 @@ export async function createUser(overrides: Partial<{
   name: string;
   phone: string;
   role: UserRole;
+  roles: UserRole[];
   isActive: boolean;
+  email: string;
+  username: string;
+  passwordHash: string;
+  phoneVerified: boolean;
+  mustChangePassword: boolean;
 }> = {}) {
+  const role = overrides.role ?? 'CUSTOMER';
   return prisma.user.create({
     data: {
       name: overrides.name ?? 'Test User',
       phone: overrides.phone ?? nextPhone(),
-      role: overrides.role ?? 'CUSTOMER',
+      role,
+      roles: overrides.roles ?? [role],
       isActive: overrides.isActive ?? true,
+      phoneVerified: overrides.phoneVerified ?? true,
+      ...(overrides.email ? { email: overrides.email } : {}),
+      ...(overrides.username ? { username: overrides.username } : {}),
+      ...(overrides.passwordHash ? { passwordHash: overrides.passwordHash } : {}),
+      ...(overrides.mustChangePassword !== undefined
+        ? { mustChangePassword: overrides.mustChangePassword }
+        : {}),
     },
   });
 }

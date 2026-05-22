@@ -1,6 +1,11 @@
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
+
+// Dev-only shared password for the 3 main test accounts, so the new
+// username/password login can be exercised without registering fresh.
+const TEST_PASSWORD = 'test1234';
 
 async function reset() {
   await prisma.auditLog.deleteMany().catch(() => {});
@@ -42,7 +47,7 @@ async function main() {
 
   // ─── 1. ADMIN ─────────────────────────────────────────────────────────
   const admin = await prisma.user.create({
-    data: { phone: '9999999999', name: 'Admin User', role: 'ADMIN', isActive: true },
+    data: { phone: '9999999999', name: 'Admin User', role: 'ADMIN', roles: ['ADMIN'], isActive: true, phoneVerified: true },
   });
 
   // ─── 2. MASTER CATALOG (admin-curated) ────────────────────────────────
@@ -162,7 +167,7 @@ async function main() {
   const stores = [];
   for (const s of storeData) {
     const owner = await prisma.user.create({
-      data: { phone: s.ownerPhone, name: s.ownerName, role: 'STORE_OWNER', isActive: true },
+      data: { phone: s.ownerPhone, name: s.ownerName, role: 'STORE_OWNER', roles: ['STORE_OWNER'], isActive: true, phoneVerified: true },
     });
     const store = await prisma.store.create({
       data: {
@@ -260,7 +265,7 @@ async function main() {
   const drivers = [];
   for (const d of driverData) {
     const u = await prisma.user.create({
-      data: { phone: d.phone, name: d.name, role: 'DRIVER', isActive: true },
+      data: { phone: d.phone, name: d.name, role: 'DRIVER', roles: ['DRIVER'], isActive: true, phoneVerified: true },
     });
     drivers.push(await prisma.driver.create({
       data: {
@@ -290,7 +295,7 @@ async function main() {
   const customers = [];
   for (const c of customerData) {
     const u = await prisma.user.create({
-      data: { phone: c.phone, name: c.name, role: 'CUSTOMER', isActive: true },
+      data: { phone: c.phone, name: c.name, role: 'CUSTOMER', roles: ['CUSTOMER'], isActive: true, phoneVerified: true },
     });
     const home = await prisma.address.create({
       data: {
@@ -485,12 +490,18 @@ async function main() {
   // Rajasthan — within 100m of each other so dispatch always matches).
 
   // 11.1 Customer — Zaheer
+  const testHash = await bcrypt.hash(TEST_PASSWORD, 10);
   const zaheer = await prisma.user.create({
     data: {
       phone: '8888888881',
       name: 'Zaheer Khan',
+      email: 'zaheer@example.com',
+      username: 'zaheer',
+      passwordHash: testHash,
       role: 'CUSTOMER',
+      roles: ['CUSTOMER'],
       isActive: true,
+      phoneVerified: true,
     },
   });
   await prisma.address.create({
@@ -529,8 +540,13 @@ async function main() {
     data: {
       phone: '8888888882',
       name: 'Baqala Owner',
+      email: 'baqala@example.com',
+      username: 'baqala',
+      passwordHash: testHash,
       role: 'STORE_OWNER',
+      roles: ['STORE_OWNER'],
       isActive: true,
+      phoneVerified: true,
     },
   });
   const baqalaStore = await prisma.store.create({
@@ -584,8 +600,13 @@ async function main() {
     data: {
       phone: '8888888883',
       name: 'Chotu Singh',
+      email: 'chotu@example.com',
+      username: 'chotu',
+      passwordHash: testHash,
       role: 'DRIVER',
+      roles: ['DRIVER'],
       isActive: true,
+      phoneVerified: true,
     },
   });
   await prisma.driver.create({
@@ -608,9 +629,10 @@ async function main() {
   console.log('  END-TO-END TEST TRIO (deterministic order routing)');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('  Location:  Khandela, Sikar, Rajasthan (lat ~27.6033, lng ~75.4944)');
-  console.log('  Customer:  8888888881  Zaheer Khan');
-  console.log('  Store:     8888888882  Baqala — The Corner Shop  (70m away, ALL items)');
-  console.log('  Driver:    8888888883  Chotu Singh  (ONLINE, 30m from Baqala)');
+  console.log('  Customer:  8888888881  Zaheer Khan   (username: zaheer)');
+  console.log('  Store:     8888888882  Baqala — The Corner Shop  (username: baqala, 70m away, ALL items)');
+  console.log('  Driver:    8888888883  Chotu Singh   (username: chotu, ONLINE, 30m from Baqala)');
+  console.log(`  Password for all 3:  ${TEST_PASSWORD}   (or log in via phone + OTP)`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
   // ─── SUMMARY ──────────────────────────────────────────────────────────

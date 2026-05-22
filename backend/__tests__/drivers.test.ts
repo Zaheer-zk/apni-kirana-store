@@ -33,7 +33,7 @@ import {
 const app = createTestApp();
 
 describe('POST /api/v1/drivers/register', () => {
-  it('creates a driver in PENDING_APPROVAL and updates user role', async () => {
+  it('creates a driver in PENDING_APPROVAL and grants the DRIVER role', async () => {
     const { token, user } = await loginAs('CUSTOMER');
     const res = await request(app)
       .post('/api/v1/drivers/register')
@@ -46,8 +46,9 @@ describe('POST /api/v1/drivers/register', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.status).toBe('PENDING_APPROVAL');
+    // Multi-role: DRIVER is added without dropping the existing role.
     const updated = await prisma.user.findUnique({ where: { id: user.id } });
-    expect(updated?.role).toBe('DRIVER');
+    expect(updated?.roles).toEqual(expect.arrayContaining(['CUSTOMER', 'DRIVER']));
   });
 
   it('returns 409 when already a driver', async () => {

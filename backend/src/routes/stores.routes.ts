@@ -6,6 +6,7 @@ import { authenticate, authorize } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { haversineDistance, getBoundingBox } from '../utils/geo';
+import { grantRole } from '../utils/roles';
 import { AppError } from '../middleware/error.middleware';
 
 const router = Router();
@@ -38,23 +39,6 @@ router.post(
     try {
       const userId = req.user!.id;
 
-      // One operational role per account: only a plain CUSTOMER may register a
-      // store. Blocks flipping an existing driver/admin into a STORE_OWNER.
-      // Checked against the DB (not the JWT) so a stale token can't bypass it.
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { role: true },
-      });
-      if (user && user.role !== 'CUSTOMER') {
-        return sendError(
-          res,
-          `This account is already registered as a ${user.role
-            .replace('_', ' ')
-            .toLowerCase()}. Use a different phone number to register a store.`,
-          409,
-        );
-      }
-
       // Check if user already owns a store
       const existing = await prisma.store.findUnique({ where: { ownerId: userId } });
       if (existing) {
@@ -65,11 +49,9 @@ router.post(
         data: { ...req.body, ownerId: userId, status: 'PENDING_APPROVAL' },
       });
 
-      // Promote user role to STORE_OWNER
-      await prisma.user.update({
-        where: { id: userId },
-        data: { role: 'STORE_OWNER' },
-      });
+      // Grant the STORE_OWNER role (multi-role: the account keeps any other
+      // roles it already holds, e.g. CUSTOMER / DRIVER).
+      await grantRole(userId, 'STORE_OWNER');
 
       return sendSuccess(res, store, 'Store registered successfully. Awaiting approval.', 201);
     } catch (err) {

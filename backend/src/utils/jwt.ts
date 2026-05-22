@@ -10,6 +10,9 @@ interface AccessTokenPayload {
 
 interface RefreshTokenPayload {
   id: string;
+  // The role the session was issued for. Optional for backward-compat with
+  // tokens minted before multi-role; /refresh falls back to the primary role.
+  role?: UserRole;
 }
 
 export function signAccessToken(payload: AccessTokenPayload): string {

@@ -4,6 +4,14 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-22 — Auth system Phase 1 (backend core)
+
+- [x] **Multi-role accounts** — `User.roles UserRole[]` (migration `20260522_auth_system`). One phone can be CUSTOMER + STORE_OWNER + DRIVER at once. `User.role` stays the primary role; login picks an active role out of `roles` and the JWT (access + refresh) carries it. `grantRole()` helper in `utils/roles.ts`. `/stores/register` and `/drivers/register` now *add* the role instead of rejecting non-customers.
+- [x] **Register-first model** — new `POST /auth/register` (name, phone, email, username, password, role) creates an unverified account and sends an OTP. `POST /auth/verify-otp` no longer auto-creates users — an unregistered number gets `404 "This mobile number is not registered"`. Verifying the OTP sets `phoneVerified` and completes registration.
+- [x] **Username/password login** — `POST /auth/login` accepts a username *or* a 10-digit phone plus password. `POST /auth/change-password` (authenticated) clears the `mustChangePassword` flag and revokes other sessions. `passwordHash` is never returned in any auth response (`publicUser()` sanitiser).
+- [x] **Schema** — added `User.email` (unique), `User.mustChangePassword`, `User.phoneVerified`, and the `PasswordResetToken` model (used in Phase 2). Existing users backfilled: `roles = [role]`, `phoneVerified = true`.
+- [x] **Tests** — `auth.test.ts` rewritten (register / verify-otp / login / change-password); seed gives the 3 test accounts usernames + password `test1234`. Full suite 132/132.
+
 ### 2026-05-21 — Preferred stores
 
 - [x] **Admin can flag a store as "preferred"** — `Store.isPreferred` boolean (migration `20260521_store_preferred`), toggled via `PUT /admin/stores/:id/preferred`. Mirrors the wholesaler-flag pattern. The matching engine gives preferred stores an additive score boost (`PREFERRED_STORE_BOOST = 0.15` in `matching.service.ts`) so they outrank equivalent stores — a boost, not an exclusive filter, so orders still match if no preferred store carries the items. Admin Stores page shows a "Preferred" badge + a Mark/Unset action.

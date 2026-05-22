@@ -26,12 +26,14 @@ async function main(): Promise<void> {
 
   const user = await prisma.user.upsert({
     where: { username },
-    update: { passwordHash, role: 'ADMIN', isActive: true },
+    update: { passwordHash, role: 'ADMIN', roles: ['ADMIN'], isActive: true },
     create: {
       username,
       passwordHash,
       role: 'ADMIN',
+      roles: ['ADMIN'],
       isActive: true,
+      phoneVerified: true, // admins log in by username/password, not OTP
       name: 'Admin',
       phone: phone || `admin_${username}`,
     },

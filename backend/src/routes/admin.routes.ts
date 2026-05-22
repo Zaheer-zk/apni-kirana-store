@@ -465,6 +465,66 @@ router.get('/stores/pending', async (_req: Request, res: Response) => {
   }
 });
 
+// ─── GET /stores/:id ──────────────────────────────────────────────────────────
+// Full store detail: store + owner + inventory + recent orders + lifetime
+// totals. Registered after /stores/pending so it doesn't shadow it.
+
+router.get('/stores/:id', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const store = await prisma.store.findUnique({
+      where: { id },
+      include: {
+        owner: { select: { name: true, phone: true } },
+        items: { include: { catalogItem: true }, orderBy: { createdAt: 'desc' } },
+      },
+    });
+    if (!store) return sendError(res, 'Store not found', 404);
+
+    const [orderCount, revenue, recentOrders] = await Promise.all([
+      prisma.order.count({ where: { storeId: id } }),
+      prisma.order.aggregate({
+        where: { storeId: id, status: 'DELIVERED' },
+        _sum: { total: true },
+      }),
+      prisma.order.findMany({
+        where: { storeId: id },
+        include: { customer: { select: { name: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+    ]);
+
+    const { owner, items, ...storeFields } = store;
+    return sendSuccess(res, {
+      store: {
+        ...storeFields,
+        ownerName: owner?.name ?? '',
+        ownerPhone: owner?.phone ?? '',
+        totalOrders: orderCount,
+        totalRevenue: revenue._sum.total ?? 0,
+      },
+      items: items.map((it) => ({
+        id: it.id,
+        name: it.catalogItem.name,
+        category: it.catalogItem.category,
+        unit: it.catalogItem.defaultUnit,
+        imageUrl: it.catalogItem.imageUrl,
+        price: it.price,
+        stockQty: it.stockQty,
+        isAvailable: it.isAvailable,
+      })),
+      recentOrders: recentOrders.map((o) => ({
+        ...o,
+        customerName: o.customer?.name ?? 'Customer',
+      })),
+    });
+  } catch (err) {
+    console.error('[Admin] get store detail error:', err);
+    return sendError(res, 'Failed to fetch store', 500);
+  }
+});
+
 // ─── PUT /stores/:id/approve ──────────────────────────────────────────────────
 
 router.put('/stores/:id/approve', async (req: Request, res: Response) => {

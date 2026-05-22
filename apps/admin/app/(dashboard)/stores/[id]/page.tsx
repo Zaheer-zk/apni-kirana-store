@@ -1,20 +1,25 @@
 'use client';
 
-import { use } from 'react';
+import { use, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Star, Package, ShoppingBag, MapPin, Phone, User } from 'lucide-react';
+import { ArrowLeft, Star, Package, ShoppingBag, MapPin, Phone, User, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
+import StoreEditModal from '@/components/StoreEditModal';
 import type { StoreProfile, InventoryItem, Order } from '@aks/shared';
 import { OrderStatus } from '@aks/shared';
 
 interface StoreDetail extends StoreProfile {
   ownerName: string;
   ownerPhone: string;
+  description?: string | null;
+  street?: string | null;
   city: string;
   state: string;
   pincode: string;
+  openTime?: string | null;
+  closeTime?: string | null;
   totalOrders: number;
   totalRevenue: number;
   createdAt: string;
@@ -40,6 +45,7 @@ function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string;
 
 export default function StoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const [editing, setEditing] = useState(false);
 
   const { data, isLoading, isError } = useQuery<StoreDetailResponse>({
     queryKey: ['admin-store', id],
@@ -84,12 +90,21 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
         <Link href="/stores" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
           <ArrowLeft className="h-4 w-4" /> Back to Stores
         </Link>
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{store.name}</h1>
             <p className="mt-1 text-sm text-gray-500">{store.category}</p>
           </div>
-          <StatusBadge status={store.status} />
+          <div className="flex items-center gap-3">
+            <StatusBadge status={store.status} />
+            <button
+              onClick={() => setEditing(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </button>
+          </div>
         </div>
       </div>
 
@@ -191,6 +206,26 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
           </div>
         )}
       </div>
+
+      {editing && (
+        <StoreEditModal
+          store={{
+            id,
+            name: store.name,
+            description: store.description,
+            category: store.category,
+            lat: store.lat,
+            lng: store.lng,
+            street: store.street,
+            city: store.city,
+            state: store.state,
+            pincode: store.pincode,
+            openTime: store.openTime,
+            closeTime: store.closeTime,
+          }}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 }

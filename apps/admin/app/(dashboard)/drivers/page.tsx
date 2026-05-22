@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Star, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Star, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
+import DriverEditModal from '@/components/DriverEditModal';
 import { DriverStatus } from '@aks/shared';
 
 type TabKey = 'PENDING_APPROVAL' | 'ACTIVE' | 'SUSPENDED';
@@ -22,6 +23,7 @@ interface DriverRow {
   phone: string;
   vehicleType: string;
   vehicleNumber: string;
+  licenseNumber: string;
   status: string;
   rating: number;
   totalDeliveries: number;
@@ -32,6 +34,7 @@ interface BackendDriver {
   id: string;
   vehicleType: string;
   vehicleNumber: string;
+  licenseNumber?: string | null;
   status: string;
   rating: number;
   createdAt: string;
@@ -59,6 +62,7 @@ export default function DriversPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('PENDING_APPROVAL');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [editingDriver, setEditingDriver] = useState<DriverRow | null>(null);
   const queryClient = useQueryClient();
 
   // Reset to page 1 when the tab or search changes
@@ -80,6 +84,7 @@ export default function DriversPage() {
           phone: d.user?.phone ?? '',
           vehicleType: d.vehicleType,
           vehicleNumber: d.vehicleNumber,
+          licenseNumber: d.licenseNumber ?? '',
           status: d.status,
           rating: d.rating ?? 0,
           totalDeliveries: d._count?.orders ?? 0,
@@ -172,6 +177,16 @@ export default function DriversPage() {
       header: 'Actions',
       render: (d) => (
         <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditingDriver(d);
+            }}
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </button>
           {activeTab === 'PENDING_APPROVAL' && (
             <>
               <ActionButton
@@ -288,6 +303,19 @@ export default function DriversPage() {
           </div>
         )}
       </div>
+
+      {editingDriver && (
+        <DriverEditModal
+          driver={{
+            id: editingDriver.id,
+            name: editingDriver.name,
+            vehicleType: editingDriver.vehicleType,
+            vehicleNumber: editingDriver.vehicleNumber,
+            licenseNumber: editingDriver.licenseNumber,
+          }}
+          onClose={() => setEditingDriver(null)}
+        />
+      )}
     </div>
   );
 }

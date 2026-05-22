@@ -431,3 +431,27 @@ describe('PUT /api/v1/admin/drivers/:id', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET /api/v1/admin/stores/:id', () => {
+  it('returns store detail with owner, items and orders', async () => {
+    const token = await adminToken();
+    const { store } = await createStoreOwner();
+    const res = await request(app)
+      .get(`/api/v1/admin/stores/${store.id}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.store.id).toBe(store.id);
+    expect(res.body.data.store.ownerName).toBeDefined();
+    expect(Array.isArray(res.body.data.items)).toBe(true);
+    expect(Array.isArray(res.body.data.recentOrders)).toBe(true);
+  });
+
+  it('returns 404 for an unknown store', async () => {
+    const token = await adminToken();
+    const res = await request(app)
+      .get('/api/v1/admin/stores/does-not-exist')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+});

@@ -5,6 +5,7 @@ import { validate } from '../middleware/validate.middleware';
 import { authenticate } from '../middleware/auth.middleware';
 import { otpLimiter } from '../middleware/rate-limit.middleware';
 import { sendSuccess, sendError } from '../utils/response';
+import bcrypt from 'bcryptjs';
 import { generateOtp, storeOtp, verifyOtp } from '../utils/otp';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { sendSmsOtp } from '../services/sms.service';
@@ -30,6 +31,11 @@ const verifyOtpSchema = z.object({
 
 const refreshSchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token is required'),
+});
+
+const adminLoginSchema = z.object({
+  username: z.string().min(1, 'Username is required'),
+  password: z.string().min(1, 'Password is required'),
 });
 
 // SMS dispatch is delegated to services/sms.service so we can swap providers
@@ -119,6 +125,45 @@ router.post('/verify-otp', otpLimiter, validate(verifyOtpSchema), async (req: Re
     return sendError(res, 'Authentication failed', 500);
   }
 });
+
+// ─── POST /admin-login ────────────────────────────────────────────────────────
+// Admins log in with a username + password — no OTP. Only ADMIN accounts that
+// have a passwordHash set (via scripts/create-admin.ts) can use this.
+
+router.post(
+  '/admin-login',
+  otpLimiter,
+  validate(adminLoginSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const { username, password } = req.body as { username: string; password: string };
+
+      const user = await prisma.user.findUnique({ where: { username } });
+      // Generic message whether the username or the password is wrong — don't
+      // reveal which admin usernames exist.
+      if (!user || user.role !== 'ADMIN' || !user.passwordHash) {
+        return sendError(res, 'Invalid username or password', 401);
+      }
+      if (!user.isActive) {
+        return sendError(res, 'Your account has been suspended', 403);
+      }
+      const passwordOk = await bcrypt.compare(password, user.passwordHash);
+      if (!passwordOk) {
+        return sendError(res, 'Invalid username or password', 401);
+      }
+
+      const accessToken = signAccessToken({ id: user.id, role: user.role, phone: user.phone });
+      const refreshToken = signRefreshToken({ id: user.id });
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await prisma.refreshToken.create({ data: { token: refreshToken, userId: user.id, expiresAt } });
+
+      return sendSuccess(res, { accessToken, refreshToken, user }, 'Login successful');
+    } catch (err) {
+      console.error('[Auth] admin-login error:', err);
+      return sendError(res, 'Login failed', 500);
+    }
+  },
+);
 
 // ─── POST /refresh ────────────────────────────────────────────────────────────
 

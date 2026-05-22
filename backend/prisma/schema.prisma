@@ -88,6 +88,8 @@ model User {
   name         String?
   phone        String    @unique
   role         UserRole  @default(CUSTOMER)
+  username     String?   @unique // admin login id (admins only; null for everyone else)
+  passwordHash String?   // bcrypt hash for admin username/password login
   fcmToken     String?
   isActive     Boolean   @default(true)
   createdAt    DateTime  @default(now())

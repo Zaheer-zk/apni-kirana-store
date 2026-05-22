@@ -216,17 +216,16 @@ Every service should show `running`, and `healthy` where it has a healthcheck
 ### Step 7 — Create the first admin user
 
 Production ships with **no seed data** (by design — the seed creates fake test
-users). Insert one real admin row so you can log in. Replace `9999999999` with
-**your real phone number**, and make sure `-U` / `-d` match `POSTGRES_USER` /
-`POSTGRES_DB` in your `.env.prod`:
+users). Admins log in with a **username + password** (no OTP). Create one with
+the `create-admin` script — replace `<username>` and `<password>` with your own:
 
 ```bash
-dc exec -T postgres psql -U postgres -d apni_kirana_store -c \
- "INSERT INTO \"User\" (id, name, phone, role, \"isActive\", \"createdAt\", \"updatedAt\")
-  VALUES ('cl' || md5(random()::text || clock_timestamp()::text),
-          'Admin User', '9999999999', 'ADMIN', true, NOW(), NOW())
-  ON CONFLICT (phone) DO NOTHING;"
+dc exec backend node dist/scripts/create-admin.js <username> <password>
 ```
+
+That hashes the password (bcrypt) and creates an `ADMIN` account. Re-run it any
+time to reset the password. You then sign in at `https://admin.yourdomain.com`
+with that username and password.
 
 > ⚠️ **Never run `prisma db seed` in production.** It inserts 11 fake users
 > (phones like `8888888881`) — useful in dev, dangerous in prod.
@@ -238,8 +237,10 @@ curl https://api.yourdomain.com/health      # → {"status":"ok"}
 ```
 
 Then open `https://admin.yourdomain.com` in a browser — you should see the admin
-login screen. Log in with the phone you inserted in Step 7. The OTP arrives via
-your configured `SMS_PROVIDER` (or in the backend logs if it's still `CONSOLE`):
+login screen. Sign in with the username + password from Step 7.
+
+Customers/stores/drivers (the mobile apps) still log in with phone + OTP, which
+arrives via your configured `SMS_PROVIDER` (or in the backend logs if `CONSOLE`):
 
 ```bash
 dc logs -f backend | grep OTP

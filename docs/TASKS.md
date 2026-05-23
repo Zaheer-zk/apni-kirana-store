@@ -4,6 +4,10 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-23 — Production-safe Indian catalog seed
+
+- [x] **`prisma/seed-catalog.ts`** — adds ~170 generic kirana items (staples/dals, spices, dairy, fresh produce, snacks, beverages, household, OTC medicine). Upsert-by-name only, no fake users, no deletes — safe to run on prod. Wire: `db:seed-catalog` npm script; on prod run `docker compose exec backend npx tsx prisma/seed-catalog.ts`.
+
 ### 2026-05-22 — Maps on every location touchpoint
 
 - [x] **Admin maps** — new reusable `LocationMap` Leaflet component (picker + read-only modes, mirrors `ZoneMapPicker`'s SSR-safe setup). Store edit form gets a click/drag location picker (synced with the lat/lng inputs); store detail page shows the store on a read-only map; driver edit modal shows the driver's last-known GPS position (or a placeholder when none).

@@ -12,7 +12,7 @@
     ],
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/icon.png",
+      "favicon": "./assets/apni-favicon.png",
       "name": "Apni Kirana",
       "shortName": "Apni Kirana",
       "themeColor": "#16A34A",
@@ -22,9 +22,11 @@
     },
     "backgroundColor": "#FFFFFF",
     "primaryColor": "#16A34A",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/apni-icon.png",
     "splash": {
-      "backgroundColor": "#16A34A"
+      "image": "./assets/apni-splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFDF7"
     },
     "ios": {
       "supportsTablet": false,
@@ -32,6 +34,7 @@
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/apni-adaptive.png",
         "backgroundColor": "#16A34A"
       },
       "package": "com.apnikirana.customer",

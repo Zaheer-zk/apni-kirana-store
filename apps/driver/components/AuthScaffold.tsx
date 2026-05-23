@@ -1,12 +1,11 @@
-import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { ReactNode } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +15,10 @@ import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
  * Shared hero + sheet layout for every auth screen (login, register,
  * forgot-password, change-password). Keeps the screens themselves to just
  * their form content.
+ *
+ * Hero shows the Apni Kirana icon badge on the brand background; the white
+ * sheet leads with the horizontal wordmark so the brand reads cleanly over a
+ * light surface before the form copy starts.
  */
 export function AuthScaffold({ children }: { children: ReactNode }) {
   return (
@@ -24,10 +27,12 @@ export function AuthScaffold({ children }: { children: ReactNode }) {
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.heroSafe}>
         <View style={styles.hero}>
           <View style={styles.logoBadge}>
-            <Ionicons name="bicycle" size={36} color={colors.white} />
+            <Image
+              source={require('@/assets/apni-icon.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
-          <Text style={styles.brand}>AKS Driver</Text>
-          <Text style={styles.tagline}>Deliver smart, earn more</Text>
         </View>
       </SafeAreaView>
 
@@ -43,6 +48,12 @@ export function AuthScaffold({ children }: { children: ReactNode }) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.handle} />
+          <Image
+            source={require('@/assets/apni-horizontal.png')}
+            style={styles.wordmark}
+            resizeMode="contain"
+            accessibilityLabel="Apni Kirana"
+          />
           {children}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -63,14 +74,14 @@ const styles = StyleSheet.create({
     width: 76,
     height: 76,
     borderRadius: radius.xl,
-    backgroundColor: colors.primaryDark,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
+    overflow: 'hidden',
     ...shadow.large,
   },
-  brand: { color: colors.white, fontSize: fontSize.xl, fontWeight: '800', letterSpacing: -0.3 },
-  tagline: { marginTop: spacing.xs, color: colors.primaryLight, fontSize: fontSize.sm },
+  logoImage: { width: 76, height: 76 },
   sheetWrap: { flex: 1, marginTop: -spacing.xl },
   sheet: {
     flex: 1,
@@ -85,6 +96,12 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: colors.gray200,
+    marginBottom: spacing.lg,
+  },
+  wordmark: {
+    alignSelf: 'center',
+    width: 220,
+    height: 56,
     marginBottom: spacing.lg,
   },
 });

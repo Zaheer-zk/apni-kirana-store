@@ -5,13 +5,13 @@
     "version": "1.0.0",
     "scheme": "apni-kirana-driver",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/apni-icon.png",
     "userInterfaceStyle": "light",
     "primaryColor": "#DC2626",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/apni-splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#DC2626"
+      "backgroundColor": "#FFFDF7"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -30,8 +30,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#DC2626"
+        "foregroundImage": "./assets/apni-adaptive.png",
+        "backgroundColor": "#16A34A"
       },
       "package": "com.apnikirana.driver",
       "useNextNotificationsApi": true,
@@ -50,7 +50,7 @@
       "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/apni-favicon.png",
       "bundler": "metro"
     },
     "plugins": [

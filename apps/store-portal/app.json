@@ -5,13 +5,13 @@
     "version": "1.0.0",
     "scheme": "apni-kirana-store",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/apni-icon.png",
     "userInterfaceStyle": "light",
     "primaryColor": "#2563EB",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/apni-splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#2563EB"
+      "backgroundColor": "#FFFDF7"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -26,8 +26,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#2563EB"
+        "foregroundImage": "./assets/apni-adaptive.png",
+        "backgroundColor": "#16A34A"
       },
       "package": "com.apnikirana.storeportal",
       "permissions": [
@@ -45,7 +45,7 @@
       "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/apni-favicon.png",
       "bundler": "metro"
     },
     "plugins": [

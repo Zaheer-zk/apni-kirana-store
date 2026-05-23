@@ -39,6 +39,10 @@ export default function UserFormModal({ mode, user, onClose }: Props) {
   const [phone, setPhone] = useState(user?.phone ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [username, setUsername] = useState('');
+  // While the admin hasn't manually edited Username, keep it in sync with Name
+  // (lowercased, stripped to valid chars) — so they rarely have to think about
+  // it but can override if they want something specific.
+  const [usernameEdited, setUsernameEdited] = useState(false);
   const [role, setRole] = useState('CUSTOMER');
   const [roles, setRoles] = useState<string[]>(
     user?.roles?.length ? user.roles.filter((r) => r !== 'ADMIN') : [],
@@ -143,7 +147,20 @@ export default function UserFormModal({ mode, user, onClose }: Props) {
     <Shell title={mode === 'create' ? 'Add user' : 'Edit user'} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <Field label="Full name">
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input
+            className="input"
+            value={name}
+            onChange={(e) => {
+              const v = e.target.value;
+              setName(v);
+              if (mode === 'create' && !usernameEdited) {
+                // Suggest a username derived from the name — admin can still
+                // override by typing in the Username field.
+                setUsername(v.toLowerCase().replace(/[^a-z0-9_.]+/g, ''));
+              }
+            }}
+            required
+          />
         </Field>
         <Field label="Mobile number">
           <input
@@ -170,7 +187,10 @@ export default function UserFormModal({ mode, user, onClose }: Props) {
               <input
                 className="input"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => {
+                  setUsername(e.target.value);
+                  setUsernameEdited(true);
+                }}
                 placeholder="Used for login"
                 required
               />

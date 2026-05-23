@@ -121,6 +121,105 @@ router.get(
   },
 );
 
+// ─── GET /me/items — current store owner's inventory ───────────────────────
+// Sugar over GET /:id/items that resolves the storeId from the JWT, so web
+// apps don't need to fetch /stores/me first.
+router.get(
+  '/me/items',
+  authenticate,
+  authorize('STORE_OWNER'),
+  async (req: Request, res: Response) => {
+    try {
+      const myStore = await prisma.store.findUnique({ where: { ownerId: req.user!.id } });
+      if (!myStore) return sendError(res, 'No store found for this owner', 404);
+
+      const { category, search } = req.query;
+      const page = Math.max(1, parseInt((req.query['page'] as string) || '1', 10));
+      const limit = Math.min(200, parseInt((req.query['limit'] as string) || '100', 10));
+      const skip = (page - 1) * limit;
+
+      const catalogWhere: Record<string, unknown> = {};
+      if (category) catalogWhere['category'] = category;
+      if (search) catalogWhere['name'] = { contains: search as string, mode: 'insensitive' };
+
+      const where = {
+        storeId: myStore.id,
+        ...(Object.keys(catalogWhere).length ? { catalogItem: catalogWhere } : {}),
+      };
+
+      const [items, total] = await prisma.$transaction([
+        prisma.storeItem.findMany({
+          where,
+          include: { catalogItem: true },
+          skip,
+          take: limit,
+          orderBy: { catalogItem: { name: 'asc' } },
+        }),
+        prisma.storeItem.count({ where }),
+      ]);
+
+      const flat = items.map((si) => ({
+        id: si.id,
+        storeId: si.storeId,
+        catalogItemId: si.catalogItemId,
+        name: si.catalogItem.name,
+        description: si.catalogItem.description,
+        category: si.catalogItem.category,
+        unit: si.catalogItem.defaultUnit,
+        imageUrl: si.catalogItem.imageUrl,
+        price: si.price,
+        stockQty: si.stockQty,
+        isAvailable: si.isAvailable,
+      }));
+
+      return sendSuccess(res, { items: flat, total, page, limit, pages: Math.ceil(total / limit) });
+    } catch (err) {
+      console.error('[Stores] me/items error:', err);
+      return sendError(res, 'Failed to fetch your inventory', 500);
+    }
+  },
+);
+
+// ─── GET /stats/today — today's order + revenue snapshot for the dashboard ─
+router.get(
+  '/stats/today',
+  authenticate,
+  authorize('STORE_OWNER'),
+  async (req: Request, res: Response) => {
+    try {
+      const myStore = await prisma.store.findUnique({ where: { ownerId: req.user!.id } });
+      if (!myStore) return sendError(res, 'No store found for this owner', 404);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const ordersToday = await prisma.order.findMany({
+        where: { storeId: myStore.id, createdAt: { gte: today } },
+        select: { id: true, status: true, total: true, subtotal: true },
+      });
+
+      const ordersReceived = ordersToday.length;
+      const ordersCompleted = ordersToday.filter((o) => o.status === 'DELIVERED').length;
+      // Revenue = subtotal sum of completed orders (delivery fee goes to
+      // driver). Falls back to total if subtotal is somehow null.
+      const revenue = ordersToday
+        .filter((o) => o.status === 'DELIVERED')
+        .reduce((sum, o) => sum + (o.subtotal ?? o.total ?? 0), 0);
+      const pending = ordersToday.filter((o) => o.status === 'PENDING').length;
+
+      return sendSuccess(res, {
+        ordersReceived,
+        ordersCompleted,
+        revenue: Math.round(revenue),
+        pending,
+      });
+    } catch (err) {
+      console.error('[Stores] stats/today error:', err);
+      return sendError(res, 'Failed to fetch stats', 500);
+    }
+  },
+);
+
 // ─── GET /:id ─────────────────────────────────────────────────────────────────
 
 router.get('/:id', async (req: Request, res: Response) => {

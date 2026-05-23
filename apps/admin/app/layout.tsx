@@ -34,9 +34,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <title>Apni Kirana Store — Admin</title>
-        <meta name="description" content="Internal admin dashboard for Apni Kirana Store" />
+        <title>Apni Kirana — Admin</title>
+        <meta name="description" content="Internal admin dashboard for Apni Kirana" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" type="image/png" href="/favicon.png" />
+        <link rel="apple-touch-icon" href="/favicon.png" />
+        <meta name="theme-color" content="#16A34A" />
       </head>
       <body suppressHydrationWarning>
         <QueryClientProvider client={queryClient}>

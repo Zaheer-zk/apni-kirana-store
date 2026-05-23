@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Stack, router, usePathname } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Stack, Redirect, router, usePathname } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -25,14 +25,19 @@ const queryClient = new QueryClient({
 function RootLayoutNav() {
   const { accessToken, setAuth } = useStorePortalStore();
   const pathname = usePathname();
+  const [isReady, setIsReady] = useState(false);
 
+  // Load any persisted session BEFORE deciding where to redirect — otherwise
+  // an authed user sees a flash of the login screen on cold start.
   useEffect(() => {
-    async function bootstrap() {
+    let cancelled = false;
+    (async () => {
       try {
         const token = await SecureStore.getItemAsync(STORAGE_KEYS.accessToken);
         const userRaw = await SecureStore.getItemAsync(STORAGE_KEYS.user);
         const storeProfileRaw = await SecureStore.getItemAsync(STORAGE_KEYS.storeProfile);
 
+        if (cancelled) return;
         if (token && userRaw) {
           const user = JSON.parse(userRaw);
           const storeProfile = storeProfileRaw ? JSON.parse(storeProfileRaw) : null;
@@ -40,27 +45,22 @@ function RootLayoutNav() {
         }
       } catch {
         // SecureStore failed — fall through to the redirect logic below.
+      } finally {
+        if (!cancelled) setIsReady(true);
       }
-    }
-    bootstrap();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [setAuth]);
 
   // expo-router strips route groups from the pathname, so (auth) screens show
   // up as plain "/login", "/register", etc.
-  useEffect(() => {
-    const path = pathname ?? '';
-    // Unauthenticated users may sit on login / register / forgot-password.
-    const inAuthGroup = ['/login', '/register', '/forgot-password'].includes(path);
-    // register (store-detail step) and change-password are in the (auth) group
-    // but are reached AFTER auth — an authenticated owner must stay on them.
-    const isPostAuthScreen = path === '/change-password' || path === '/register';
-
-    if (!accessToken && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (accessToken && inAuthGroup && !isPostAuthScreen) {
-      router.replace('/(tabs)/dashboard');
-    }
-  }, [accessToken, pathname]);
+  const path = pathname ?? '';
+  const inAuthGroup = ['/login', '/register', '/forgot-password'].includes(path);
+  // register (store-detail step) and change-password are in the (auth) group
+  // but are reached AFTER auth — an authenticated owner must stay on them.
+  const isPostAuthScreen = path === '/change-password' || path === '/register';
 
   // Register for push notifications and attach tap listener once authenticated.
   useEffect(() => {
@@ -80,41 +80,53 @@ function RootLayoutNav() {
     return detach;
   }, [accessToken]);
 
+  // The Stack (navigator) MUST always render so a sibling <Redirect> has
+  // something to navigate into. Imperative router.replace() in a useEffect
+  // fires before the navigator mounts and throws "Attempted to navigate
+  // before mounting the Root Layout component."
   return (
-    <Stack
-      screenOptions={{
-        // Default: native iOS UIKit-style headers (back button, title) on every screen.
-        // Tab/auth groups override with headerShown: false in their own layouts.
-        headerShown: true,
-        headerLargeTitle: false,
-        headerTransparent: true,
-        headerBlurEffect: 'systemChromeMaterial',
-        headerStyle: { backgroundColor: 'transparent' },
-        headerTintColor: colors.primary,
-        headerTitleStyle: { color: colors.textPrimary },
-        headerBackTitle: 'Back',
-        headerBackButtonDisplayMode: 'minimal',
-        contentStyle: { backgroundColor: colors.background },
-        animation: 'default',
-      }}
-    >
-      {/* Top-level groups own their own headers/tabs */}
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      {/* Detail / modal style routes use the native header */}
-      <Stack.Screen name="order/[id]" options={{ title: 'Order details' }} />
-      <Stack.Screen name="inventory/add" options={{ headerShown: false }} />
-      <Stack.Screen name="inventory/browse-catalog" options={{ title: 'Add from catalog' }} />
-      <Stack.Screen name="inventory/[id]" options={{ title: 'Edit item' }} />
-      <Stack.Screen name="restock/cart" options={{ title: 'Restock cart' }} />
-      <Stack.Screen name="restock/orders" options={{ title: 'My restock orders' }} />
-      <Stack.Screen name="profile/operating-hours" options={{ title: 'Operating hours' }} />
-      <Stack.Screen name="profile/edit" options={{ title: 'Edit store profile' }} />
-      <Stack.Screen name="profile/notifications" options={{ title: 'Notification preferences' }} />
-      <Stack.Screen name="profile/support" options={{ title: 'Help & Support' }} />
-      <Stack.Screen name="notifications/index" options={{ title: 'Notifications' }} />
-      <Stack.Screen name="chat/[orderId]" options={{ title: 'Chat' }} />
-    </Stack>
+    <>
+      <Stack
+        screenOptions={{
+          // Default: native iOS UIKit-style headers (back button, title) on every screen.
+          // Tab/auth groups override with headerShown: false in their own layouts.
+          headerShown: true,
+          headerLargeTitle: false,
+          headerTransparent: true,
+          headerBlurEffect: 'systemChromeMaterial',
+          headerStyle: { backgroundColor: 'transparent' },
+          headerTintColor: colors.primary,
+          headerTitleStyle: { color: colors.textPrimary },
+          headerBackTitle: 'Back',
+          headerBackButtonDisplayMode: 'minimal',
+          contentStyle: { backgroundColor: colors.background },
+          animation: 'default',
+        }}
+      >
+        {/* Top-level groups own their own headers/tabs */}
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        {/* Detail / modal style routes use the native header */}
+        <Stack.Screen name="order/[id]" options={{ title: 'Order details' }} />
+        <Stack.Screen name="inventory/add" options={{ headerShown: false }} />
+        <Stack.Screen name="inventory/browse-catalog" options={{ title: 'Add from catalog' }} />
+        <Stack.Screen name="inventory/[id]" options={{ title: 'Edit item' }} />
+        <Stack.Screen name="restock/cart" options={{ title: 'Restock cart' }} />
+        <Stack.Screen name="restock/orders" options={{ title: 'My restock orders' }} />
+        <Stack.Screen name="profile/operating-hours" options={{ title: 'Operating hours' }} />
+        <Stack.Screen name="profile/edit" options={{ title: 'Edit store profile' }} />
+        <Stack.Screen name="profile/notifications" options={{ title: 'Notification preferences' }} />
+        <Stack.Screen name="profile/support" options={{ title: 'Help & Support' }} />
+        <Stack.Screen name="notifications/index" options={{ title: 'Notifications' }} />
+        <Stack.Screen name="chat/[orderId]" options={{ title: 'Chat' }} />
+      </Stack>
+      {isReady && !accessToken && !inAuthGroup ? (
+        <Redirect href="/(auth)/login" />
+      ) : null}
+      {isReady && accessToken && inAuthGroup && !isPostAuthScreen ? (
+        <Redirect href="/(tabs)/dashboard" />
+      ) : null}
+    </>
   );
 }
 

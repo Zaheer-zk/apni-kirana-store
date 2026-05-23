@@ -70,6 +70,27 @@ services:
     depends_on:
       - backend
 
+  # Customer storefront — quickeasymart.com
+  # Mirrors the admin service exactly; shares workspace deps (@aks/shared,
+  # @aks/ui) so the build context must be the monorepo root.
+  customer-web:
+    build:
+      context: .
+      dockerfile: ./apps/customer-web/Dockerfile
+      target: production
+      args:
+        # NEXT_PUBLIC_* must be a BUILD arg — Next.js inlines it into the
+        # client bundle at build time. Setting it as a runtime `environment`
+        # has no effect for `NEXT_PUBLIC_*` names.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL_CUSTOMER}
+    env_file:
+      - .env.prod
+    restart: unless-stopped
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+
   nginx:
     image: nginx:alpine
     ports:
@@ -83,6 +104,7 @@ services:
     depends_on:
       - backend
       - admin
+      - customer-web
     restart: unless-stopped
 
   certbot:

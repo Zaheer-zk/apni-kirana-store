@@ -12,14 +12,21 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { Region } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/Button';
 import { Header } from '@/components/Header';
 import { Input } from '@/components/Input';
+import { Map, type MapHandle } from '@/components/Map';
 import { apiClient } from '@/lib/api';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
+
+interface Region {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+}
 
 const DEFAULT_REGION: Region = {
   latitude: 28.6315,
@@ -80,7 +87,7 @@ export default function MapPickerScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mapRef = useRef<MapView>(null);
+  const mapRef = useRef<MapHandle>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Try to grab GPS location once on mount (unless caller passed coordinates)
@@ -100,7 +107,7 @@ export default function MapPickerScreen() {
           longitudeDelta: 0.01,
         };
         setRegion(next);
-        mapRef.current?.animateToRegion(next, 400);
+        mapRef.current?.animateToRegion(next);
       } catch {
         // ignore — fall back to default region
       }
@@ -213,13 +220,12 @@ export default function MapPickerScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.mapWrap}>
-            <MapView
+            <Map
               ref={mapRef}
               style={styles.map}
               initialRegion={region}
               onRegionChangeComplete={(r) => setRegion(r)}
               showsUserLocation
-              showsMyLocationButton={false}
             />
             <View pointerEvents="none" style={styles.crosshair}>
               <Text style={styles.pinEmoji}>📍</Text>

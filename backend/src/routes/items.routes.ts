@@ -7,22 +7,66 @@ import { prisma } from '../config/prisma';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
+import { getBoundingBox, haversineDistance } from '../utils/geo';
+import {
+  rankCandidates,
+  deriveNormalizers,
+  scoreCandidate,
+} from '../services/ranking.service';
+import { getSettings } from '../services/settings.service';
 
 const router = Router();
 
 // ─── Public search: returns store-items (price/stock) joined to catalog ───────
+//
+// Two call shapes are supported:
+//
+//   Legacy keyword search (still consumed by the mobile customer app):
+//     GET /api/v1/items/search?q=tomato[&category=GROCERY]
+//   Returns a flat array, fuzzy-ranked by Fuse.js, no location filtering.
+//
+//   Location-aware ranking (used by customer-web):
+//     GET /api/v1/items/search?q=&lat=28.6&lng=77.2&radius=5&sort=recommended
+//   Returns { items, total, radiusKm }, ranked via services/ranking.service.
+//   `sort` is one of `recommended` (composite score, default), `cheapest`
+//   (ascending price), or `nearest` (ascending distance).
+//
+// The endpoint decides which mode you wanted by whether `lat`+`lng` are
+// present. If location is missing we fall back to the legacy behaviour so
+// the Expo app keeps working.
 
-// Fuzzy search across in-stock items at active stores. Uses Fuse.js to be typo-tolerant.
 router.get('/search', async (req: Request, res: Response) => {
   try {
     const q = ((req.query['q'] as string) || '').trim();
     const category = req.query['category'] as string | undefined;
+    const latStr = req.query['lat'] as string | undefined;
+    const lngStr = req.query['lng'] as string | undefined;
+    const radiusStr = req.query['radius'] as string | undefined;
+    const sort = (req.query['sort'] as string | undefined) ?? 'recommended';
+    const limitStr = req.query['limit'] as string | undefined;
+    const limit = Math.min(Math.max(parseInt(limitStr ?? '50', 10) || 50, 1), 100);
 
-    // Stage 1: SQL prefilter — narrow to candidates loosely matching the query/category.
+    const lat = latStr ? Number(latStr) : NaN;
+    const lng = lngStr ? Number(lngStr) : NaN;
+    const hasLocation = isFinite(lat) && isFinite(lng);
+
+    if (hasLocation) {
+      return await searchWithLocation(res, {
+        q,
+        category,
+        lat,
+        lng,
+        radiusKm: radiusStr ? Math.max(0.5, Math.min(50, Number(radiusStr) || 5)) : undefined,
+        sort: sort === 'cheapest' || sort === 'nearest' ? sort : 'recommended',
+        limit,
+      });
+    }
+
+    // ── Legacy mode (no location): fuzzy keyword search across all active stores.
     const baseWhere: Record<string, unknown> = {
       isAvailable: true,
       stockQty: { gt: 0 },
-      store: { status: 'ACTIVE' },
+      store: { status: 'ACTIVE', isWholesaler: false },
     };
     if (category) baseWhere['catalogItem'] = { category, isActive: true };
 
@@ -35,7 +79,6 @@ router.get('/search', async (req: Request, res: Response) => {
       take: 500,
     });
 
-    // Stage 2: Fuse fuzzy ranking when a query is provided.
     if (q) {
       const fuse = new Fuse(candidates, {
         keys: [
@@ -52,7 +95,6 @@ router.get('/search', async (req: Request, res: Response) => {
         .slice(0, 100)
         .map((r) => r.item);
     } else {
-      // No query: alphabetical, capped
       candidates = candidates
         .slice(0, 100)
         .sort((a, b) => a.catalogItem.name.localeCompare(b.catalogItem.name));
@@ -62,6 +104,211 @@ router.get('/search', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[Items] search error:', err);
     return sendError(res, 'Failed to search items', 500);
+  }
+});
+
+interface LocationSearchOpts {
+  q: string;
+  category?: string;
+  lat: number;
+  lng: number;
+  radiusKm?: number;
+  sort: 'recommended' | 'cheapest' | 'nearest';
+  limit: number;
+}
+
+/**
+ * Location-aware item search. Filters to in-stock items at ACTIVE+OPEN
+ * non-wholesaler stores within `radiusKm` of (lat,lng), then ranks via
+ * services/ranking.service so the formula stays in sync with the matching
+ * engine.
+ */
+async function searchWithLocation(
+  res: Response,
+  opts: LocationSearchOpts,
+): Promise<Response> {
+  const settings = await getSettings().catch(() => ({ deliveryRadiusKm: 5 } as { deliveryRadiusKm: number }));
+  const defaultRadius = settings?.deliveryRadiusKm ?? 5;
+  const radiusKm = opts.radiusKm ?? defaultRadius;
+
+  // Bounding-box prefilter is cheap; haversine refinement happens in JS so
+  // we don't lean on PostGIS (the deployment is plain Postgres).
+  const box = getBoundingBox(opts.lat, opts.lng, radiusKm);
+
+  const where: Record<string, unknown> = {
+    isAvailable: true,
+    stockQty: { gt: 0 },
+    store: {
+      status: 'ACTIVE',
+      isOpen: true,
+      isWholesaler: false,
+      lat: { gte: box.minLat, lte: box.maxLat },
+      lng: { gte: box.minLng, lte: box.maxLng },
+    },
+  };
+
+  if (opts.category) {
+    where['catalogItem'] = { category: opts.category, isActive: true };
+  }
+  if (opts.q) {
+    // Case-insensitive substring match; the index lives on CatalogItem.name.
+    where['catalogItem'] = {
+      ...((where['catalogItem'] as object) ?? {}),
+      name: { contains: opts.q, mode: 'insensitive' },
+      isActive: true,
+    };
+  }
+
+  const raw = await prisma.storeItem.findMany({
+    where,
+    include: {
+      catalogItem: true,
+      store: {
+        select: {
+          id: true,
+          name: true,
+          lat: true,
+          lng: true,
+          isOpen: true,
+          rating: true,
+          isPreferred: true,
+        },
+      },
+    },
+    take: 500,
+  });
+
+  // Compute haversine distance + drop anything outside the precise circle.
+  const enriched = raw
+    .map((row) => ({
+      row,
+      distanceKm: haversineDistance(opts.lat, opts.lng, row.store.lat, row.store.lng),
+    }))
+    .filter((r) => r.distanceKm <= radiusKm);
+
+  // Score with the shared ranking service so this endpoint and the matching
+  // engine never disagree on what "best" means.
+  const candidates = enriched.map((e) => ({
+    price: e.row.price,
+    distanceKm: e.distanceKm,
+    rating: e.row.store.rating ?? 0,
+    isPreferred: e.row.store.isPreferred ?? false,
+  }));
+  const norms = deriveNormalizers(candidates, radiusKm);
+
+  const scored = enriched.map((e) => ({
+    ...e,
+    score: scoreCandidate(
+      {
+        price: e.row.price,
+        distanceKm: e.distanceKm,
+        rating: e.row.store.rating ?? 0,
+        isPreferred: e.row.store.isPreferred ?? false,
+      },
+      norms,
+    ),
+  }));
+
+  if (opts.sort === 'cheapest') {
+    scored.sort((a, b) => a.row.price - b.row.price);
+  } else if (opts.sort === 'nearest') {
+    scored.sort((a, b) => a.distanceKm - b.distanceKm);
+  } else {
+    scored.sort((a, b) => b.score - a.score);
+  }
+
+  const items = scored.slice(0, opts.limit).map((s) => ({
+    // Flatten so the client doesn't need to dig into nested objects.
+    storeItemId: s.row.id,
+    catalogItemId: s.row.catalogItemId,
+    name: s.row.catalogItem.name,
+    description: s.row.catalogItem.description,
+    imageUrl: s.row.catalogItem.imageUrl,
+    unit: s.row.catalogItem.defaultUnit,
+    category: s.row.catalogItem.category,
+    price: s.row.price,
+    stockQty: s.row.stockQty,
+    rating: s.row.store.rating ?? 0,
+    score: Number(s.score.toFixed(4)),
+    store: {
+      id: s.row.store.id,
+      name: s.row.store.name,
+      isOpen: s.row.store.isOpen,
+      distanceKm: Number(s.distanceKm.toFixed(2)),
+    },
+  }));
+
+  return sendSuccess(res, { items, total: items.length, radiusKm });
+}
+
+// Silence unused-warning when the file is type-checked with isolatedModules:
+void rankCandidates;
+
+// ─── Item detail — fetch a single store-item with store + catalog joined ────
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const idParam = req.params['id'];
+    const id = Array.isArray(idParam) ? idParam[0] : idParam;
+    if (!id) return sendError(res, 'Item id required', 400);
+
+    const storeItem = await prisma.storeItem.findUnique({
+      where: { id },
+      include: {
+        catalogItem: true,
+        store: {
+          select: {
+            id: true,
+            name: true,
+            lat: true,
+            lng: true,
+            isOpen: true,
+            rating: true,
+            status: true,
+          },
+        },
+      },
+    });
+    if (!storeItem) return sendError(res, 'Item not found', 404);
+
+    // Optional caller-provided location lets the UI show "x km away".
+    const latStr = req.query['lat'] as string | undefined;
+    const lngStr = req.query['lng'] as string | undefined;
+    let distanceKm: number | null = null;
+    if (latStr && lngStr) {
+      const lat = Number(latStr);
+      const lng = Number(lngStr);
+      if (isFinite(lat) && isFinite(lng)) {
+        distanceKm = Number(haversineDistance(lat, lng, storeItem.store.lat, storeItem.store.lng).toFixed(2));
+      }
+    }
+
+    return sendSuccess(res, {
+      storeItem: {
+        id: storeItem.id,
+        price: storeItem.price,
+        stockQty: storeItem.stockQty,
+        isAvailable: storeItem.isAvailable,
+      },
+      catalogItem: {
+        id: storeItem.catalogItem.id,
+        name: storeItem.catalogItem.name,
+        description: storeItem.catalogItem.description,
+        category: storeItem.catalogItem.category,
+        defaultUnit: storeItem.catalogItem.defaultUnit,
+        imageUrl: storeItem.catalogItem.imageUrl,
+      },
+      store: {
+        id: storeItem.store.id,
+        name: storeItem.store.name,
+        rating: storeItem.store.rating ?? 0,
+        isOpen: storeItem.store.isOpen,
+        status: storeItem.store.status,
+        distanceKm,
+      },
+    });
+  } catch (err) {
+    console.error('[Items] detail error:', err);
+    return sendError(res, 'Failed to load item', 500);
   }
 });
 

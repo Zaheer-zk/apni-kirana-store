@@ -14,14 +14,21 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { Marker, Region } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
 import { Header } from '@/components/Header';
 import { Input } from '@/components/Input';
+import { Map, type MapHandle } from '@/components/Map';
 import { apiClient } from '@/lib/api';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 import type { Address } from '@aks/shared';
+
+interface Region {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+}
 
 async function fetchAddresses(): Promise<Address[]> {
   const res = await apiClient.get('/api/v1/addresses');
@@ -56,7 +63,7 @@ export default function EditAddressScreen() {
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mapRef = useRef<MapView>(null);
+  const mapRef = useRef<MapHandle>(null);
   const initializedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -158,14 +165,20 @@ export default function EditAddressScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.mapWrap}>
-            <MapView
+            <Map
               ref={mapRef}
               style={styles.map}
               initialRegion={region}
               onRegionChangeComplete={handleRegionChange}
-            >
-              <Marker coordinate={{ latitude: region.latitude, longitude: region.longitude }} />
-            </MapView>
+              markers={[
+                {
+                  id: 'pin',
+                  lat: region.latitude,
+                  lng: region.longitude,
+                  kind: 'customer',
+                },
+              ]}
+            />
             {resolving ? (
               <View style={styles.resolving}>
                 <ActivityIndicator size="small" color={colors.primary} />

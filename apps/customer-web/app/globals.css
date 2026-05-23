@@ -1,0 +1,19 @@
+/**
+ * Customer-web global stylesheet. All Tailwind directives + the shadcn HSL
+ * variables come from `@aks/ui/styles.css`, so this file only adds the
+ * brand-specific component-layer helpers that don't fit the shared library.
+ */
+@import '@aks/ui/styles.css';
+
+@layer components {
+  /* Page-level container reused on most routes — keeps content centred and
+     side-padded on phones while letting marketing-style hero sections break
+     out via `container-none`. */
+  .page-shell {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .auth-shell {
+    @apply mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-12;
+  }
+}

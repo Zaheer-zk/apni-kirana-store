@@ -7,8 +7,19 @@
     "orientation": "portrait",
     "platforms": [
       "ios",
-      "android"
+      "android",
+      "web"
     ],
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/icon.png",
+      "name": "Apni Kirana",
+      "shortName": "Apni Kirana",
+      "themeColor": "#16A34A",
+      "backgroundColor": "#FFFFFF",
+      "lang": "en",
+      "description": "Apni Kirana — daily essentials, delivered fast."
+    },
     "backgroundColor": "#FFFFFF",
     "primaryColor": "#16A34A",
     "icon": "./assets/icon.png",

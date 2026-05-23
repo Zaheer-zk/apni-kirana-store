@@ -4,6 +4,16 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-23 — Customer web storefront Slice 1 + shared @aks/ui library
+
+- [x] **`packages/ui`** — new workspace with shadcn/ui components (Button, Input, Label, Card, Dialog, Sheet, DropdownMenu, Tabs, Badge, Select, Skeleton, Separator, Avatar, InputOTP, Sonner), a Tailwind preset extending brand tokens from `apps/customer/constants/theme.ts`, and `styles.css` defining the shadcn HSL variables. All three upcoming web apps consume `@aks/ui` — see `packages/ui/README.md` and `docs/web-apps.md`.
+- [x] **`apps/customer-web`** — new Next.js 16 + React 19 app for `quickeasymart.com`. Slice 1 ships: auth (`/login` with password + OTP, `/register`, `/forgot-password`, `/reset-password?token=`, `/change-password?next=`), home (hero + search + trending + recommended), `/search?q=&sort=recommended|cheapest|nearest`, `/item/[storeItemId]`, single-store `/cart` with a "Switch store?" dialog when a customer adds an item from a second store. Cart state in zustand + persisted to localStorage under `aks-customer-cart`; auth in localStorage under `aks_customer_*`.
+- [x] **Backend `services/ranking.service.ts`** — extracted composite scoring formula (0.4·price + 0.3·distance + 0.2·rating + 0.1 preferred boost). Documented in `docs/ranking-algorithm.md` with weights rationale + tunable knobs.
+- [x] **Backend `GET /api/v1/items/search`** — now accepts `lat&lng&radius&sort` for location-aware ranking via `ranking.service`; the legacy `q&category` mode is preserved for the mobile customer app. Excludes wholesalers + closed stores. New endpoint `GET /api/v1/items/:id` returns the StoreItem joined with CatalogItem + Store (and `distanceKm` when caller passes lat/lng).
+- [x] **Tests** — `backend/__tests__/items-search.test.ts` covers recommended / cheapest / nearest sorts, radius filter, wholesaler + closed-store exclusion, and the new `/items/:id` endpoint.
+- [x] **Docker / nginx** — `apps/customer-web/Dockerfile` mirrors `apps/admin/Dockerfile` exactly with `ARG NEXT_PUBLIC_API_URL` in the builder stage. Added `customer-web` service to `docker-compose.prod.yml` (build context = monorepo root, build arg sourced from `${NEXT_PUBLIC_API_URL_CUSTOMER}`). New vhost `nginx/conf.d/customer.conf` for `quickeasymart.com` (with `www→apex` redirect) using the combined Let's Encrypt cert at `live/api.quickeasymart.com/`. Added `NEXT_PUBLIC_API_URL_CUSTOMER` to `.env.prod.example`.
+- [x] **Docs** — `docs/customer-web.md` (Slice-1 scope + deploy + what's next), `docs/web-apps.md` (the pattern store-web / driver-web will follow), `docs/ranking-algorithm.md` (formula + weights + references).
+
 ### 2026-05-23 — Role-isolation refactor — separate User row per (phone, role)
 
 - [x] **Schema** — dropped `phone @unique`; added `@@unique([phone, role])` (migration `20260523_isolate_roles`). One phone can hold CUSTOMER + STORE_OWNER + DRIVER simultaneously, but each is its OWN row with its own `name`/`email`/`username`/`password`. No more shared profile across roles — fixes the bug where registering CUSTOMER on an admin's number showed the admin's name.

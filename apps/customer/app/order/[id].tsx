@@ -12,12 +12,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Header } from '@/components/Header';
+import { Map, type MapMarker } from '@/components/Map';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { apiClient } from '@/lib/api';
 import { createSocket, subscribeToOrder } from '@/lib/socket';
@@ -306,38 +306,22 @@ export default function OrderDetailScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: spacing.xxxl }}>
         {/* Map area */}
         <View style={styles.mapWrap}>
-          <MapView
-            provider={PROVIDER_DEFAULT}
-            style={StyleSheet.absoluteFill}
+          <Map
+            interactive={false}
             initialRegion={{
               latitude: (customerLat + storeLat) / 2,
               longitude: (customerLng + storeLng) / 2,
               latitudeDelta: 0.02,
               longitudeDelta: 0.02,
             }}
-            scrollEnabled={false}
-            zoomEnabled={false}
-            pitchEnabled={false}
-            rotateEnabled={false}
-          >
-            <Marker
-              coordinate={{ latitude: storeLat, longitude: storeLng }}
-              title="Store"
-              pinColor={colors.accent}
-            />
-            <Marker
-              coordinate={{ latitude: customerLat, longitude: customerLng }}
-              title="You"
-              pinColor={colors.primary}
-            />
-            {driverLoc ? (
-              <Marker
-                coordinate={{ latitude: driverLoc.lat, longitude: driverLoc.lng }}
-                title="Driver"
-                pinColor={colors.info}
-              />
-            ) : null}
-          </MapView>
+            markers={[
+              { id: 'store', lat: storeLat, lng: storeLng, title: 'Store', kind: 'store' },
+              { id: 'customer', lat: customerLat, lng: customerLng, title: 'You', kind: 'customer' },
+              ...(driverLoc
+                ? ([{ id: 'driver', lat: driverLoc.lat, lng: driverLoc.lng, title: 'Driver', kind: 'driver' }] as MapMarker[])
+                : []),
+            ]}
+          />
 
           <SafeAreaView edges={['top']} style={styles.mapHeaderSafe} pointerEvents="box-none">
             <View style={styles.mapHeader}>

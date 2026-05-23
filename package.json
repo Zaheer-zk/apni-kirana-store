@@ -5,7 +5,9 @@
   "workspaces": [
     "backend",
     "shared",
-    "apps/admin"
+    "packages/ui",
+    "apps/admin",
+    "apps/customer-web"
   ],
   "scripts": {
     "dev": "turbo run dev",

@@ -388,7 +388,7 @@ router.get('/stores', async (req: Request, res: Response) => {
       prisma.store.findMany({
         where,
         include: {
-          owner: { select: { id: true, name: true, phone: true, email: true } },
+          owner: { select: { id: true, name: true, phone: true, email: true, isActive: true, role: true } },
           _count: { select: { items: true, orders: true } },
         },
         skip,
@@ -412,7 +412,7 @@ router.get('/stores/pending', async (_req: Request, res: Response) => {
   try {
     const stores = await prisma.store.findMany({
       where: { status: 'PENDING_APPROVAL' },
-      include: { owner: { select: { id: true, name: true, phone: true, email: true } } },
+      include: { owner: { select: { id: true, name: true, phone: true, email: true, isActive: true, role: true } } },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -646,7 +646,7 @@ router.get('/drivers', async (req: Request, res: Response) => {
       prisma.driver.findMany({
         where,
         include: {
-          user: { select: { id: true, name: true, phone: true, email: true } },
+          user: { select: { id: true, name: true, phone: true, email: true, isActive: true, role: true } },
           _count: { select: { orders: true } },
         },
         skip,
@@ -670,7 +670,7 @@ router.get('/drivers/pending', async (_req: Request, res: Response) => {
   try {
     const drivers = await prisma.driver.findMany({
       where: { status: 'PENDING_APPROVAL' },
-      include: { user: { select: { id: true, name: true, phone: true, email: true } } },
+      include: { user: { select: { id: true, name: true, phone: true, email: true, isActive: true, role: true } } },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -807,9 +807,9 @@ router.get('/orders/:id', async (req: Request, res: Response) => {
     const order = await prisma.order.findUnique({
       where: { id: req.params['id'] },
       include: {
-        customer: { select: { id: true, name: true, phone: true, email: true } },
+        customer: { select: { id: true, name: true, phone: true, email: true, isActive: true, role: true } },
         store: { select: { id: true, name: true, ownerId: true, lat: true, lng: true, street: true, city: true } },
-        driver: { include: { user: { select: { id: true, name: true, phone: true, email: true } } } },
+        driver: { include: { user: { select: { id: true, name: true, phone: true, email: true, isActive: true, role: true } } } },
         items: true,
         deliveryAddress: true,
         rating: true,
@@ -856,7 +856,7 @@ router.get('/orders/:id/eligible-stores', async (req: Request, res: Response) =>
         },
       },
       include: {
-        owner: { select: { id: true, name: true, phone: true, email: true } },
+        owner: { select: { id: true, name: true, phone: true, email: true, isActive: true, role: true } },
         items: {
           where: { catalogItemId: { in: orderCatalogIds }, isAvailable: true, stockQty: { gt: 0 } },
           select: { catalogItemId: true },
@@ -973,7 +973,7 @@ router.get('/orders/:id/eligible-drivers', async (req: Request, res: Response) =
         currentLat: { not: null },
         currentLng: { not: null },
       },
-      include: { user: { select: { id: true, name: true, phone: true, email: true } } },
+      include: { user: { select: { id: true, name: true, phone: true, email: true, isActive: true, role: true } } },
     });
 
     const ranked = drivers

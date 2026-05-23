@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
 import DriverEditModal from '@/components/DriverEditModal';
+import UserFormModal, { type ManagedUser } from '@/components/UserFormModal';
 import { DriverStatus } from '@aks/shared';
 
 type TabKey = 'PENDING_APPROVAL' | 'ACTIVE' | 'SUSPENDED';
@@ -19,9 +20,11 @@ const TABS: { key: TabKey; label: string }[] = [
 
 interface DriverRow {
   id: string;
+  userId: string;
   name: string;
   phone: string;
   email: string | null;
+  userIsActive: boolean;
   vehicleType: string;
   vehicleNumber: string;
   licenseNumber: string;
@@ -43,7 +46,7 @@ interface BackendDriver {
   createdAt: string;
   currentLat?: number | null;
   currentLng?: number | null;
-  user: { id: string; name: string | null; phone: string; email?: string | null };
+  user: { id: string; name: string | null; phone: string; email?: string | null; isActive?: boolean };
   _count?: { orders: number };
 }
 
@@ -68,6 +71,7 @@ export default function DriversPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [editingDriver, setEditingDriver] = useState<DriverRow | null>(null);
+  const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const queryClient = useQueryClient();
 
   // Reset to page 1 when the tab or search changes
@@ -85,9 +89,11 @@ export default function DriversPage() {
       return {
         rows: list.map((d) => ({
           id: d.id,
+          userId: d.user?.id ?? '',
           name: d.user?.name ?? 'Unnamed',
           phone: d.user?.phone ?? '',
           email: d.user?.email ?? null,
+          userIsActive: d.user?.isActive ?? true,
           vehicleType: d.vehicleType,
           vehicleNumber: d.vehicleNumber,
           licenseNumber: d.licenseNumber ?? '',
@@ -197,6 +203,25 @@ export default function DriversPage() {
           >
             <Pencil className="h-3.5 w-3.5" />
             Edit
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditingUser({
+                id: d.userId,
+                name: d.name,
+                phone: d.phone,
+                email: d.email,
+                username: null,
+                role: 'DRIVER',
+                roles: ['DRIVER'],
+                isActive: d.userIsActive,
+              });
+            }}
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit user
           </button>
           {activeTab === 'PENDING_APPROVAL' && (
             <>
@@ -327,6 +352,16 @@ export default function DriversPage() {
             currentLng: editingDriver.currentLng,
           }}
           onClose={() => setEditingDriver(null)}
+        />
+      )}
+      {editingUser && (
+        <UserFormModal
+          mode="edit"
+          user={editingUser}
+          onClose={() => {
+            setEditingUser(null);
+            queryClient.invalidateQueries({ queryKey: ['admin-drivers'], refetchType: 'all' });
+          }}
         />
       )}
     </div>

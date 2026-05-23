@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
 import StoreEditModal from '@/components/StoreEditModal';
+import UserFormModal, { type ManagedUser } from '@/components/UserFormModal';
 import { StoreStatus } from '@aks/shared';
 
 type TabKey = 'PENDING_APPROVAL' | 'ACTIVE' | 'SUSPENDED';
@@ -26,9 +27,11 @@ interface StoreRow {
   rating: number;
   isWholesaler: boolean;
   isPreferred: boolean;
+  ownerId: string;
   ownerName: string;
   ownerPhone: string;
   ownerEmail: string | null;
+  ownerIsActive: boolean;
   itemCount: number;
   orderCount: number;
   createdAt: string;
@@ -61,7 +64,7 @@ interface BackendStore {
   pincode?: string;
   openTime?: string;
   closeTime?: string;
-  owner: { id: string; name: string | null; phone: string; email?: string | null };
+  owner: { id: string; name: string | null; phone: string; email?: string | null; isActive?: boolean };
   _count?: { items: number; orders: number };
 }
 
@@ -86,6 +89,7 @@ export default function StoresPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<StoreRow | null>(null);
+  const [editingOwner, setEditingOwner] = useState<ManagedUser | null>(null);
   const queryClient = useQueryClient();
 
   // Reset to page 1 when the tab or search changes
@@ -110,9 +114,11 @@ export default function StoresPage() {
           rating: s.rating ?? 0,
           isWholesaler: s.isWholesaler ?? false,
           isPreferred: s.isPreferred ?? false,
+          ownerId: s.owner?.id ?? '',
           ownerName: s.owner?.name ?? 'Unnamed',
           ownerPhone: s.owner?.phone ?? '',
           ownerEmail: s.owner?.email ?? null,
+          ownerIsActive: s.owner?.isActive ?? true,
           itemCount: s._count?.items ?? 0,
           orderCount: s._count?.orders ?? 0,
           createdAt: s.createdAt,
@@ -231,6 +237,24 @@ export default function StoresPage() {
             variant="neutral"
             loading={false}
             onClick={() => setEditing(s)}
+          />
+          <ActionButton
+            label="Edit owner"
+            icon={<Pencil className="h-3.5 w-3.5" />}
+            variant="neutral"
+            loading={false}
+            onClick={() =>
+              setEditingOwner({
+                id: s.ownerId,
+                name: s.ownerName,
+                phone: s.ownerPhone,
+                email: s.ownerEmail,
+                username: null,
+                role: 'STORE_OWNER',
+                roles: ['STORE_OWNER'],
+                isActive: s.ownerIsActive,
+              })
+            }
           />
           {activeTab === 'PENDING_APPROVAL' && (
             <>
@@ -372,6 +396,16 @@ export default function StoresPage() {
 
       {editing && (
         <StoreEditModal store={editing} onClose={() => setEditing(null)} />
+      )}
+      {editingOwner && (
+        <UserFormModal
+          mode="edit"
+          user={editingOwner}
+          onClose={() => {
+            setEditingOwner(null);
+            queryClient.invalidateQueries({ queryKey: ['admin-stores'], refetchType: 'all' });
+          }}
+        />
       )}
     </div>
   );

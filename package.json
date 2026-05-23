@@ -7,7 +7,9 @@
     "shared",
     "packages/ui",
     "apps/admin",
-    "apps/customer-web"
+    "apps/customer-web",
+    "apps/store-web",
+    "apps/driver-web"
   ],
   "scripts": {
     "dev": "turbo run dev",

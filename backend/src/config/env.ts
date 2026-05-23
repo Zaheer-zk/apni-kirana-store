@@ -49,8 +49,24 @@ export const config = {
   cors: {
     // Never fall back to '*' in production — an unset CORS_ORIGIN there
     // disables cross-origin instead of allowing everyone.
-    origin:
-      process.env.CORS_ORIGIN ||
-      ((process.env.NODE_ENV || 'development') === 'production' ? false : '*'),
+    //
+    // Comma-separated values are split into an array so the `cors` package
+    // matches each origin exactly. A single value stays a string so existing
+    // single-origin deploys keep working unchanged.
+    origin: parseCorsOrigin(
+      process.env.CORS_ORIGIN,
+      (process.env.NODE_ENV || 'development') === 'production',
+    ),
   },
 } as const;
+
+function parseCorsOrigin(raw: string | undefined, isProd: boolean): string | string[] | boolean {
+  if (!raw) return isProd ? false : '*';
+  const parts = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return isProd ? false : '*';
+  if (parts.length === 1) return parts[0]!;
+  return parts;
+}

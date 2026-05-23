@@ -24,3 +24,4 @@ export * from './components/separator';
 export * from './components/avatar';
 export * from './components/input-otp';
 export * from './components/sonner';
+export * from './components/location-map';

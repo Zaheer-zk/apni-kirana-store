@@ -91,6 +91,44 @@ services:
     depends_on:
       - backend
 
+  # Store operator dashboard — store.quickeasymart.com
+  # Partner-only web surface for store owners: dashboard, orders, inventory,
+  # store profile + open/closed toggle. Mirrors customer-web exactly; shares
+  # workspace deps so the build context must be the monorepo root.
+  store-web:
+    build:
+      context: .
+      dockerfile: ./apps/store-web/Dockerfile
+      target: production
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL_STORE}
+    env_file:
+      - .env.prod
+    restart: unless-stopped
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+
+  # Driver web app — driver.quickeasymart.com
+  # Partner-only web surface for drivers: profile, deliveries, earnings,
+  # online toggle. No background GPS (web can't run it reliably) — that
+  # stays in the Expo app. Mirrors customer-web exactly.
+  driver-web:
+    build:
+      context: .
+      dockerfile: ./apps/driver-web/Dockerfile
+      target: production
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL_DRIVER}
+    env_file:
+      - .env.prod
+    restart: unless-stopped
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+
   nginx:
     image: nginx:alpine
     ports:
@@ -105,6 +143,8 @@ services:
       - backend
       - admin
       - customer-web
+      - store-web
+      - driver-web
     restart: unless-stopped
 
   certbot:

@@ -36,6 +36,12 @@
   },
   "peerDependencies": {
     "react": ">=18 <20",
-    "react-dom": ">=18 <20"
+    "react-dom": ">=18 <20",
+    "leaflet": "^1.9.0",
+    "react-leaflet": "^4.0.0 || ^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "leaflet": { "optional": true },
+    "react-leaflet": { "optional": true }
   }
 }

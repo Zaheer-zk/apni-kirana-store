@@ -1,0 +1,25 @@
+/**
+ * store-web global stylesheet. All Tailwind directives + the shadcn HSL
+ * variables come from `@aks/ui/styles.css`, so this file only adds the
+ * brand-specific component-layer helpers that don't fit the shared library.
+ */
+@import '@aks/ui/styles.css';
+
+@layer components {
+  /* Page-level container reused on most authenticated routes — keeps content
+     centred and side-padded while letting wide tables / map views break out
+     via their own width classes. */
+  .page-shell {
+    @apply mx-auto w-full max-w-6xl;
+  }
+
+  .auth-shell {
+    @apply mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-12;
+  }
+
+  /* Section title pattern (uppercase tracking) — mirrors the look of the
+     Expo store-portal section headers. */
+  .section-eyebrow {
+    @apply text-xs font-bold uppercase tracking-wider text-gray-500;
+  }
+}

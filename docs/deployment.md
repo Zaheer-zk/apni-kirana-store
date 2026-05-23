@@ -315,8 +315,10 @@ What to put in each value:
 | `EMAIL_PROVIDER` | `RESEND` | Never `CONSOLE` in prod. See [Email setup](#email-setup) |
 | `RESEND_API_KEY` / `EMAIL_FROM` | Resend API key + verified sender | Powers password-reset emails. See [Email setup](#email-setup) |
 | `WEB_APP_URL` | `https://admin.yourdomain.com` | Base URL the password-reset links point at |
-| `CORS_ORIGIN` | `https://admin.yourdomain.com` | Locks the API to the admin origin |
+| `CORS_ORIGIN` | comma-separated list of every web origin | e.g. `https://admin.yourdomain.com,https://quickeasymart.com,https://store.quickeasymart.com,https://driver.quickeasymart.com` |
 | `NEXT_PUBLIC_API_URL` | `https://api.yourdomain.com` | Baked into the admin build — the URL the dashboard calls |
+| `NEXT_PUBLIC_API_URL_CUSTOMER` | `https://api.quickeasymart.com` | Baked into the customer-web build (quickeasymart.com) |
+| `NEXT_PUBLIC_API_URL_DRIVER` | `https://api.quickeasymart.com` | Baked into the driver-web build (driver.quickeasymart.com) — see [`docs/driver-web.md`](driver-web.md) |
 
 > The database and Redis passwords each appear **twice** — once as the raw
 > value and once embedded in `DATABASE_URL` / `REDIS_URL`. If you change one,

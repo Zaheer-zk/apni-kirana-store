@@ -2,12 +2,19 @@
 # Build with: docker compose -f docker-compose.prod.yml build customer-web
 
 # Stage 1: Install dependencies
+# Copy the package.json of EVERY workspace so `npm install` at the root sees
+# the same workspace tree the lockfile expects — otherwise npm silently skips
+# installing some deps (we hit this: `react` was missing in /app/node_modules).
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
+COPY backend/package.json ./backend/
 COPY shared/package.json ./shared/
 COPY packages/ui/package.json ./packages/ui/
+COPY apps/admin/package.json ./apps/admin/
 COPY apps/customer-web/package.json ./apps/customer-web/
+COPY apps/store-web/package.json ./apps/store-web/
+COPY apps/driver-web/package.json ./apps/driver-web/
 RUN npm install --legacy-peer-deps
 
 # Stage 2: Local development (hot reload via volume mount)
@@ -38,9 +45,13 @@ FROM node:20-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
+COPY backend/package.json ./backend/
 COPY shared/package.json ./shared/
 COPY packages/ui/package.json ./packages/ui/
+COPY apps/admin/package.json ./apps/admin/
 COPY apps/customer-web/package.json ./apps/customer-web/
+COPY apps/store-web/package.json ./apps/store-web/
+COPY apps/driver-web/package.json ./apps/driver-web/
 RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/packages/ui ./packages/ui

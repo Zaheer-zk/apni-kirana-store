@@ -5,8 +5,12 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
+COPY backend/package.json ./backend/
 COPY shared/package.json ./shared/
 COPY packages/ui/package.json ./packages/ui/
+COPY apps/admin/package.json ./apps/admin/
+COPY apps/customer-web/package.json ./apps/customer-web/
+COPY apps/store-web/package.json ./apps/store-web/
 COPY apps/driver-web/package.json ./apps/driver-web/
 RUN npm install --legacy-peer-deps
 
@@ -38,8 +42,12 @@ FROM node:20-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
+COPY backend/package.json ./backend/
 COPY shared/package.json ./shared/
 COPY packages/ui/package.json ./packages/ui/
+COPY apps/admin/package.json ./apps/admin/
+COPY apps/customer-web/package.json ./apps/customer-web/
+COPY apps/store-web/package.json ./apps/store-web/
 COPY apps/driver-web/package.json ./apps/driver-web/
 RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps
 COPY --from=builder /app/shared ./shared

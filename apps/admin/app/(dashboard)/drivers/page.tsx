@@ -21,6 +21,7 @@ interface DriverRow {
   id: string;
   name: string;
   phone: string;
+  email: string | null;
   vehicleType: string;
   vehicleNumber: string;
   licenseNumber: string;
@@ -42,7 +43,7 @@ interface BackendDriver {
   createdAt: string;
   currentLat?: number | null;
   currentLng?: number | null;
-  user: { id: string; name: string | null; phone: string };
+  user: { id: string; name: string | null; phone: string; email?: string | null };
   _count?: { orders: number };
 }
 
@@ -86,6 +87,7 @@ export default function DriversPage() {
           id: d.id,
           name: d.user?.name ?? 'Unnamed',
           phone: d.user?.phone ?? '',
+          email: d.user?.email ?? null,
           vehicleType: d.vehicleType,
           vehicleNumber: d.vehicleNumber,
           licenseNumber: d.licenseNumber ?? '',
@@ -134,6 +136,9 @@ export default function DriversPage() {
         <div className="min-w-0 max-w-[180px] sm:max-w-none">
           <p className="truncate font-medium text-gray-900" title={d.name}>{d.name}</p>
           <p className="truncate text-xs text-gray-400" title={d.phone}>{d.phone}</p>
+          {d.email && (
+            <p className="truncate text-xs text-gray-400" title={d.email}>{d.email}</p>
+          )}
         </div>
       ),
     },

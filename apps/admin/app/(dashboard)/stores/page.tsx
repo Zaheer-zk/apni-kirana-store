@@ -28,6 +28,7 @@ interface StoreRow {
   isPreferred: boolean;
   ownerName: string;
   ownerPhone: string;
+  ownerEmail: string | null;
   itemCount: number;
   orderCount: number;
   createdAt: string;
@@ -60,7 +61,7 @@ interface BackendStore {
   pincode?: string;
   openTime?: string;
   closeTime?: string;
-  owner: { id: string; name: string | null; phone: string };
+  owner: { id: string; name: string | null; phone: string; email?: string | null };
   _count?: { items: number; orders: number };
 }
 
@@ -111,6 +112,7 @@ export default function StoresPage() {
           isPreferred: s.isPreferred ?? false,
           ownerName: s.owner?.name ?? 'Unnamed',
           ownerPhone: s.owner?.phone ?? '',
+          ownerEmail: s.owner?.email ?? null,
           itemCount: s._count?.items ?? 0,
           orderCount: s._count?.orders ?? 0,
           createdAt: s.createdAt,
@@ -194,9 +196,12 @@ export default function StoresPage() {
       key: 'ownerName',
       header: 'Owner',
       render: (s) => (
-        <div className="min-w-0 max-w-[180px] sm:max-w-none">
+        <div className="min-w-0 max-w-[200px] sm:max-w-none">
           <p className="truncate text-gray-900" title={s.ownerName}>{s.ownerName}</p>
           <p className="truncate text-xs text-gray-400" title={s.ownerPhone}>{s.ownerPhone}</p>
+          {s.ownerEmail && (
+            <p className="truncate text-xs text-gray-400" title={s.ownerEmail}>{s.ownerEmail}</p>
+          )}
         </div>
       ),
     },

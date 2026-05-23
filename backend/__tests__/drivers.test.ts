@@ -33,8 +33,10 @@ import {
 const app = createTestApp();
 
 describe('POST /api/v1/drivers/register', () => {
-  it('creates a driver in PENDING_APPROVAL and grants the DRIVER role', async () => {
-    const { token, user } = await loginAs('CUSTOMER');
+  it('creates a driver in PENDING_APPROVAL for a DRIVER caller', async () => {
+    // /drivers/register now requires the caller to already hold DRIVER —
+    // each role is its own User row.
+    const { token } = await loginAs('DRIVER');
     const res = await request(app)
       .post('/api/v1/drivers/register')
       .set('Authorization', `Bearer ${token}`)
@@ -46,9 +48,19 @@ describe('POST /api/v1/drivers/register', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.status).toBe('PENDING_APPROVAL');
-    // Multi-role: DRIVER is added without dropping the existing role.
-    const updated = await prisma.user.findUnique({ where: { id: user.id } });
-    expect(updated?.roles).toEqual(expect.arrayContaining(['CUSTOMER', 'DRIVER']));
+  });
+
+  it('returns 403 when a CUSTOMER tries to register as a driver', async () => {
+    const { token } = await loginAs('CUSTOMER');
+    const res = await request(app)
+      .post('/api/v1/drivers/register')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        vehicleType: 'BIKE',
+        vehicleNumber: 'DL01XX1234',
+        licenseNumber: 'LIC-9988',
+      });
+    expect(res.status).toBe(403);
   });
 
   it('returns 409 when already a driver', async () => {

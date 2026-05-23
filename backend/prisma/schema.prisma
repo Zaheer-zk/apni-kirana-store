@@ -86,13 +86,13 @@ enum DriverStatus {
 model User {
   id           String     @id @default(cuid())
   name         String?
-  phone        String     @unique
-  email        String?    @unique // used for password-reset links; optional for legacy/admin
-  // `role` is the user's PRIMARY role (first one they registered with) and is
-  // what authorize() checks for single-role surfaces. `roles` is the full set
-  // of roles granted to this account — one phone can be CUSTOMER + STORE_OWNER
-  // + DRIVER at once. Login picks an active role out of `roles` and the JWT
-  // carries that one. Always keep `role` ∈ `roles`.
+  // One phone number can hold multiple roles, but every (phone, role) is its
+  // OWN row with its own name/email/username/password. So phone is NOT unique
+  // on its own — `@@unique([phone, role])` below enforces "at most one of
+  // each role per number". `roles` is kept as a `[role]` denormalisation for
+  // backward-compat with code that checks `user.roles.includes(...)`.
+  phone        String
+  email        String?    @unique // used for password-reset; unique globally
   role         UserRole   @default(CUSTOMER)
   roles        UserRole[] @default([])
   username     String?    @unique // login id for username/password login
@@ -119,6 +119,7 @@ model User {
   store               Store?
   driver              Driver?
 
+  @@unique([phone, role])
   @@index([phone])
 }
 

@@ -37,8 +37,10 @@ const validStorePayload = {
 };
 
 describe('POST /api/v1/stores/register', () => {
-  it('creates a store in PENDING_APPROVAL and grants the STORE_OWNER role', async () => {
-    const { token, user } = await loginAs('CUSTOMER');
+  it('creates a store in PENDING_APPROVAL for a STORE_OWNER caller', async () => {
+    // /stores/register now requires the caller to already hold STORE_OWNER —
+    // each role is its own User row.
+    const { token } = await loginAs('STORE_OWNER');
     const res = await request(app)
       .post('/api/v1/stores/register')
       .set('Authorization', `Bearer ${token}`)
@@ -46,10 +48,15 @@ describe('POST /api/v1/stores/register', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.status).toBe('PENDING_APPROVAL');
+  });
 
-    // Multi-role: STORE_OWNER is added without dropping the existing role.
-    const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
-    expect(dbUser?.roles).toEqual(expect.arrayContaining(['CUSTOMER', 'STORE_OWNER']));
+  it('returns 403 when a CUSTOMER tries to register a store', async () => {
+    const { token } = await loginAs('CUSTOMER');
+    const res = await request(app)
+      .post('/api/v1/stores/register')
+      .set('Authorization', `Bearer ${token}`)
+      .send(validStorePayload);
+    expect(res.status).toBe(403);
   });
 
   it('returns 401 when no auth token is provided', async () => {

@@ -7,16 +7,10 @@ import { validate } from '../middleware/validate.middleware';
 import { authenticate } from '../middleware/auth.middleware';
 import { otpLimiter } from '../middleware/rate-limit.middleware';
 import { sendSuccess, sendError } from '../utils/response';
-import { publicUser, grantRole } from '../utils/roles';
+import { publicUser } from '../utils/roles';
 import { generateResetToken, hashToken } from '../utils/token';
 import bcrypt from 'bcryptjs';
-import {
-  generateOtp,
-  storeOtp,
-  verifyOtp,
-  setPendingRole,
-  consumePendingRole,
-} from '../utils/otp';
+import { generateOtp, storeOtp, verifyOtp } from '../utils/otp';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { sendSmsOtp } from '../services/sms.service';
 import { sendPasswordResetEmail } from '../services/email.service';
@@ -140,33 +134,18 @@ router.post('/register', otpLimiter, validate(registerSchema), async (req: Reque
       role: AppRole;
     };
 
-    const existing = await prisma.user.findUnique({ where: { phone } });
+    // Each (phone, role) is its own account — fully isolated profile. Look up
+    // by the composite key, not by phone alone.
+    const existing = await prisma.user.findUnique({
+      where: { phone_role: { phone, role: role as UserRole } },
+    });
 
-    // The number already has a fully-registered account.
+    // Already-registered (and verified) account for this exact (phone, role).
     if (existing && existing.phoneVerified) {
-      if (existing.roles.includes(role)) {
-        return sendError(
-          res,
-          `This mobile number is already registered as a ${roleLabel(role)}. Please log in instead.`,
-          409,
-        );
-      }
-      if (!existing.isActive) {
-        return sendError(res, 'This account has been suspended. Please contact support.', 403);
-      }
-      // The account exists but doesn't hold this role yet. One number can hold
-      // CUSTOMER + STORE_OWNER + DRIVER — so add the role. We just send an OTP;
-      // verifying it proves ownership of the number, and verify-otp grants the
-      // role. The name/email/username/password fields are ignored here — the
-      // existing account keeps its own credentials.
-      const otp = generateOtp();
-      await storeOtp(phone, otp);
-      await setPendingRole(phone, role);
-      await sendSmsOtp(phone, otp);
-      return sendSuccess(
+      return sendError(
         res,
-        { phone },
-        `Enter the OTP sent to your mobile number to add the ${roleLabel(role)} role to your account.`,
+        `This mobile number is already registered as a ${roleLabel(role)}. Please log in instead.`,
+        409,
       );
     }
 
@@ -227,11 +206,20 @@ router.post('/verify-otp', otpLimiter, validate(verifyOtpSchema), async (req: Re
   try {
     const { phone, otp, role } = req.body as { phone: string; otp: string; role?: AppRole };
 
-    const user = await prisma.user.findUnique({ where: { phone } });
+    // Per-role accounts: look up the exact (phone, role) row. If the caller
+    // didn't pass a role (legacy / older clients), fall back to *any* row for
+    // the phone — but apps should always pass it.
+    const user = role
+      ? await prisma.user.findUnique({
+          where: { phone_role: { phone, role: role as UserRole } },
+        })
+      : await prisma.user.findFirst({ where: { phone } });
     if (!user) {
       return sendError(
         res,
-        'This mobile number is not registered. Please create an account first.',
+        role
+          ? `This mobile number is not registered as a ${roleLabel(role as UserRole)}.`
+          : 'This mobile number is not registered. Please create an account first.',
         404,
       );
     }
@@ -245,23 +233,7 @@ router.post('/verify-otp', otpLimiter, validate(verifyOtpSchema), async (req: Re
       return sendError(res, 'Your account has been suspended', 403);
     }
 
-    // Pick the active role for this session. The app passes the role it serves.
     const activeRole: UserRole = (role as UserRole | undefined) ?? user.role;
-    if (role && !user.roles.includes(role as UserRole)) {
-      // The account doesn't hold this role — allowed only if registration just
-      // queued it to be added (the OTP proved ownership of the number).
-      const pending = await consumePendingRole(phone);
-      if (pending === role) {
-        await grantRole(user.id, role as UserRole);
-        user.roles.push(role as UserRole);
-      } else {
-        return sendError(
-          res,
-          `This mobile number is not registered as a ${roleLabel(activeRole)}.`,
-          403,
-        );
-      }
-    }
 
     // First successful OTP after registration verifies the number.
     if (!user.phoneVerified) {
@@ -300,12 +272,22 @@ router.post('/login', otpLimiter, validate(loginSchema), async (req: Request, re
       role?: AppRole;
     };
 
-    // A 10-digit identifier is treated as a phone number, anything else as a
-    // username.
+    // A 10-digit identifier is a phone number, anything else is a username.
+    // Phone alone is no longer unique (each role has its own row), so a phone
+    // login requires the role to know which account to authenticate.
     const isPhone = /^\d{10}$/.test(identifier);
-    const user = await prisma.user.findUnique({
-      where: isPhone ? { phone: identifier } : { username: identifier },
-    });
+    if (isPhone && !role) {
+      return sendError(
+        res,
+        'Please select a role when logging in with a mobile number.',
+        400,
+      );
+    }
+    const user = isPhone
+      ? await prisma.user.findUnique({
+          where: { phone_role: { phone: identifier, role: role as UserRole } },
+        })
+      : await prisma.user.findUnique({ where: { username: identifier } });
 
     // Generic message — never reveal whether the account exists.
     if (!user || !user.passwordHash) {

@@ -8,7 +8,6 @@ import { sendSuccess, sendError } from '../utils/response';
 import { assignDriverForOrder } from '../services/driver.service';
 import { sendNotification } from '../services/notification.service';
 import { broadcastOrderStatus } from '../services/order-events.service';
-import { grantRole } from '../utils/roles';
 
 const router = Router();
 
@@ -40,6 +39,7 @@ async function getDriverByUser(userId: string) {
 router.post(
   '/register',
   authenticate,
+  authorize('DRIVER'),
   validate(registerDriverSchema),
   async (req: Request, res: Response) => {
     try {
@@ -49,9 +49,6 @@ router.post(
       const driver = await prisma.driver.create({
         data: { ...req.body, userId: req.user!.id, status: 'PENDING_APPROVAL' },
       });
-      // Grant the DRIVER role (multi-role: keeps any other roles the account
-      // already holds, e.g. CUSTOMER / STORE_OWNER).
-      await grantRole(req.user!.id, 'DRIVER');
 
       return sendSuccess(res, driver, 'Driver registered. Awaiting approval.', 201);
     } catch (err) {

@@ -241,34 +241,26 @@ describe('POST /api/v1/admin/users', () => {
     expect(res.body.data.tempPassword).toMatch(/^[A-Za-z0-9]{10}$/);
     expect(res.body.data.user.passwordHash).toBeUndefined();
 
-    const dbUser = await prisma.user.findUnique({ where: { phone: newUser.phone } });
+    const dbUser = await prisma.user.findFirst({ where: { phone: newUser.phone } });
     expect(dbUser!.mustChangePassword).toBe(true);
     expect(dbUser!.phoneVerified).toBe(true);
     expect(dbUser!.roles).toEqual(['STORE_OWNER']);
   });
 
-  it('adds the role to an existing account when the phone is already in use', async () => {
+  it('creates a separate row when the phone already holds a different role', async () => {
     const token = await adminToken();
-    // newUser.role is STORE_OWNER; the existing account is a CUSTOMER.
-    const existing = await createUser({ phone: newUser.phone, role: 'CUSTOMER', roles: ['CUSTOMER'] });
+    // Existing CUSTOMER on this phone; admin creates a STORE_OWNER — two
+    // isolated accounts on the same number.
+    await createUser({ phone: newUser.phone, role: 'CUSTOMER', roles: ['CUSTOMER'] });
     const res = await request(app)
       .post('/api/v1/admin/users')
       .set('Authorization', `Bearer ${token}`)
       .send(newUser);
 
-    expect(res.status).toBe(200);
-    const dbUser = await prisma.user.findUnique({ where: { id: existing.id } });
-    expect(dbUser!.roles).toEqual(expect.arrayContaining(['CUSTOMER', 'STORE_OWNER']));
-  });
-
-  it('returns 409 when the number belongs to a suspended account', async () => {
-    const token = await adminToken();
-    await createUser({ phone: newUser.phone, role: 'CUSTOMER', roles: ['CUSTOMER'], isActive: false });
-    const res = await request(app)
-      .post('/api/v1/admin/users')
-      .set('Authorization', `Bearer ${token}`)
-      .send(newUser);
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(201);
+    const rows = await prisma.user.findMany({ where: { phone: newUser.phone } });
+    expect(rows.length).toBe(2);
+    expect(rows.map((r) => r.role).sort()).toEqual(['CUSTOMER', 'STORE_OWNER']);
   });
 
   it('returns 409 when the number already holds that exact role', async () => {
@@ -299,7 +291,7 @@ describe('POST /api/v1/admin/users', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.tempPassword).toBeTruthy();
-    const dbUser = await prisma.user.findUnique({ where: { phone: '9700000099' } });
+    const dbUser = await prisma.user.findFirst({ where: { phone: '9700000099' } });
     expect(dbUser!.role).toBe('ADMIN');
     expect(dbUser!.isSuperAdmin).toBe(false);
     expect(dbUser!.mustChangePassword).toBe(true);
@@ -316,17 +308,18 @@ describe('POST /api/v1/admin/users', () => {
 });
 
 describe('PUT /api/v1/admin/users/:id', () => {
-  it('edits a user and can grant a role', async () => {
+  it('edits a user’s name', async () => {
     const token = await adminToken();
     const user = await createUser({ role: 'CUSTOMER', roles: ['CUSTOMER'] });
     const res = await request(app)
       .put(`/api/v1/admin/users/${user.id}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ name: 'Renamed', roles: ['CUSTOMER', 'DRIVER'] });
+      .send({ name: 'Renamed' });
 
     expect(res.status).toBe(200);
     expect(res.body.data.name).toBe('Renamed');
-    expect(res.body.data.roles).toEqual(expect.arrayContaining(['CUSTOMER', 'DRIVER']));
+    // Roles aren't editable any more — each role is its own User row.
+    expect(res.body.data.role).toBe('CUSTOMER');
   });
 
   it('refuses to edit an ADMIN account', async () => {

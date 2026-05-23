@@ -12,7 +12,6 @@ import { haversineDistance } from '../utils/geo';
 import { notify } from '../services/notification.service';
 import { getSettings, updateSettings } from '../services/settings.service';
 import { generateResetToken, generateTempPassword } from '../utils/token';
-import { grantRole } from '../utils/roles';
 import { sendPasswordResetEmail } from '../services/email.service';
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -144,56 +143,17 @@ router.post('/users', validate(createUserSchema), async (req: Request, res: Resp
       }
     }
 
-    // If the phone already has an account, add the requested role to it
-    // instead of creating a duplicate. One number can hold CUSTOMER +
-    // STORE_OWNER + DRIVER at once — but only one of each.
-    const existing = await prisma.user.findUnique({ where: { phone } });
+    // Per-role accounts: each (phone, role) is its own row. Block duplicates
+    // of THIS exact role on THIS phone; a different role on the same phone is
+    // a fresh row.
+    const existing = await prisma.user.findUnique({
+      where: { phone_role: { phone, role } },
+    });
     if (existing) {
-      // Admin accounts are kept separate — they don't share a number with a
-      // customer/store/driver account.
-      if (role === 'ADMIN') {
-        return sendError(
-          res,
-          'This mobile number already belongs to an account. Use a separate number for an admin.',
-          409,
-        );
-      }
-      if (existing.roles.includes(role)) {
-        return sendError(res, `This number is already registered as a ${roleLabel}.`, 409);
-      }
-      // Don't quietly add a role to a suspended account — it would stay
-      // locked anyway. Tell the admin to reactivate it instead.
-      if (!existing.isActive) {
-        return sendError(
-          res,
-          'This number belongs to a suspended account. Reactivate that account instead of creating a new one.',
-          409,
-        );
-      }
-      await grantRole(existing.id, role);
-      await prisma.auditLog
-        .create({
-          data: {
-            actorId: req.user!.id,
-            action: 'USER_ADD_ROLE',
-            targetType: 'User',
-            targetId: existing.id,
-            after: { role },
-          },
-        })
-        .catch(() => undefined);
-      const updated = await prisma.user.findUnique({
-        where: { id: existing.id },
-        select: USER_SELECT,
-      });
-      return sendSuccess(
-        res,
-        { user: updated, roleAdded: role },
-        `${existing.name ?? 'That account'} already exists on this number — added the ${roleLabel} role to it.`,
-      );
+      return sendError(res, `This number is already registered as a ${roleLabel}.`, 409);
     }
 
-    // Brand-new account — email and username must be unique.
+    // Email and username must be unique globally.
     const [emailOwner, usernameOwner] = await Promise.all([
       prisma.user.findUnique({ where: { email }, select: { id: true } }),
       prisma.user.findUnique({ where: { username }, select: { id: true } }),
@@ -253,9 +213,9 @@ const updateUserSchema = z
     phone: z.string().regex(/^\d{10}$/, 'Phone must be exactly 10 digits'),
     email: z.string().trim().toLowerCase().email('Enter a valid email address'),
     isActive: z.boolean(),
-    roles: z.array(z.enum(APP_ROLES)).min(1, 'A user must keep at least one role'),
   })
   .partial();
+// roles aren't editable here — each role is its own User row now.
 
 router.put('/users/:id', validate(updateUserSchema), async (req: Request, res: Response) => {
   try {
@@ -265,7 +225,6 @@ router.put('/users/:id', validate(updateUserSchema), async (req: Request, res: R
       phone: string;
       email: string;
       isActive: boolean;
-      roles: ('CUSTOMER' | 'STORE_OWNER' | 'DRIVER')[];
     }>;
 
     const user = await prisma.user.findUnique({ where: { id } });
@@ -288,10 +247,16 @@ router.put('/users/:id', validate(updateUserSchema), async (req: Request, res: R
       return sendError(res, 'You cannot deactivate your own account.', 400);
     }
 
-    // Uniqueness checks for changed phone / email.
+    // Uniqueness checks for changed phone / email. Phone is no longer unique
+    // on its own — check the (phone, role) composite.
     if (body.phone && body.phone !== user.phone) {
-      const owner = await prisma.user.findUnique({ where: { phone: body.phone }, select: { id: true } });
-      if (owner) return sendError(res, 'This mobile number is already in use.', 409);
+      const owner = await prisma.user.findUnique({
+        where: { phone_role: { phone: body.phone, role: user.role } },
+        select: { id: true },
+      });
+      if (owner) {
+        return sendError(res, `This mobile number is already used by another ${user.role.replace('_', ' ').toLowerCase()} account.`, 409);
+      }
     }
     if (body.email && body.email !== user.email) {
       const owner = await prisma.user.findUnique({ where: { email: body.email }, select: { id: true } });
@@ -303,13 +268,6 @@ router.put('/users/:id', validate(updateUserSchema), async (req: Request, res: R
     if (body.phone !== undefined) data['phone'] = body.phone;
     if (body.email !== undefined) data['email'] = body.email;
     if (body.isActive !== undefined) data['isActive'] = body.isActive;
-    if (body.roles !== undefined) {
-      // Keep the primary `role` valid — if it was dropped, repoint it.
-      data['roles'] = body.roles;
-      if (!body.roles.includes(user.role as 'CUSTOMER' | 'STORE_OWNER' | 'DRIVER')) {
-        data['role'] = body.roles[0];
-      }
-    }
 
     const updated = await prisma.user.update({ where: { id }, data, select: USER_SELECT });
 

@@ -4,6 +4,17 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-05-23 — Role-isolation refactor — separate User row per (phone, role)
+
+- [x] **Schema** — dropped `phone @unique`; added `@@unique([phone, role])` (migration `20260523_isolate_roles`). One phone can hold CUSTOMER + STORE_OWNER + DRIVER simultaneously, but each is its OWN row with its own `name`/`email`/`username`/`password`. No more shared profile across roles — fixes the bug where registering CUSTOMER on an admin's number showed the admin's name.
+- [x] **`/auth/register`** — lookup is now `findUnique({phone_role})`; registering a new (phone, role) creates a fresh row instead of grant-roling. Email/username uniqueness stays global.
+- [x] **`/auth/verify-otp`** — looks up the (phone, role) row directly; the Redis pending-role machinery is gone.
+- [x] **`/auth/login`** — phone identifier now requires `role` to disambiguate; username login unchanged (username unique).
+- [x] **`POST /admin/users`** — creates a new (phone, role) row; the role-additive path and suspended-account guard are obsolete.
+- [x] **`PUT /admin/users/:id`** — roles are no longer editable (one role per row).
+- [x] **`/stores/register`, `/drivers/register`** — now require `authorize('STORE_OWNER'|'DRIVER')`; no longer grant a role to the caller.
+- [x] **Tests** — full suite 161/161.
+
 ### 2026-05-23 — Production-safe Indian catalog seed
 
 - [x] **`prisma/seed-catalog.ts`** — adds ~170 generic kirana items (staples/dals, spices, dairy, fresh produce, snacks, beverages, household, OTC medicine). Upsert-by-name only, no fake users, no deletes — safe to run on prod. Wire: `db:seed-catalog` npm script; on prod run `docker compose exec backend npx tsx prisma/seed-catalog.ts`.

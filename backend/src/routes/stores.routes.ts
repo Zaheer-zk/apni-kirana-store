@@ -6,7 +6,6 @@ import { authenticate, authorize } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { haversineDistance, getBoundingBox } from '../utils/geo';
-import { grantRole } from '../utils/roles';
 import { AppError } from '../middleware/error.middleware';
 
 const router = Router();
@@ -34,6 +33,7 @@ const updateStoreSchema = registerStoreSchema.partial();
 router.post(
   '/register',
   authenticate,
+  authorize('STORE_OWNER'),
   validate(registerStoreSchema),
   async (req: Request, res: Response) => {
     try {
@@ -48,10 +48,6 @@ router.post(
       const store = await prisma.store.create({
         data: { ...req.body, ownerId: userId, status: 'PENDING_APPROVAL' },
       });
-
-      // Grant the STORE_OWNER role (multi-role: the account keeps any other
-      // roles it already holds, e.g. CUSTOMER / DRIVER).
-      await grantRole(userId, 'STORE_OWNER');
 
       return sendSuccess(res, store, 'Store registered successfully. Awaiting approval.', 201);
     } catch (err) {

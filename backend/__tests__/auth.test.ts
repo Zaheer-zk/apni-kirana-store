@@ -80,7 +80,7 @@ describe('POST /api/v1/auth/register', () => {
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
 
-    const user = await prisma.user.findUnique({ where: { phone: valid.phone } });
+    const user = await prisma.user.findFirst({ where: { phone: valid.phone } });
     expect(user).not.toBeNull();
     expect(user!.phoneVerified).toBe(false);
     expect(user!.roles).toEqual(['CUSTOMER']);
@@ -127,13 +127,17 @@ describe('POST /api/v1/auth/register', () => {
 
   it('lets an existing account register an additional (different) role', async () => {
     await createUser({ phone: valid.phone, role: 'CUSTOMER', roles: ['CUSTOMER'] });
+    // Different email/username — each (phone, role) is its own account.
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ ...valid, role: 'DRIVER' });
+      .send({ ...valid, role: 'DRIVER', email: 'driver.role@example.com', username: 'driverrole' });
 
-    // Not rejected — an OTP is sent to add the new role.
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(await redis.get(`otp:${valid.phone}`)).toMatch(/^\d{6}$/);
+    // Two separate rows on the same phone — one per role.
+    const rows = await prisma.user.findMany({ where: { phone: valid.phone } });
+    expect(rows.length).toBe(2);
+    expect(rows.map((r) => r.role).sort()).toEqual(['CUSTOMER', 'DRIVER']);
   });
 });
 
@@ -159,7 +163,7 @@ describe('POST /api/v1/auth/verify-otp', () => {
     expect(res.body.data.user.phone).toBe('9844444444');
     expect(res.body.data.user.passwordHash).toBeUndefined(); // never leak the hash
 
-    const dbUser = await prisma.user.findUnique({ where: { phone: '9844444444' } });
+    const dbUser = await prisma.user.findFirst({ where: { phone: '9844444444' } });
     expect(dbUser!.phoneVerified).toBe(true);
   });
 
@@ -170,7 +174,7 @@ describe('POST /api/v1/auth/verify-otp', () => {
       .send({ phone: '9000099999', otp: '123456' });
 
     expect(res.status).toBe(404);
-    const dbUser = await prisma.user.findUnique({ where: { phone: '9000099999' } });
+    const dbUser = await prisma.user.findFirst({ where: { phone: '9000099999' } });
     expect(dbUser).toBeNull();
   });
 
@@ -201,19 +205,20 @@ describe('POST /api/v1/auth/verify-otp', () => {
     expect(res.status).toBe(403);
   });
 
-  it('returns 403 when logging in from the wrong app (role not granted)', async () => {
+  it('returns 404 when no account exists for that (phone, role)', async () => {
+    // CUSTOMER row exists, but verify-otp is called for role DRIVER.
     await createUser({ phone: '9000022222', role: 'CUSTOMER', roles: ['CUSTOMER'] });
     await redis.set('otp:9000022222', '222222', 'EX', 300);
 
     const res = await request(app)
       .post('/api/v1/auth/verify-otp')
       .send({ phone: '9000022222', otp: '222222', role: 'DRIVER' });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
-  it('grants the new role after an additional-role registration', async () => {
+  it('verifies an additional-role registration into its own DRIVER row', async () => {
     await createUser({ phone: '9000033333', role: 'CUSTOMER', roles: ['CUSTOMER'] });
-    // register the DRIVER role on the existing number — queues a pending role
+    // Register the DRIVER role on the existing number — creates a NEW row.
     await request(app).post('/api/v1/auth/register').send({
       name: 'Multi Role',
       phone: '9000033333',
@@ -229,8 +234,11 @@ describe('POST /api/v1/auth/verify-otp', () => {
       .send({ phone: '9000033333', otp, role: 'DRIVER' });
 
     expect(res.status).toBe(200);
-    const dbUser = await prisma.user.findUnique({ where: { phone: '9000033333' } });
-    expect(dbUser!.roles).toEqual(expect.arrayContaining(['CUSTOMER', 'DRIVER']));
+    // Two rows on the phone, one per role. The DRIVER row is now verified.
+    const rows = await prisma.user.findMany({ where: { phone: '9000033333' } });
+    expect(rows.length).toBe(2);
+    const driverRow = rows.find((r) => r.role === 'DRIVER');
+    expect(driverRow!.phoneVerified).toBe(true);
   });
 });
 
@@ -258,11 +266,11 @@ describe('POST /api/v1/auth/login', () => {
     expect(res.body.data.user.passwordHash).toBeUndefined();
   });
 
-  it('logs in with phone + password', async () => {
+  it('logs in with phone + password (role is required for phone)', async () => {
     await makeUser();
     const res = await request(app)
       .post('/api/v1/auth/login')
-      .send({ identifier: '9855555555', password: 'secret123' });
+      .send({ identifier: '9855555555', password: 'secret123', role: 'CUSTOMER' });
     expect(res.status).toBe(200);
   });
 

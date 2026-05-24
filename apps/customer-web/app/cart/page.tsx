@@ -7,7 +7,6 @@ import { ArrowRight, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react';
 import { Button } from '@aks/ui/components/button';
 import { Card, CardContent } from '@aks/ui/components/card';
 import { Separator } from '@aks/ui/components/separator';
-import { toast } from '@aks/ui/components/sonner';
 import { AppHeader } from '@/components/AppHeader';
 import { EmptyPanel } from '@/components/StatePanels';
 import { useCart, type CartLine } from '@/lib/cart';
@@ -34,13 +33,10 @@ export default function CartPage() {
 
   function handleCheckout() {
     if (!isAuthenticated()) {
-      router.push(`/login?next=${encodeURIComponent('/cart')}`);
+      router.push(`/login?next=${encodeURIComponent('/checkout')}`);
       return;
     }
-    // Slice 2 will implement the real checkout / address-picker / order POST.
-    toast.message('Checkout coming soon', {
-      description: 'Slice 2 wires up the address picker and order placement.',
-    });
+    router.push('/checkout');
   }
 
   return (

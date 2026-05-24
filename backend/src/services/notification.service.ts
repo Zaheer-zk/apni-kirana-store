@@ -13,6 +13,7 @@
 // compatibility — new code should prefer `notify(...)` with a typed event key.
 // =====================================================================================
 
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import admin from 'firebase-admin';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
@@ -295,13 +296,24 @@ async function persistAndPush(
   body: string,
   data?: Record<string, string>,
 ): Promise<void> {
+  const event = (data?.event as string | undefined) ?? null;
+
+  // Layer 1: always-on in-app row. Drives the bell icon AND serves as the
+  // dispatch log row for the INAPP channel.
   await prisma.notification.create({
-    data: { userId, title, body, data: data ?? null },
+    data: {
+      userId,
+      title,
+      body,
+      data: data ?? Prisma.JsonNull,
+      event,
+      channel: 'INAPP',
+      status: 'DELIVERED',
+    },
   });
 
-  // Fan out the push to every device the user has registered. Older code
-  // paths kept just User.fcmToken; we still consult it as a fallback so
-  // upgrades don't lose the token they had before the Device table existed.
+  // Layer 2: push fan-out. One dispatch row per device attempt so per-device
+  // failures stay visible. We pass userId/event down so helpers can log.
   const devices = await prisma.device.findMany({
     where: { userId },
     select: { id: true, token: true },
@@ -312,22 +324,98 @@ async function persistAndPush(
       // Route by token shape: ExponentPushToken[xxx] → Expo Push (free, no
       // Firebase project). Anything else is treated as a raw FCM token.
       if (Expo.isExpoPushToken(d.token)) {
-        sendExpoPush(d.id, d.token, title, body, data).catch(() => {});
+        sendExpoPush(d.id, d.token, userId, title, body, data, event).catch(() => {});
       } else {
-        sendFcmPush(d.id, d.token, title, body, data).catch(() => {});
+        sendFcmPush(d.id, d.token, userId, title, body, data, event).catch(() => {});
       }
     }
   } else if (process.env.NODE_ENV !== 'test') {
     console.log(`[Notify] (in-app only — no push token) [${title}] ${body}`);
   }
 
-  // Web push (admin browser). Best-effort; silently no-ops when no
-  // subscription or VAPID keys aren't configured.
-  sendWebPushToUser(userId, {
-    title,
-    body,
-    url: typeof data?.orderId === 'string' ? `/orders/${data.orderId}` : '/',
-  }).catch(() => {});
+  // Layer 3: web push (admin browser). Logs a single WEBPUSH row summarising
+  // the fan-out across browser subscriptions. We only log when at least one
+  // subscription was actually attempted so the table doesn't fill with noise
+  // for users who never enabled web push.
+  void dispatchWebPush(userId, title, body, data, event);
+}
+
+// ─── Dispatch logging helpers ────────────────────────────────────────────────
+
+type DispatchChannel = 'PUSH' | 'WEBPUSH' | 'SOCKET' | 'EMAIL' | 'SMS';
+type DispatchStatus = 'DELIVERED' | 'FAILED' | 'PENDING';
+
+async function logDispatch(
+  userId: string,
+  title: string,
+  body: string,
+  data: Record<string, string> | undefined,
+  event: string | null,
+  channel: DispatchChannel,
+  status: DispatchStatus,
+  error?: string,
+): Promise<void> {
+  try {
+    await prisma.notification.create({
+      data: {
+        userId,
+        title,
+        body,
+        data: data ?? Prisma.JsonNull,
+        event,
+        channel,
+        status,
+        error: error ?? null,
+        // Dispatch rows aren't user-facing in-app messages — mark read so the
+        // bell counter isn't inflated by per-channel duplicates.
+        isRead: true,
+      },
+    });
+  } catch (err) {
+    // Logging failures must never break the actual notification flow.
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('[Notify] failed to log dispatch row:', (err as Error).message);
+    }
+  }
+}
+
+async function dispatchWebPush(
+  userId: string,
+  title: string,
+  body: string,
+  data: Record<string, string> | undefined,
+  event: string | null,
+): Promise<void> {
+  try {
+    const result = await sendWebPushToUser(userId, {
+      title,
+      body,
+      url: typeof data?.orderId === 'string' ? `/orders/${data.orderId}` : '/',
+    });
+    if (!result.attempted) return; // no subscriptions / no VAPID — don't pollute log
+    const status: DispatchStatus = result.failed > 0 ? 'FAILED' : 'DELIVERED';
+    await logDispatch(
+      userId,
+      title,
+      body,
+      data,
+      event,
+      'WEBPUSH',
+      status,
+      result.firstError,
+    );
+  } catch (err) {
+    await logDispatch(
+      userId,
+      title,
+      body,
+      data,
+      event,
+      'WEBPUSH',
+      'FAILED',
+      (err as Error).message,
+    );
+  }
 }
 
 // ─── Expo Push (free, no Firebase account required) ─────────────────────────
@@ -345,9 +433,11 @@ async function deleteDeadDevice(deviceId: string): Promise<void> {
 async function sendExpoPush(
   deviceId: string,
   token: string,
+  userId: string,
   title: string,
   body: string,
-  data?: Record<string, string>,
+  data: Record<string, string> | undefined,
+  event: string | null,
 ): Promise<void> {
   const message: ExpoPushMessage = {
     to: token,
@@ -370,25 +460,71 @@ async function sendExpoPush(
       if (code === 'DeviceNotRegistered') {
         await deleteDeadDevice(deviceId);
         console.log(`[Expo] Removed dead device ${deviceId}`);
+        await logDispatch(
+          userId,
+          title,
+          body,
+          data,
+          event,
+          'PUSH',
+          'FAILED',
+          `Expo: DeviceNotRegistered (device ${deviceId} removed)`,
+        );
         return;
       }
       console.warn(`[Expo] push error for device ${deviceId}:`, ticket.message, code);
+      await logDispatch(
+        userId,
+        title,
+        body,
+        data,
+        event,
+        'PUSH',
+        'FAILED',
+        `Expo: ${ticket.message ?? code ?? 'unknown error'}`,
+      );
+      return;
     }
+    await logDispatch(userId, title, body, data, event, 'PUSH', 'DELIVERED');
   } catch (err) {
     console.error('[Expo] send error:', err);
+    await logDispatch(
+      userId,
+      title,
+      body,
+      data,
+      event,
+      'PUSH',
+      'FAILED',
+      (err as Error).message,
+    );
   }
 }
 
 async function sendFcmPush(
   deviceId: string,
   fcmToken: string,
+  userId: string,
   title: string,
   body: string,
-  data?: Record<string, string>,
+  data: Record<string, string> | undefined,
+  event: string | null,
 ): Promise<void> {
   const app = tryInitFirebase();
   if (!app) {
     console.log(`[FCM] (disabled) [${title}] ${body}`);
+    // FCM disabled isn't a delivery failure per se, but the admin should see
+    // that no push was actually sent. Log as FAILED with a clear reason.
+    await logDispatch(
+      userId,
+      title,
+      body,
+      data,
+      event,
+      'PUSH',
+      'FAILED',
+      'FCM disabled (no Firebase credentials configured)',
+    );
     return;
   }
   try {
@@ -399,16 +535,37 @@ async function sendFcmPush(
       android: { priority: 'high' },
       apns: { payload: { aps: { sound: 'default' } } },
     });
+    await logDispatch(userId, title, body, data, event, 'PUSH', 'DELIVERED');
   } catch (err: unknown) {
-    const e = err as { code?: string };
+    const e = err as { code?: string; message?: string };
     if (
       e?.code === 'messaging/registration-token-not-registered' ||
       e?.code === 'messaging/invalid-registration-token'
     ) {
       await deleteDeadDevice(deviceId);
       console.log(`[FCM] Removed dead device ${deviceId}`);
+      await logDispatch(
+        userId,
+        title,
+        body,
+        data,
+        event,
+        'PUSH',
+        'FAILED',
+        `FCM: ${e.code} (device ${deviceId} removed)`,
+      );
       return;
     }
     console.error('[FCM] send error:', err);
+    await logDispatch(
+      userId,
+      title,
+      body,
+      data,
+      event,
+      'PUSH',
+      'FAILED',
+      `FCM: ${e?.message ?? e?.code ?? 'unknown error'}`,
+    );
   }
 }

@@ -344,6 +344,36 @@ model Notification {
   data      Json?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  // Dispatch tracking — one row per delivery attempt. The same logical
+  // notification may fan out across multiple channels (in-app + expo push +
+  // web push); each channel write is a separate row so per-channel failures
+  // are visible in the admin dispatch log. `event` mirrors the
+  // NotificationEvent TS union (see notification.service.ts).
+  event     String? // e.g. "ORDER_PLACED", "STORE_NEW_ORDER"; null for legacy/ad-hoc
+  channel   NotificationChannel @default(INAPP)
+  status    NotificationStatus  @default(DELIVERED)
+  error     String? // populated when status = FAILED
+
+  @@index([userId, createdAt])
+  @@index([event])
+  @@index([channel])
+  @@index([status])
+}
+
+enum NotificationChannel {
+  INAPP // persisted in DB only — drives the bell icon
+  PUSH // Expo push (mobile) or raw FCM
+  WEBPUSH // browser web push (admin dashboard)
+  SOCKET // socket.io real-time event (future)
+  EMAIL // outbound email (future)
+  SMS // outbound sms (future)
+}
+
+enum NotificationStatus {
+  PENDING
+  DELIVERED
+  FAILED
 }
 
 // Admin-created discount/promo code that customers can apply at checkout.

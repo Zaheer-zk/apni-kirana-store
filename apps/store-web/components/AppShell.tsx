@@ -37,6 +37,7 @@ import {
   setStoredStore,
   type StoredUser,
 } from '@/lib/auth';
+import { disconnectSocket } from '@/lib/socket';
 
 /**
  * Responsive app shell shared by every authenticated page (dashboard,
@@ -132,6 +133,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   });
 
   function handleLogout() {
+    disconnectSocket();
     clearSession();
     router.replace('/login');
   }

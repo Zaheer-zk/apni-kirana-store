@@ -40,6 +40,49 @@ export default function RootLayout({
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/favicon.png" />
         <meta name="theme-color" content="#16A34A" />
+        {/*
+          Belt-and-suspenders: the admin app is NOT a PWA and has no
+          service worker of its own. But if a rogue SW from another
+          subdomain (typically customer-web during a past misconfig where
+          nginx briefly routed admin → customer-web) ever got installed on
+          this origin, it would intercept every fetch and keep showing
+          the wrong app. This inline script unregisters any SW on this
+          origin AND wipes any caches, then reloads once (gated by
+          sessionStorage so we don't loop forever on a hostile network).
+
+          Runs as early as possible — before React mounts, before the
+          QueryClientProvider, before any API call — so a stale
+          customer-web shell can't keep the admin UI hostage.
+        */}
+        <script
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                if (typeof window === 'undefined') return;
+                if (!('serviceWorker' in navigator)) return;
+                if (sessionStorage.getItem('aks-admin-sw-purged') === '1') return;
+                navigator.serviceWorker.getRegistrations().then(function(regs) {
+                  if (!regs.length) return;
+                  Promise.all(regs.map(function(r) { return r.unregister(); }))
+                    .then(function() {
+                      if (typeof caches !== 'undefined') {
+                        return caches.keys().then(function(keys) {
+                          return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+                        });
+                      }
+                    })
+                    .then(function() {
+                      sessionStorage.setItem('aks-admin-sw-purged', '1');
+                      console.warn('[admin] Removed', regs.length, 'rogue service worker(s) and cleared caches. Reloading.');
+                      window.location.reload();
+                    })
+                    .catch(function(err) { console.warn('[admin] SW purge failed:', err); });
+                });
+              })();
+            `,
+          }}
+        />
       </head>
       <body suppressHydrationWarning>
         <QueryClientProvider client={queryClient}>

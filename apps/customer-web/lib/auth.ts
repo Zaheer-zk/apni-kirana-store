@@ -74,3 +74,4 @@ export function persistSession(payload: {
   setRefreshToken(payload.refreshToken);
   setStoredUser(payload.user);
 }
+

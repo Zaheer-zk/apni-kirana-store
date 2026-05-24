@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, ArrowLeft } from 'lucide-react';
@@ -18,25 +18,87 @@ import {
 import { toast } from '@aks/ui/components/sonner';
 import { AuthShell } from '@/components/AuthShell';
 import { api } from '@/lib/api';
-import { persistSession } from '@/lib/auth';
+import { clearSession, persistSession } from '@/lib/auth';
 import {
   passwordLoginSchema,
   phoneOnlySchema,
   type PasswordLoginInput,
 } from '@/lib/auth-schemas';
 
+/**
+ * Shape of `/auth/login-password` and `/auth/verify-otp` success payloads.
+ * Both endpoints now return `pendingApproval` + `reason` for accounts that
+ * resolved successfully but are still gated behind admin review.
+ *
+ * Customers don't normally hit the pending gate (no approval required for
+ * the CUSTOMER role), but we still type the field defensively — if it ever
+ * shows up we'll log out and surface an error rather than route blindly.
+ */
 interface AuthResponse {
   user: { id: string; phone: string; role: string; name?: string | null; email?: string | null };
   accessToken: string;
   refreshToken: string;
   hasAddress?: boolean;
   mustChangePassword?: boolean;
+  pendingApproval?: true;
+  reason?: 'STORE_PENDING' | 'DRIVER_PENDING';
+}
+
+type LoginTab = 'password' | 'otp';
+const LAST_TAB_KEY = 'aks_customer_login_tab';
+
+/** Reads the user's preferred login mode from localStorage. */
+function readPreferredTab(): LoginTab {
+  if (typeof window === 'undefined') return 'otp';
+  const v = window.localStorage.getItem(LAST_TAB_KEY);
+  return v === 'password' ? 'password' : 'otp';
 }
 
 function LoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get('next') ?? '/';
+
+  // SSR renders the default OTP tab; once the client hydrates we promote the
+  // user's persisted preference. Avoids a hydration mismatch.
+  const [tab, setTab] = useState<LoginTab>('otp');
+  useEffect(() => {
+    setTab(readPreferredTab());
+  }, []);
+
+  function handleTabChange(next: string) {
+    const t = (next === 'password' ? 'password' : 'otp') as LoginTab;
+    setTab(t);
+    try {
+      window.localStorage.setItem(LAST_TAB_KEY, t);
+    } catch {
+      // Private mode or quota — non-fatal, we just won't remember next time.
+    }
+  }
+
+  /**
+   * Shared post-login handler for both tabs. Stores the session and routes
+   * onward. Customers shouldn't see `pendingApproval` — if they do, treat it
+   * as a backend mis-configuration and surface a clear error.
+   */
+  function handleAuthSuccess(payload: AuthResponse) {
+    if (payload.pendingApproval) {
+      clearSession();
+      toast.error(
+        'This account is not enabled for customer access. Please contact support.',
+      );
+      return;
+    }
+    persistSession(payload);
+    toast.success(
+      payload.user.name ? `Welcome back, ${payload.user.name.split(' ')[0]}!` : 'Welcome back!',
+    );
+    if (payload.mustChangePassword) {
+      router.replace(`/change-password?next=${encodeURIComponent(nextPath)}`);
+    } else {
+      router.replace(nextPath);
+    }
+  }
 
   return (
     <AuthShell
@@ -51,31 +113,25 @@ function LoginInner() {
         </>
       }
     >
-      <Tabs defaultValue="password" className="w-full">
+      <Tabs value={tab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="password">Password</TabsTrigger>
-          <TabsTrigger value="otp">OTP</TabsTrigger>
+          <TabsTrigger value="otp">Phone + OTP</TabsTrigger>
+          <TabsTrigger value="password">Username or email</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="password" className="pt-4">
-          <PasswordForm router={router} nextPath={nextPath} />
+        <TabsContent value="otp" className="pt-4">
+          <OtpFlow onSuccess={handleAuthSuccess} />
         </TabsContent>
 
-        <TabsContent value="otp" className="pt-4">
-          <OtpFlow router={router} nextPath={nextPath} />
+        <TabsContent value="password" className="pt-4">
+          <PasswordForm onSuccess={handleAuthSuccess} />
         </TabsContent>
       </Tabs>
     </AuthShell>
   );
 }
 
-function PasswordForm({
-  router,
-  nextPath,
-}: {
-  router: ReturnType<typeof useRouter>;
-  nextPath: string;
-}) {
+function PasswordForm({ onSuccess }: { onSuccess: (payload: AuthResponse) => void }) {
   const {
     register,
     handleSubmit,
@@ -85,18 +141,12 @@ function PasswordForm({
   async function onSubmit(values: PasswordLoginInput) {
     try {
       const { data } = await api.post<{ success: boolean; data: AuthResponse }>(
-        '/api/v1/auth/login',
+        '/api/v1/auth/login-password',
         { ...values, role: 'CUSTOMER' },
       );
       const payload = data.data;
       if (!payload?.accessToken) throw new Error('Login failed');
-      persistSession(payload);
-      toast.success(payload.user.name ? `Welcome back, ${payload.user.name.split(' ')[0]}!` : 'Welcome back!');
-      if (payload.mustChangePassword) {
-        router.replace(`/change-password?next=${encodeURIComponent(nextPath)}`);
-      } else {
-        router.replace(nextPath);
-      }
+      onSuccess(payload);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Login failed');
     }
@@ -105,12 +155,12 @@ function PasswordForm({
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="space-y-1.5">
-        <Label htmlFor="identifier">Username or mobile number</Label>
+        <Label htmlFor="identifier">Username or email</Label>
         <Input
           id="identifier"
           type="text"
           autoComplete="username"
-          placeholder="e.g. anita or 9876543210"
+          placeholder="e.g. anita or anita@example.com"
           autoFocus
           {...register('identifier')}
         />
@@ -146,13 +196,7 @@ function PasswordForm({
   );
 }
 
-function OtpFlow({
-  router,
-  nextPath,
-}: {
-  router: ReturnType<typeof useRouter>;
-  nextPath: string;
-}) {
+function OtpFlow({ onSuccess }: { onSuccess: (payload: AuthResponse) => void }) {
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
@@ -167,7 +211,9 @@ function OtpFlow({
     }
     setSending(true);
     try {
-      await api.post('/api/v1/auth/send-otp', { phone });
+      // Backend already accepts `role` on send-otp; pass it so the OTP store
+      // is namespaced correctly when we eventually scope OTPs per-role.
+      await api.post('/api/v1/auth/send-otp', { phone, role: 'CUSTOMER' });
       setStep('otp');
       toast.success(`OTP sent to +91 ${phone}`);
     } catch (err) {
@@ -190,13 +236,7 @@ function OtpFlow({
       );
       const payload = data.data;
       if (!payload?.accessToken) throw new Error('Verification failed');
-      persistSession(payload);
-      toast.success(payload.user.name ? `Welcome back, ${payload.user.name.split(' ')[0]}!` : 'Welcome back!');
-      if (payload.mustChangePassword) {
-        router.replace(`/change-password?next=${encodeURIComponent(nextPath)}`);
-      } else {
-        router.replace(nextPath);
-      }
+      onSuccess(payload);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Invalid OTP');
     } finally {

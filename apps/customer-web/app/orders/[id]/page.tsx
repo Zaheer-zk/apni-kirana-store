@@ -124,9 +124,15 @@ export default function OrderTrackingPage() {
 
   const cancelMutation = useMutation({
     mutationFn: (reason: string) => cancelOrder(orderId!, reason),
-    onSuccess: () => {
+    onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['order', orderId] });
-      toast.success('Order cancelled');
+      queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      // Backend auto-credits the wallet when paymentStatus was PAID. Tell
+      // the user how much landed back so they don't have to guess.
+      const refunded = updated?.paymentStatus === 'REFUNDED' && updated.total
+        ? `₹${updated.total.toFixed(2)} refunded to your wallet.`
+        : '';
+      toast.success(refunded ? `Order cancelled. ${refunded}` : 'Order cancelled.');
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Could not cancel'),
   });

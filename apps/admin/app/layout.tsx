@@ -55,7 +55,6 @@ export default function RootLayout({
           customer-web shell can't keep the admin UI hostage.
         */}
         <script
-          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{
             __html: `
               (function() {

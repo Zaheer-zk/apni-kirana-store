@@ -2,12 +2,15 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { VehicleType } from '@prisma/client';
 import { prisma } from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth.middleware';
+import { config } from '../config/env';
+import { authenticate, authorize, requireApproved } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { assignDriverForOrder } from '../services/driver.service';
 import { sendNotification } from '../services/notification.service';
 import { broadcastOrderStatus } from '../services/order-events.service';
+import { sendNewDriverAwaitingApprovalEmail } from '../services/email.service';
+import { sendWebPushToUser } from '../services/web-push.service';
 
 const router = Router();
 
@@ -50,6 +53,12 @@ router.post(
         data: { ...req.body, userId: req.user!.id, status: 'PENDING_APPROVAL' },
       });
 
+      // Notify every admin so they know there's a new driver to review.
+      // Best-effort — never fail the registration on a notification miss.
+      notifyAdminsOfNewDriver(driver.id, req.user!.id).catch((err) =>
+        console.warn('[Drivers] admin notification failed:', err),
+      );
+
       return sendSuccess(res, driver, 'Driver registered. Awaiting approval.', 201);
     } catch (err) {
       console.error('[Drivers] register error:', err);
@@ -57,6 +66,49 @@ router.post(
     }
   },
 );
+
+/**
+ * Fans out a "new driver pending approval" notification to every active
+ * admin: email (where an admin has one on file) + web push. Best-effort.
+ */
+async function notifyAdminsOfNewDriver(driverId: string, userId: string): Promise<void> {
+  const [driver, user, admins] = await Promise.all([
+    prisma.driver.findUnique({
+      where: { id: driverId },
+      select: { id: true, vehicleType: true, vehicleNumber: true },
+    }),
+    prisma.user.findUnique({ where: { id: userId }, select: { name: true, phone: true } }),
+    prisma.user.findMany({
+      where: { role: 'ADMIN', isActive: true },
+      select: { id: true, name: true, email: true },
+    }),
+  ]);
+  if (!driver) return;
+
+  const adminsWithEmail = admins
+    .filter((a): a is typeof a & { email: string } => !!a.email)
+    .map((a) => ({ email: a.email, name: a.name }));
+
+  await sendNewDriverAwaitingApprovalEmail({
+    toAdmins: adminsWithEmail,
+    driverName: user?.name ?? null,
+    driverPhone: user?.phone ?? null,
+    driverId: driver.id,
+    vehicleType: driver.vehicleType,
+    vehicleNumber: driver.vehicleNumber,
+    reviewLinkBase: config.webAppUrl,
+  }).catch((err) => console.warn('[Drivers] admin email failed:', err));
+
+  await Promise.allSettled(
+    admins.map((a) =>
+      sendWebPushToUser(a.id, {
+        title: 'New driver awaiting approval',
+        body: `${user?.name ?? 'A new driver'} just registered (${driver.vehicleNumber}).`,
+        url: `${config.webAppUrl}/drivers/${driver.id}`,
+      }),
+    ),
+  );
+}
 
 // ─── PUT /status ──────────────────────────────────────────────────────────────
 
@@ -220,6 +272,7 @@ router.put(
   '/orders/:orderId/accept',
   authenticate,
   authorize('DRIVER'),
+  requireApproved,
   async (req: Request, res: Response) => {
     try {
       const driver = await getDriverByUser(req.user!.id);
@@ -261,6 +314,7 @@ router.put(
   '/orders/:orderId/reject',
   authenticate,
   authorize('DRIVER'),
+  requireApproved,
   async (req: Request, res: Response) => {
     try {
       const driver = await getDriverByUser(req.user!.id);
@@ -294,6 +348,7 @@ router.put(
   '/orders/:orderId/pickup',
   authenticate,
   authorize('DRIVER'),
+  requireApproved,
   async (req: Request, res: Response) => {
     try {
       const driver = await getDriverByUser(req.user!.id);
@@ -335,6 +390,7 @@ router.put(
   '/orders/:orderId/deliver',
   authenticate,
   authorize('DRIVER'),
+  requireApproved,
   async (req: Request, res: Response) => {
     try {
       const driver = await getDriverByUser(req.user!.id);

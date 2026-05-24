@@ -2,11 +2,14 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { StoreCategory } from '@prisma/client';
 import { prisma } from '../config/prisma';
+import { config } from '../config/env';
 import { authenticate, authorize } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { haversineDistance, getBoundingBox } from '../utils/geo';
 import { AppError } from '../middleware/error.middleware';
+import { sendNewStoreAwaitingApprovalEmail } from '../services/email.service';
+import { sendWebPushToUser } from '../services/web-push.service';
 
 const router = Router();
 
@@ -49,6 +52,12 @@ router.post(
         data: { ...req.body, ownerId: userId, status: 'PENDING_APPROVAL' },
       });
 
+      // Notify every admin so they know there's a new store to review.
+      // Best-effort — never fail the registration on a notification miss.
+      notifyAdminsOfNewStore(store.id, userId).catch((err) =>
+        console.warn('[Stores] admin notification failed:', err),
+      );
+
       return sendSuccess(res, store, 'Store registered successfully. Awaiting approval.', 201);
     } catch (err) {
       console.error('[Stores] register error:', err);
@@ -56,6 +65,51 @@ router.post(
     }
   },
 );
+
+/**
+ * Fans out a "new store pending approval" notification to every active admin:
+ *   • Email — only admins with an email on file
+ *   • Web push — every admin (no-ops if VAPID isn't configured)
+ *
+ * Fully best-effort; failures are logged but never bubble.
+ */
+async function notifyAdminsOfNewStore(storeId: string, ownerId: string): Promise<void> {
+  const [store, owner, admins] = await Promise.all([
+    prisma.store.findUnique({ where: { id: storeId }, select: { id: true, name: true } }),
+    prisma.user.findUnique({
+      where: { id: ownerId },
+      select: { name: true, phone: true },
+    }),
+    prisma.user.findMany({
+      where: { role: 'ADMIN', isActive: true },
+      select: { id: true, name: true, email: true },
+    }),
+  ]);
+  if (!store) return;
+
+  const adminsWithEmail = admins
+    .filter((a): a is typeof a & { email: string } => !!a.email)
+    .map((a) => ({ email: a.email, name: a.name }));
+
+  await sendNewStoreAwaitingApprovalEmail({
+    toAdmins: adminsWithEmail,
+    storeName: store.name,
+    storeId: store.id,
+    ownerName: owner?.name ?? null,
+    ownerPhone: owner?.phone ?? null,
+    reviewLinkBase: config.webAppUrl,
+  }).catch((err) => console.warn('[Stores] admin email failed:', err));
+
+  await Promise.allSettled(
+    admins.map((a) =>
+      sendWebPushToUser(a.id, {
+        title: 'New store awaiting approval',
+        body: `${store.name} just registered.`,
+        url: `${config.webAppUrl}/stores/${store.id}`,
+      }),
+    ),
+  );
+}
 
 // ─── GET /nearby ──────────────────────────────────────────────────────────────
 

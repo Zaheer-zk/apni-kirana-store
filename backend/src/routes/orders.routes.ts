@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { PaymentMethod } from '@prisma/client';
 import { prisma } from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth.middleware';
+import { authenticate, authorize, requireApproved } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { matchingQueue } from '../queues';
@@ -336,6 +336,7 @@ router.post(
   '/restock',
   authenticate,
   authorize('STORE_OWNER'),
+  requireApproved,
   validate(createRestockSchema),
   async (req: Request, res: Response) => {
     try {
@@ -611,6 +612,7 @@ router.put(
   '/:id/accept',
   authenticate,
   authorize('STORE_OWNER'),
+  requireApproved,
   async (req: Request, res: Response) => {
     try {
       const order = await prisma.order.findUnique({ where: { id: req.params['id'] } });
@@ -650,6 +652,7 @@ router.put(
   '/:id/reject',
   authenticate,
   authorize('STORE_OWNER'),
+  requireApproved,
   validate(rejectOrderSchema),
   async (req: Request, res: Response) => {
     try {
@@ -703,6 +706,7 @@ router.put(
   '/:id/ready',
   authenticate,
   authorize('STORE_OWNER'),
+  requireApproved,
   async (req: Request, res: Response) => {
     try {
       const order = await prisma.order.findUnique({ where: { id: req.params['id'] } });

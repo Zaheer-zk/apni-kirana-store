@@ -34,6 +34,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2, Locate } from 'lucide-react';
 import { Button } from './button';
 import { cn } from '../lib/utils';
+import { CurrentLocationMarker } from './current-location-marker';
 
 // Leaflet's bundler-asset URLs don't resolve in webpack/Turbopack without
 // help, so we point at the CDN once.
@@ -256,6 +257,11 @@ export function LocationMap({
           attribution="&copy; OpenStreetMap contributors"
         />
         <MapBridge />
+        {/* "You are here" dot. The picker pin itself is a fixed crosshair
+            overlay (rendered below) so showing the user's GPS as a
+            distinct blue dot helps them see how far they're moving the
+            pin from their actual position. */}
+        <CurrentLocationMarker />
       </MapContainer>
 
       {/* Fixed crosshair pin — the centre of the map IS the picked point */}

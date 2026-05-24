@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@aks/shared": "*",
+    "@aks/ui": "*",
     "@tanstack/react-query": "^5.62.8",
     "autoprefixer": "^10.5.0",
     "axios": "^1.7.9",

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { CurrentLocationMarker } from '@aks/ui/components/current-location-marker';
 
 // Leaflet's bundler-asset URLs don't resolve in webpack/Turbopack without
 // help, so we point at the CDN once (same trick used by the shared
@@ -177,6 +178,12 @@ export function DeliveryMap({
             </Popup>
           </Marker>
         ))}
+        {/* "You are here" — pulsing blue dot using the browser's GPS.
+            Driver-web already has the amber "driver" pin (`points` with
+            kind: 'driver') sourced from the same geolocation watcher, so
+            this primarily helps when the driver pin is hidden (e.g. they
+            scrolled the map). Cheap, harmless overlay. */}
+        <CurrentLocationMarker />
       </MapContainer>
     </div>
   );

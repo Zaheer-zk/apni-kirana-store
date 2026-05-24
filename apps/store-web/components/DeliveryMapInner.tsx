@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { CurrentLocationMarker } from '@aks/ui/components/current-location-marker';
 
 /**
  * Read-only Leaflet map that pins the store, the driver (if known) and the
@@ -131,6 +132,10 @@ export default function DeliveryMapInner({
             <Popup>{driver.name ?? 'Driver'}</Popup>
           </Marker>
         ) : null}
+        {/* "You are here" — pulsing blue dot for the store owner's browser
+            location. Useful to confirm where they are relative to the
+            assigned driver and the delivery point. */}
+        <CurrentLocationMarker />
       </MapContainer>
     </div>
   );

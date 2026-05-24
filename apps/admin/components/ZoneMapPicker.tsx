@@ -4,6 +4,8 @@ import { useEffect, useMemo } from 'react';
 import { MapContainer, Marker, TileLayer, Circle, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { CurrentLocationMarker, useCurrentLocation } from '@aks/ui/components/current-location-marker';
+import { Locate, Loader2 } from 'lucide-react';
 
 // Leaflet's default marker icons rely on bundler asset URLs that Next.js doesn't
 // resolve out of the box. Point them at the CDN so the marker actually renders.
@@ -50,6 +52,11 @@ export default function ZoneMapPicker({ lat, lng, radiusKm, onChange, height = 3
 
   const center = useMemo<[number, number]>(() => [safeLat, safeLng], [safeLat, safeLng]);
 
+  // "Use my location" hook — one-shot read; the persistent dot is rendered
+  // separately via <CurrentLocationMarker /> below.
+  const { coords: myCoords, status: geoStatus } = useCurrentLocation({ watch: false });
+  const locating = geoStatus === 'requesting';
+
   return (
     <div
       className="relative overflow-hidden rounded-lg border border-gray-200"
@@ -84,10 +91,34 @@ export default function ZoneMapPicker({ lat, lng, radiusKm, onChange, height = 3
           radius={safeRadiusM}
           pathOptions={{ color: '#16A34A', fillColor: '#16A34A', fillOpacity: 0.12, weight: 2 }}
         />
+        {/* "You are here" — pulsing blue dot at the admin's GPS. Stays
+            visible even when they drag the zone marker so they can sanity
+            check how the zone covers their own neighbourhood. */}
+        <CurrentLocationMarker />
       </MapContainer>
       <div className="pointer-events-none absolute bottom-2 left-2 z-[1000] rounded-md bg-white/95 px-2 py-1 text-xs font-mono text-gray-700 shadow">
         {safeLat.toFixed(5)}, {safeLng.toFixed(5)} · radius {(safeRadiusM / 1000).toFixed(1)} km
       </div>
+      <button
+        type="button"
+        onClick={() => {
+          if (myCoords) {
+            onChange({ lat: myCoords.lat, lng: myCoords.lng });
+            return;
+          }
+          if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return;
+          navigator.geolocation.getCurrentPosition(
+            (pos) => onChange({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            () => undefined,
+            { timeout: 8_000, maximumAge: 60_000 },
+          );
+        }}
+        title="Use my current location"
+        aria-label="Use my current location"
+        className="absolute bottom-2 right-2 z-[1000] inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-primary shadow-md hover:bg-gray-50"
+      >
+        {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Locate className="h-4 w-4" />}
+      </button>
     </div>
   );
 }

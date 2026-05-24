@@ -270,6 +270,12 @@ model Order {
   dropoffOtp        String? // 4-digit OTP for driver-to-customer handoff verification
   promoCode         String?
   promoDiscount     Float? // amount deducted by the applied promo (snapshot)
+  // GST invoice — generated when status moves to DELIVERED. PDF stored
+  // under backend/storage/invoices/ (a mounted volume in prod). Number is
+  // unique per FY for compliance: e.g. "AKS/2026-27/000123".
+  invoiceNumber     String?      @unique
+  invoicePath       String?
+  invoiceGeneratedAt DateTime?
   storeAcceptedAt   DateTime?
   driverAssignedAt  DateTime?
   pickedUpAt        DateTime?

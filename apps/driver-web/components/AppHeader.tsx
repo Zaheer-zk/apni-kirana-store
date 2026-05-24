@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
+  IndianRupee,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -29,11 +30,13 @@ import {
 import { Avatar, AvatarFallback } from '@aks/ui/components/avatar';
 import { cn } from '@aks/ui/lib/utils';
 import { BrandMark } from './BrandMark';
+import { HeaderOnlineToggle } from './HeaderOnlineToggle';
 import { clearSession, getStoredUser, type StoredUser } from '@/lib/auth';
 
 const NAV = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/deliveries', label: 'Deliveries', icon: ListChecks },
+  { href: '/earnings', label: 'Earnings', icon: IndianRupee },
   { href: '/profile', label: 'Profile', icon: User },
 ] as const;
 
@@ -124,6 +127,11 @@ export function AppHeader() {
         </nav>
 
         <div className="ml-auto" />
+
+        {/* Status pill — hidden when there's no auth user (rare here since
+            AppHeader is only rendered behind RequireAuth, but the parent
+            avatar block below has the same guard). */}
+        {user ? <HeaderOnlineToggle /> : null}
 
         {user ? (
           <DropdownMenu>

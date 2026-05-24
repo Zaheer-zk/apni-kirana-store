@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   Clock,
   CreditCard,
+  Download,
   Loader2,
   MapPin,
   Package,
@@ -29,6 +30,7 @@ import { OrderStatus, PaymentMethod } from '@aks/shared';
 import { AppHeader } from '@/components/AppHeader';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { ErrorPanel, PageLoader } from '@/components/StatePanels';
+import { api } from '@/lib/api';
 import { cancelOrder, fetchOrder, type CustomerOrder } from '@/lib/orders';
 import { rupees } from '@/lib/format';
 import { openOrderSocket } from '@/lib/socket';
@@ -136,6 +138,22 @@ export default function OrderTrackingPage() {
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Could not cancel'),
   });
+
+  // Download invoice — fetch as blob so the Authorization header is sent,
+  // then open in a new tab. A plain <a href> can't set Authorization so
+  // we can't link directly to the API path.
+  async function downloadInvoice(id: string) {
+    try {
+      const res = await api.get(`/api/v1/orders/${id}/invoice`, { responseType: 'blob' });
+      const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      // Free memory after the new tab has had a chance to load.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not load invoice');
+    }
+  }
 
   if (!mounted || !user) {
     return (
@@ -250,9 +268,19 @@ export default function OrderTrackingPage() {
               </Button>
             ) : null}
             {status === OrderStatus.DELIVERED ? (
-              <Button className="w-full" onClick={() => router.push('/')}>
-                Order again
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => downloadInvoice(orderId!)}
+                >
+                  <Download className="h-4 w-4" />
+                  Download GST invoice
+                </Button>
+                <Button className="w-full" onClick={() => router.push('/')}>
+                  Order again
+                </Button>
+              </>
             ) : null}
           </aside>
         </div>

@@ -3,26 +3,24 @@
 
 # Stage 1: Install dependencies
 #
-# Copy ONLY the workspace package.json files customer-web actually consumes:
-# - root  (turbo, overrides)
-# - shared, packages/ui   (workspace symlinks the app imports from)
-# - apps/customer-web     (the app itself)
+# We deliberately copy ONLY the workspace package.json files customer-web
+# actually consumes (root, shared, packages/ui, apps/customer-web). The
+# root package.json declares 7 workspaces; npm silently skips the ones
+# whose directories aren't present.
 #
-# The previous "copy ALL workspaces" version triggered npm's hoisting to
-# selectively skip react/react-dom (probably interacting with @aks/ui's
-# react peer dep). Scoping the install via `--workspace=...` matches the
-# admin Dockerfile's pattern (which works) and keeps the dep graph tight.
+# Plain `npm install --legacy-peer-deps` was used here for a while, then
+# briefly switched to `--workspace=...` flags to try to fix a build issue.
+# It turned out the workspace flags interacted badly with @aks/ui's
+# `react` peer dep — react/react-dom wouldn't hoist into /app/node_modules.
+# Verified locally: this plain-install form hoists react reliably and
+# matches what apps/admin/Dockerfile does (which has always worked).
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
 COPY packages/ui/package.json ./packages/ui/
 COPY apps/customer-web/package.json ./apps/customer-web/
-RUN npm install --legacy-peer-deps \
-    --workspace=apps/customer-web \
-    --workspace=packages/ui \
-    --workspace=shared \
-    --include-workspace-root
+RUN npm install --legacy-peer-deps
 
 # Stage 2: Local development (hot reload via volume mount)
 FROM deps AS dev
@@ -55,11 +53,7 @@ COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
 COPY packages/ui/package.json ./packages/ui/
 COPY apps/customer-web/package.json ./apps/customer-web/
-RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps \
-    --workspace=apps/customer-web \
-    --workspace=packages/ui \
-    --workspace=shared \
-    --include-workspace-root
+RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/packages/ui ./packages/ui
 COPY --from=builder /app/apps/customer-web/.next ./apps/customer-web/.next

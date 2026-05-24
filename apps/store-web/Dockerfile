@@ -3,25 +3,17 @@
 
 # Stage 1: Install dependencies
 #
-# Copy ONLY the workspace package.json files store-web actually consumes:
-# - root  (turbo, overrides)
-# - shared, packages/ui   (workspace symlinks the app imports from)
-# - apps/store-web        (the app itself)
-#
-# See apps/customer-web/Dockerfile for the rationale behind the
-# per-workspace install — copying ALL workspaces broke react/react-dom
-# hoisting, the scoped variant doesn't.
+# See apps/customer-web/Dockerfile for the rationale — only copy the
+# workspace package.json files this app actually consumes (root, shared,
+# packages/ui, apps/store-web). The other workspaces (backend, admin,
+# customer-web, driver-web) are silently skipped by npm.
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
 COPY packages/ui/package.json ./packages/ui/
 COPY apps/store-web/package.json ./apps/store-web/
-RUN npm install --legacy-peer-deps \
-    --workspace=apps/store-web \
-    --workspace=packages/ui \
-    --workspace=shared \
-    --include-workspace-root
+RUN npm install --legacy-peer-deps
 
 # Stage 2: Local development (hot reload via volume mount)
 FROM deps AS dev
@@ -54,11 +46,7 @@ COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
 COPY packages/ui/package.json ./packages/ui/
 COPY apps/store-web/package.json ./apps/store-web/
-RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps \
-    --workspace=apps/store-web \
-    --workspace=packages/ui \
-    --workspace=shared \
-    --include-workspace-root
+RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/packages/ui ./packages/ui
 COPY --from=builder /app/apps/store-web/.next ./apps/store-web/.next

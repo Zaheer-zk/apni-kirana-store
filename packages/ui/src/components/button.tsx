@@ -54,6 +54,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref,
   ) => {
     const Comp = asChild ? Slot : 'button';
+    // Radix Slot uses React.Children.only — passing the loader + children
+    // array (even with a null loader slot) throws. When `asChild` is set,
+    // forward the child as-is and skip the loader UI (callers using
+    // asChild are wrapping <Link>/etc., which doesn't need a spinner).
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
@@ -61,8 +65,14 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || loading}
         {...props}
       >
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-        {children}
+        {asChild ? (
+          children
+        ) : (
+          <>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            {children}
+          </>
+        )}
       </Comp>
     );
   },

@@ -19,6 +19,8 @@ import {
   Bell,
   LifeBuoy,
   Activity,
+  Wallet,
+  HandCoins,
   X,
 } from 'lucide-react';
 import { clearToken } from '@/lib/auth';
@@ -40,6 +42,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/catalog', label: 'Catalog', icon: <BookOpen className="h-4 w-4" /> },
   { href: '/promos', label: 'Promos', icon: <Ticket className="h-4 w-4" /> },
   { href: '/orders', label: 'Orders', icon: <ShoppingCart className="h-4 w-4" /> },
+  { href: '/wallets', label: 'Wallets', icon: <Wallet className="h-4 w-4" /> },
+  { href: '/refunds', label: 'Refunds', icon: <HandCoins className="h-4 w-4" /> },
   { href: '/zones', label: 'Zones', icon: <Map className="h-4 w-4" /> },
   { href: '/users', label: 'Users', icon: <Users className="h-4 w-4" /> },
   { href: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },

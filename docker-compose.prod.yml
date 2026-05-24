@@ -38,6 +38,13 @@ services:
       target: production
     env_file:
       - .env.prod
+    environment:
+      # Persisted invoice/receipts directory inside the container. The
+      # backend writes generated GST invoice PDFs here; we mount a named
+      # volume so they survive container rebuilds.
+      STORAGE_ROOT: /var/lib/aks/storage
+    volumes:
+      - backend_storage:/var/lib/aks/storage
     restart: unless-stopped
     depends_on:
       postgres:
@@ -157,3 +164,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  backend_storage:    # GST invoice PDFs (and any future receipts/exports)

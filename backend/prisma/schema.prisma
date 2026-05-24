@@ -125,6 +125,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   store               Store?
   driver              Driver?
+  wallet              Wallet?
 
   @@unique([phone, role])
   @@unique([email, role])
@@ -276,13 +277,14 @@ model Order {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  customer        User         @relation("CustomerOrders", fields: [customerId], references: [id])
-  store           Store        @relation("StoreOrders", fields: [storeId], references: [id])
-  buyerStore      Store?       @relation("BuyerStoreOrders", fields: [buyerStoreId], references: [id])
-  driver          Driver?      @relation(fields: [driverId], references: [id])
+  customer        User                @relation("CustomerOrders", fields: [customerId], references: [id])
+  store           Store               @relation("StoreOrders", fields: [storeId], references: [id])
+  buyerStore      Store?              @relation("BuyerStoreOrders", fields: [buyerStoreId], references: [id])
+  driver          Driver?             @relation(fields: [driverId], references: [id])
   items           OrderItem[]
-  deliveryAddress Address      @relation(fields: [deliveryAddressId], references: [id])
+  deliveryAddress Address             @relation(fields: [deliveryAddressId], references: [id])
   rating          OrderRating?
+  walletTxns      WalletTransaction[] @relation("OrderWalletTxns")
 
   @@index([customerId, status])
   @@index([storeId, status])
@@ -589,4 +591,48 @@ model PlatformSetting {
   driverMatchingMode         String   @default("BROADCAST")
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
+}
+
+// Customer / user wallet. Balance is stored in paise (₹1 = 100) so we never
+// have to deal with floating-point rounding. One wallet per user, lazily
+// created the first time we need to credit/debit (see wallet.service.ts).
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Int      @default(0) // paise (₹1 = 100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+}
+
+enum WalletTxnKind {
+  REFUND
+  PROMO_CREDIT
+  GOODWILL
+  ORDER_PAYMENT
+  ADJUSTMENT
+}
+
+// Append-only ledger of wallet movements. `amount` is signed paise: positive
+// for credits, negative for debits. `balanceAfter` snapshots the wallet
+// balance right after this transaction so a user-facing statement doesn't
+// need to recompute from history.
+model WalletTransaction {
+  id           String        @id @default(cuid())
+  walletId     String
+  kind         WalletTxnKind
+  amount       Int // signed paise
+  balanceAfter Int
+  orderId      String?
+  note         String?
+  actorId      String? // admin user id when credit/debit is a manual admin action
+  createdAt    DateTime      @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  order  Order? @relation("OrderWalletTxns", fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([walletId, createdAt])
+  @@index([orderId])
 }

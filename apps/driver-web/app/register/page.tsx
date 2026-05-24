@@ -52,13 +52,32 @@ export default function RegisterPage() {
   });
   const selectedVehicleType = vehicleForm.watch('vehicleType');
 
+  /** Maps a backend 409 conflict to a specific field for inline display. */
+  function attachConflictError(message: string): boolean {
+    const lower = message.toLowerCase();
+    if (lower.includes('username')) {
+      accountForm.setError('username', { type: 'server', message });
+      return true;
+    }
+    if (lower.includes('email')) {
+      accountForm.setError('email', { type: 'server', message });
+      return true;
+    }
+    if (lower.includes('mobile number') || lower.includes('phone')) {
+      accountForm.setError('phone', { type: 'server', message });
+      return true;
+    }
+    return false;
+  }
+
   async function onAccountSubmit(values: RegisterInput) {
     try {
       await api.post('/api/v1/auth/register', { ...values, role: 'DRIVER' });
       setStep('otp');
       toast.success(`OTP sent to +91 ${values.phone}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Registration failed');
+      const message = err instanceof Error ? err.message : 'Registration failed';
+      if (!attachConflictError(message)) toast.error(message);
     }
   }
 
@@ -307,45 +326,61 @@ export default function RegisterPage() {
           ) : null}
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            {...accountForm.register('email')}
-          />
-          {accountForm.formState.errors.email ? (
-            <p className="text-xs text-destructive">{accountForm.formState.errors.email.message}</p>
-          ) : null}
-        </div>
+        {/* ── Optional password-login fields ─────────────────────────── */}
+        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Optional — set a username/email to skip OTP next time
+          </p>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="username">Username</Label>
-          <Input
-            id="username"
-            autoComplete="username"
-            placeholder="Used to log in"
-            {...accountForm.register('username')}
-          />
-          {accountForm.formState.errors.username ? (
-            <p className="text-xs text-destructive">{accountForm.formState.errors.username.message}</p>
-          ) : null}
-        </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="username">Username</Label>
+            <Input
+              id="username"
+              autoComplete="username"
+              placeholder="e.g. chotu_singh"
+              {...accountForm.register('username')}
+            />
+            <p className="text-xs text-gray-500">
+              Used to sign in without an OTP (optional).
+            </p>
+            {accountForm.formState.errors.username ? (
+              <p className="text-xs text-destructive">{accountForm.formState.errors.username.message}</p>
+            ) : null}
+          </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            placeholder="At least 8 characters"
-            {...accountForm.register('password')}
-          />
-          {accountForm.formState.errors.password ? (
-            <p className="text-xs text-destructive">{accountForm.formState.errors.password.message}</p>
-          ) : null}
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              {...accountForm.register('email')}
+            />
+            <p className="text-xs text-gray-500">
+              We&apos;ll use this for password reset and approval notifications.
+            </p>
+            {accountForm.formState.errors.email ? (
+              <p className="text-xs text-destructive">{accountForm.formState.errors.email.message}</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
+              {...accountForm.register('password')}
+            />
+            <p className="text-xs text-gray-500">
+              Required if you set a username or email.
+            </p>
+            {accountForm.formState.errors.password ? (
+              <p className="text-xs text-destructive">{accountForm.formState.errors.password.message}</p>
+            ) : null}
+          </div>
         </div>
 
         <Button type="submit" size="lg" className="w-full" loading={accountForm.formState.isSubmitting}>

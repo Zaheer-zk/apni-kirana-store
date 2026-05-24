@@ -30,17 +30,67 @@ export const otpVerifySchema = z.object({
   otp: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code'),
 });
 
-export const registerSchema = z.object({
-  name: z.string().trim().min(2, 'Enter your full name'),
-  phone: phoneSchema,
-  email: z.string().trim().email('Enter a valid email address'),
-  username: z
-    .string()
-    .trim()
-    .min(3, 'Username must be at least 3 characters')
-    .regex(/^[a-z0-9_.-]+$/i, 'Letters, numbers, dots, dashes and underscores only'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-});
+/**
+ * Registration form: phone + name are required for OTP delivery. Username,
+ * email and password are OPTIONAL — a driver who skips them can still sign
+ * in with phone+OTP. If they DO fill in username OR email they must also
+ * set a password (otherwise the password-login mode would be useless).
+ *
+ * Empty strings from the form are normalised to `undefined` so the backend
+ * register schema's `.optional()` rules fire instead of complaining about
+ * an empty-string email being invalid.
+ */
+const optionalEmail = z
+  .string()
+  .trim()
+  .transform((v) => (v === '' ? undefined : v))
+  .optional()
+  .refine(
+    (v) => v === undefined || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+    'Enter a valid email address',
+  );
+
+const optionalUsername = z
+  .string()
+  .trim()
+  .transform((v) => (v === '' ? undefined : v))
+  .optional()
+  .refine(
+    (v) => v === undefined || (v.length >= 3 && v.length <= 30),
+    'Username must be 3-30 characters',
+  )
+  .refine(
+    (v) => v === undefined || /^[a-zA-Z0-9_-]+$/.test(v),
+    'Letters, numbers, dashes and underscores only',
+  );
+
+const optionalPassword = z
+  .string()
+  .transform((v) => (v === '' ? undefined : v))
+  .optional()
+  .refine(
+    (v) => v === undefined || v.length >= 8,
+    'Password must be at least 8 characters',
+  );
+
+export const registerSchema = z
+  .object({
+    name: z.string().trim().min(2, 'Enter your full name'),
+    phone: phoneSchema,
+    email: optionalEmail,
+    username: optionalUsername,
+    password: optionalPassword,
+  })
+  .refine(
+    (data) => {
+      const hasIdentifier = !!data.email || !!data.username;
+      return !hasIdentifier || !!data.password;
+    },
+    {
+      message: 'Required if you set a username or email',
+      path: ['password'],
+    },
+  );
 export type RegisterInput = z.infer<typeof registerSchema>;
 
 export const vehicleSchema = z.object({

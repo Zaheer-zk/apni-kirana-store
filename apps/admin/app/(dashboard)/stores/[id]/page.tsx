@@ -101,12 +101,12 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
         <Link href="/stores" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
           <ArrowLeft className="h-4 w-4" /> Back to Stores
         </Link>
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{store.name}</h1>
             <p className="mt-1 text-sm text-gray-500">{store.category}</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <StatusBadge status={store.status} />
             <button
               onClick={() => setEditing(true)}
@@ -153,15 +153,15 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
 
         {/* Items */}
         <div className="card overflow-hidden lg:col-span-2">
-          <div className="px-6 py-4 border-b border-gray-100">
+          <div className="px-4 py-4 border-b border-gray-100 sm:px-6">
             <h2 className="text-base font-semibold text-gray-900">Inventory ({items.length} items)</h2>
           </div>
           {items.length === 0 ? (
-            <p className="px-6 py-10 text-sm text-gray-400 text-center">No items listed yet.</p>
+            <p className="px-4 py-10 text-sm text-gray-400 text-center sm:px-6">No items listed yet.</p>
           ) : (
             <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
               {items.map((item) => (
-                <div key={item.id} className="flex items-center justify-between px-6 py-3">
+                <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
                   <div>
                     <p className="text-sm font-medium text-gray-900">{item.name}</p>
                     <p className="text-xs text-gray-400">{item.category} · {item.unit}</p>

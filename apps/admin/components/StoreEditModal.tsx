@@ -156,7 +156,7 @@ export default function StoreEditModal({ store, onClose }: Props) {
           </p>
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Latitude">
             <input
               className="input"
@@ -178,7 +178,7 @@ export default function StoreEditModal({ store, onClose }: Props) {
         <Field label="Street">
           <input className="input" value={street} onChange={(e) => setStreet(e.target.value)} />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="City">
             <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />
           </Field>
@@ -195,7 +195,7 @@ export default function StoreEditModal({ store, onClose }: Props) {
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Open time (HH:MM)">
             <input
               className="input"
@@ -247,8 +247,8 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-y-auto bg-black/40 sm:items-center sm:p-4">
+      <div className="w-full max-h-screen overflow-y-auto rounded-none bg-white p-4 shadow-xl sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl sm:p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
           <button onClick={onClose} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">

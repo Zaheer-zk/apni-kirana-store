@@ -987,19 +987,19 @@ export default function OrderDetailPage({
 
       {/* OTP */}
       {showOtp && (
-        <div className="card flex items-center justify-between gap-4 p-5">
-          <div className="flex items-center gap-3">
+        <div className="card flex flex-wrap items-center justify-between gap-4 p-5">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 text-primary">
               <KeyRound className="h-5 w-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900">Dropoff OTP</p>
               <p className="text-xs text-gray-500">
                 Customer must share this 4-digit code at delivery.
               </p>
             </div>
           </div>
-          <div className="font-mono text-3xl font-bold tracking-[0.4em] text-primary tabular-nums">
+          <div className="font-mono text-2xl font-bold tracking-[0.35em] text-primary tabular-nums sm:text-3xl sm:tracking-[0.4em]">
             {data.dropoffOtp}
           </div>
         </div>

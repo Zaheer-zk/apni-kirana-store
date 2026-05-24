@@ -7,6 +7,7 @@ import {
   Bell,
   ClipboardList,
   Home,
+  IndianRupee,
   LogOut,
   Menu,
   Package,
@@ -37,6 +38,7 @@ import {
   setStoredStore,
   type StoredUser,
 } from '@/lib/auth';
+import { disconnectSocket } from '@/lib/socket';
 
 /**
  * Responsive app shell shared by every authenticated page (dashboard,
@@ -63,7 +65,9 @@ const NAV: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: <Home className="h-5 w-5" />, match: 'eq' },
   { href: '/orders', label: 'Orders', icon: <ClipboardList className="h-5 w-5" />, match: 'startsWith' },
   { href: '/inventory', label: 'Inventory', icon: <Package className="h-5 w-5" />, match: 'startsWith' },
-  { href: '/profile', label: 'Store profile', icon: <Settings className="h-5 w-5" />, match: 'startsWith' },
+  { href: '/earnings', label: 'Earnings', icon: <IndianRupee className="h-5 w-5" />, match: 'startsWith' },
+  { href: '/profile', label: 'Store profile', icon: <StoreIcon className="h-5 w-5" />, match: 'startsWith' },
+  { href: '/settings', label: 'Settings', icon: <Settings className="h-5 w-5" />, match: 'startsWith' },
 ];
 
 interface StoreMeResponse {
@@ -132,6 +136,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   });
 
   function handleLogout() {
+    disconnectSocket();
     clearSession();
     router.replace('/login');
   }

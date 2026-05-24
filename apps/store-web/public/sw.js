@@ -77,3 +77,40 @@ self.addEventListener('fetch', (event) => {
     }),
   );
 });
+
+// ── Web Push ───────────────────────────────────────────────────────────────
+// Backend's `web-push.service.ts` sends `{ title, body, url?, tag? }` JSON
+// payloads. We mirror what admin/public/sw.js does so the operator gets the
+// same UX on both surfaces — clicking the notification focuses an open
+// dashboard tab if there is one, otherwise opens a new window.
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+  let data;
+  try {
+    data = event.data.json();
+  } catch (_e) {
+    data = { title: 'Apni Kirana', body: event.data.text() };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Apni Kirana Store', {
+      body: data.body,
+      icon: data.icon || '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      data: { url: data.url || '/' },
+      tag: data.tag,
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    clients.matchAll({ type: 'window' }).then((wins) => {
+      for (const w of wins) {
+        if (w.url.includes(url) && 'focus' in w) return w.focus();
+      }
+      return clients.openWindow(url);
+    }),
+  );
+});

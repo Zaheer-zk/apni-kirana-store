@@ -1,14 +1,17 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   CheckCircle2,
+  IndianRupee,
   Lock,
   MapPin,
   PackageCheck,
+  Phone,
+  Truck,
   XCircle,
 } from 'lucide-react';
 import { Button } from '@aks/ui/components/button';
@@ -28,8 +31,10 @@ import { AuthGuard } from '@/components/AuthGuard';
 import { AppShell } from '@/components/AppShell';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { ErrorPanel } from '@/components/StatePanels';
+import { DeliveryMap } from '@/components/DeliveryMap';
 import { api } from '@/lib/api';
 import { rupees, shortOrderId } from '@/lib/format';
+import { useOrderSocket } from '@/lib/useOrderSocket';
 
 const STATUS_TIMELINE_LABELS: Record<string, string> = {
   PENDING: 'Order placed',
@@ -42,6 +47,50 @@ const STATUS_TIMELINE_LABELS: Record<string, string> = {
   CANCELLED: 'Cancelled',
   REJECTED: 'Rejected',
 };
+
+/**
+ * Reasons offered to the store owner when rejecting an order. The matching
+ * engine doesn't act on the text — it just re-queues the order against the
+ * next candidate — so this list exists mostly to:
+ *   1. Make rejection a deliberate, structured choice rather than a free-text
+ *      shrug.
+ *   2. Give admins something to spot patterns in (e.g. a particular store
+ *      rejecting everything as "closing soon" needs operations follow-up).
+ */
+const REJECT_REASONS = [
+  { value: 'OUT_OF_STOCK', label: 'Out of stock' },
+  { value: 'CLOSING_SOON', label: 'Closing soon — can\'t prepare in time' },
+  { value: 'TOO_BUSY', label: 'Too busy right now' },
+  { value: 'CANT_FULFILL', label: 'Can\'t fulfill this order' },
+  { value: 'OTHER', label: 'Other (describe below)' },
+] as const;
+type RejectReasonValue = (typeof REJECT_REASONS)[number]['value'];
+
+/**
+ * Backend's `GET /api/v1/orders/:id` returns the Prisma row with `items`,
+ * `store`, `customer`, `driver { user }` and `deliveryAddress` joined. The
+ * shared `OrderDetail` type omits some fields we want to surface for the
+ * operator (commission, driver coords, address coords) so we widen it here.
+ */
+interface OrderDetailExtra extends OrderDetail {
+  commission?: number;
+  customer?: { id: string; name: string; phone: string } | null;
+  driver?: {
+    id: string;
+    currentLat?: number | null;
+    currentLng?: number | null;
+    vehicleType?: string | null;
+    vehicleNumber?: string | null;
+    user?: { name: string; phone: string } | null;
+  } | null;
+  deliveryAddress?: {
+    lat?: number;
+    lng?: number;
+    label?: string;
+    city?: string;
+    pincode?: string;
+  } | null;
+}
 
 export default function OrderDetailPage() {
   return (
@@ -60,14 +109,30 @@ function OrderDetailInner() {
   const queryClient = useQueryClient();
   const [rejectOpen, setRejectOpen] = useState(false);
 
-  const { data: order, isLoading, isError, refetch } = useQuery<OrderDetail | null>({
+  // Live updates: status transitions invalidate this query; driver location
+  // updates land in a side-channel cache the map reads.
+  useOrderSocket(id);
+
+  const { data: order, isLoading, isError, refetch } = useQuery<OrderDetailExtra | null>({
     queryKey: ['orderDetail', id],
     enabled: !!id,
     queryFn: async () => {
       const res = await api.get(`/api/v1/orders/${id}`);
-      return (res.data?.data ?? res.data) as OrderDetail | null;
+      return (res.data?.data ?? res.data) as OrderDetailExtra | null;
     },
+    // Polling is the belt; sockets are the suspenders. If sockets drop we
+    // still pick up new statuses within 20s.
     refetchInterval: 20_000,
+  });
+
+  // Live driver location pushed via `driver:location` socket events
+  const { data: liveDriver } = useQuery<{ lat: number; lng: number; at: number } | null>({
+    queryKey: ['driverLocation', id],
+    enabled: !!id,
+    // We never fetch this — sockets populate it. Returning null when nothing
+    // is cached lets the map render from order.driver.currentLat/Lng.
+    queryFn: () => Promise.resolve(null),
+    staleTime: Infinity,
   });
 
   const accept = useMutation({
@@ -101,10 +166,21 @@ function OrderDetailInner() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orderDetail', id] });
       queryClient.invalidateQueries({ queryKey: ['storeActiveOrders'] });
-      toast.success('Marked as ready for pickup');
+      toast.success('Marked as packed and ready for pickup');
     },
     onError: (err: Error) => toast.error(err.message || 'Could not update order'),
   });
+
+  const driverPoint = useMemo(() => {
+    // Prefer the live socket location; fall back to whatever the driver
+    // record had when we last fetched.
+    if (liveDriver) return { lat: liveDriver.lat, lng: liveDriver.lng };
+    const d = order?.driver;
+    if (d?.currentLat != null && d?.currentLng != null) {
+      return { lat: d.currentLat, lng: d.currentLng };
+    }
+    return null;
+  }, [liveDriver, order?.driver]);
 
   if (isLoading) {
     return (
@@ -137,10 +213,41 @@ function OrderDetailInner() {
   const isAccepted = order.status === 'STORE_ACCEPTED';
   const isBusy = accept.isPending || reject.isPending || markReady.isPending;
 
+  // Commission / payout maths. `commission` is stored on the order row at
+  // creation time using the snapshot rate so the operator sees the exact
+  // amount they'll receive, not a recomputed estimate.
+  const subtotal = order.subtotal ?? 0;
+  const commission = order.commission ?? 0;
+  const storeNet = Math.max(0, subtotal - commission);
+  const deliveryFee = order.deliveryFee ?? 0;
+
+  const storeLatLng =
+    order.store?.lat != null && order.store?.lng != null
+      ? { lat: order.store.lat, lng: order.store.lng, name: order.store.name }
+      : null;
+  const dropoffLatLng =
+    order.deliveryAddress?.lat != null && order.deliveryAddress?.lng != null
+      ? {
+          lat: order.deliveryAddress.lat,
+          lng: order.deliveryAddress.lng,
+          label: order.deliveryAddress.label ?? 'Delivery point',
+        }
+      : null;
+  // We only show the map once a driver has been assigned OR the order is
+  // accepted (so the operator can verify dropoff is where they expect).
+  const showMap = (isAccepted || !isPending) && (storeLatLng || dropoffLatLng || driverPoint);
+
   return (
     <div className="page-shell space-y-6">
       <Button asChild variant="ghost" size="sm" className="self-start">
-        <a href="/orders" onClick={(e) => { e.preventDefault(); router.back(); }} className="gap-1">
+        <a
+          href="/orders"
+          onClick={(e) => {
+            e.preventDefault();
+            router.back();
+          }}
+          className="gap-1"
+        >
           <ArrowLeft className="h-4 w-4" />
           Back to orders
         </a>
@@ -164,6 +271,15 @@ function OrderDetailInner() {
         <OrderStatusBadge status={order.status} />
       </header>
 
+      {/* New-order banner — only on PENDING orders so the operator knows the
+          accept/reject buttons at the bottom are what they're here for. */}
+      {isPending ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <strong>New order awaiting your acceptance.</strong> You have a few minutes before it
+          re-broadcasts to other stores. Review the items below and decide.
+        </div>
+      ) : null}
+
       {/* Items */}
       <Card>
         <CardHeader>
@@ -171,7 +287,10 @@ function OrderDetailInner() {
         </CardHeader>
         <CardContent className="space-y-3">
           {order.items.map((item) => (
-            <div key={item.itemId} className="flex items-start justify-between gap-3 border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+            <div
+              key={item.itemId}
+              className="flex items-start justify-between gap-3 border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+            >
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-900">{item.name}</p>
                 <p className="text-xs text-gray-500">{item.unit}</p>
@@ -184,12 +303,93 @@ function OrderDetailInner() {
               </div>
             </div>
           ))}
-          <div className="flex items-center justify-between border-t border-gray-200 pt-3">
-            <span className="text-sm font-semibold text-gray-700">Total</span>
-            <span className="text-xl font-bold text-primary">{rupees(order.total)}</span>
-          </div>
         </CardContent>
       </Card>
+
+      {/* Payout breakdown — what the operator actually takes home */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <IndianRupee className="h-4 w-4 text-primary" /> Payout breakdown
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <Row label="Items subtotal" value={rupees(subtotal)} />
+          <Row label="Platform commission" value={`− ${rupees(commission)}`} tone="muted" />
+          <div className="my-2 h-px bg-gray-200" />
+          <Row label="Your payout" value={rupees(storeNet)} bold />
+          <p className="pt-2 text-xs text-gray-500">
+            Delivery fee of {rupees(deliveryFee)} goes to the driver. Customers paid{' '}
+            <span className="font-medium text-gray-700">{rupees(order.total)}</span> total
+            {order.paymentMethod ? ` via ${order.paymentMethod}` : ''}.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Driver card — only once a driver is assigned */}
+      {order.driver ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Truck className="h-4 w-4 text-primary" /> Driver
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div>
+              <p className="text-xs uppercase text-gray-400">Name</p>
+              <p className="font-medium text-gray-900">{order.driver.user?.name ?? '—'}</p>
+            </div>
+            {order.driver.user?.phone ? (
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase text-gray-400">Phone</p>
+                  <p className="font-medium text-gray-900">+91 {order.driver.user.phone}</p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <a href={`tel:+91${order.driver.user.phone}`} className="gap-1">
+                    <Phone className="h-4 w-4" /> Call
+                  </a>
+                </Button>
+              </div>
+            ) : null}
+            {order.driver.vehicleNumber ? (
+              <div>
+                <p className="text-xs uppercase text-gray-400">Vehicle</p>
+                <p className="font-medium text-gray-900">
+                  {order.driver.vehicleType} · {order.driver.vehicleNumber}
+                </p>
+              </div>
+            ) : null}
+            {liveDriver ? (
+              <p className="text-xs text-green-700">
+                Driver location updated {Math.max(1, Math.round((Date.now() - liveDriver.at) / 1000))}s ago
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Map — pickup ↔ driver ↔ dropoff */}
+      {showMap ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Live route</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DeliveryMap
+              store={storeLatLng}
+              dropoff={dropoffLatLng}
+              driver={driverPoint}
+              heightClass="h-72"
+            />
+            <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-600">
+              <Legend color="#10b981" label="Your store" />
+              {driverPoint ? <Legend color="#ea580c" label="Driver" /> : null}
+              {dropoffLatLng ? <Legend color="#0ea5e9" label="Delivery point" /> : null}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Delivery info */}
       <Card>
@@ -213,7 +413,9 @@ function OrderDetailInner() {
           </div>
           <div className="flex items-start gap-2 rounded-md bg-gray-50 p-3 text-xs text-gray-600">
             <Lock className="mt-0.5 h-3.5 w-3.5" />
-            <span>Customer details are hidden for privacy. The driver receives the full address.</span>
+            <span>
+              Customer details are hidden for privacy. The driver receives the full address.
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -297,7 +499,7 @@ function OrderDetailInner() {
           disabled={isBusy}
           onClick={() => markReady.mutate()}
         >
-          <PackageCheck className="h-4 w-4" /> Mark ready for pickup
+          <PackageCheck className="h-4 w-4" /> Mark as packed (ready for pickup)
         </Button>
       ) : null}
 
@@ -308,6 +510,40 @@ function OrderDetailInner() {
         submitting={reject.isPending}
       />
     </div>
+  );
+}
+
+function Row({
+  label,
+  value,
+  bold,
+  tone,
+}: {
+  label: string;
+  value: string;
+  bold?: boolean;
+  tone?: 'muted';
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className={`text-sm ${tone === 'muted' ? 'text-gray-500' : 'text-gray-700'}`}>
+        {label}
+      </span>
+      <span
+        className={`text-sm ${bold ? 'text-lg font-bold text-primary' : 'font-semibold text-gray-900'}`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
   );
 }
 
@@ -322,11 +558,24 @@ function RejectDialog({
   onConfirm: (reason: string) => void;
   submitting: boolean;
 }) {
-  const [reason, setReason] = useState('');
+  const [reasonValue, setReasonValue] = useState<RejectReasonValue>('OUT_OF_STOCK');
+  const [extra, setExtra] = useState('');
 
   function submit() {
-    const trimmed = reason.trim() || 'Store cannot fulfill this order';
-    onConfirm(trimmed);
+    const base = REJECT_REASONS.find((r) => r.value === reasonValue)?.label ?? 'Cannot fulfill';
+    const trimmedExtra = extra.trim();
+    // Always include the structured label so admin reports can group rejections.
+    // If the operator picked OTHER without typing anything, fall back to a
+    // generic message so the backend's zod min(1) check passes.
+    if (reasonValue === 'OTHER') {
+      if (!trimmedExtra) {
+        onConfirm('Store cannot fulfill this order');
+        return;
+      }
+      onConfirm(trimmedExtra);
+      return;
+    }
+    onConfirm(trimmedExtra ? `${base} — ${trimmedExtra}` : base);
   }
 
   return (
@@ -335,17 +584,43 @@ function RejectDialog({
         <DialogHeader>
           <DialogTitle>Reject this order?</DialogTitle>
           <DialogDescription>
-            The customer will be notified and matched to another nearby store. Tell us why so
-            we can avoid sending similar orders to you.
+            The customer will be notified and the order will be re-broadcast to the next nearby
+            store. Tell us why so admins can spot patterns.
           </DialogDescription>
         </DialogHeader>
-        <textarea
-          rows={3}
-          placeholder="Reason (optional)"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          className="flex w-full rounded-md border border-input bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        />
+        <div className="space-y-3">
+          <fieldset className="space-y-2">
+            {REJECT_REASONS.map((r) => (
+              <label
+                key={r.value}
+                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition ${
+                  reasonValue === r.value
+                    ? 'border-primary bg-primary-50/50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="reject-reason"
+                  value={r.value}
+                  checked={reasonValue === r.value}
+                  onChange={() => setReasonValue(r.value)}
+                  className="mt-0.5"
+                />
+                <span className="text-gray-800">{r.label}</span>
+              </label>
+            ))}
+          </fieldset>
+          <textarea
+            rows={2}
+            placeholder={
+              reasonValue === 'OTHER' ? 'Tell us what happened (required)' : 'Notes (optional)'
+            }
+            value={extra}
+            onChange={(e) => setExtra(e.target.value)}
+            className="flex w-full rounded-md border border-input bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          />
+        </div>
         <DialogFooter className="gap-2 sm:gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel

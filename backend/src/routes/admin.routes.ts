@@ -15,6 +15,7 @@ import { generateResetToken, generateTempPassword } from '../utils/token';
 import { sendPasswordResetEmail, sendAccountApprovedEmail } from '../services/email.service';
 import { writeAudit } from '../utils/audit';
 import { creditWallet, getWalletWithTxns } from '../services/wallet.service';
+import { aggregateLastWeek, aggregatePayoutsForPeriod } from '../services/payout.service';
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const BCRYPT_ROUNDS = 10;
@@ -1854,5 +1855,164 @@ router.get('/refunds', async (req: Request, res: Response) => {
     return sendError(res, 'Failed to fetch refunds', 500);
   }
 });
+
+// ─── Driver payouts ─────────────────────────────────────────────────────────
+
+// GET /admin/payouts — list, filter by status + driver + date range
+router.get('/payouts', async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt((req.query['page'] as string) || '1', 10));
+    const limit = Math.min(200, parseInt((req.query['limit'] as string) || '50', 10));
+    const skip = (page - 1) * limit;
+
+    const status = req.query['status'] as string | undefined;
+    const driverId = req.query['driverId'] as string | undefined;
+    const from = req.query['from'] as string | undefined;
+    const to = req.query['to'] as string | undefined;
+
+    const where: Prisma.PayoutWhereInput = {};
+    if (status) where.status = status as 'PENDING' | 'PAID' | 'FAILED';
+    if (driverId) where.driverId = driverId;
+    if (from || to) {
+      where.periodStart = {};
+      if (from) (where.periodStart as { gte?: Date }).gte = new Date(from);
+      if (to) (where.periodStart as { lte?: Date }).lte = new Date(to);
+    }
+
+    const [items, total] = await prisma.$transaction([
+      prisma.payout.findMany({
+        where,
+        include: {
+          driver: {
+            select: {
+              id: true,
+              user: { select: { id: true, name: true, phone: true, email: true } },
+            },
+          },
+        },
+        orderBy: { periodStart: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.payout.count({ where }),
+    ]);
+
+    return sendSuccess(res, { items, total, page, limit });
+  } catch (err) {
+    console.error('[Admin] payouts list error:', err);
+    return sendError(res, 'Failed to fetch payouts', 500);
+  }
+});
+
+const updatePayoutSchema = z.object({
+  deductions: z.number().min(0).optional(),
+  notes: z.string().max(500).optional(),
+});
+
+// PUT /admin/payouts/:id — adjust deductions / notes before marking paid
+router.put('/payouts/:id', validate(updatePayoutSchema), async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id']!;
+    const body = req.body as z.infer<typeof updatePayoutSchema>;
+    const existing = await prisma.payout.findUnique({ where: { id } });
+    if (!existing) return sendError(res, 'Payout not found', 404);
+    if (existing.status !== 'PENDING') {
+      return sendError(res, `Cannot edit a payout in status ${existing.status}`, 400);
+    }
+
+    const deductions = body.deductions ?? existing.deductions;
+    const net = Math.max(0, existing.gross - deductions);
+    const updated = await prisma.payout.update({
+      where: { id },
+      data: { deductions, net, notes: body.notes ?? existing.notes },
+    });
+    return sendSuccess(res, updated, 'Payout updated');
+  } catch (err) {
+    console.error('[Admin] payout update error:', err);
+    return sendError(res, 'Failed to update payout', 500);
+  }
+});
+
+const markPaidSchema = z.object({
+  reference: z.string().trim().min(1).max(100),
+});
+
+// POST /admin/payouts/:id/mark-paid — admin confirms the bank transfer
+router.post(
+  '/payouts/:id/mark-paid',
+  validate(markPaidSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const id = req.params['id']!;
+      const body = req.body as z.infer<typeof markPaidSchema>;
+      const existing = await prisma.payout.findUnique({ where: { id }, include: { driver: { include: { user: true } } } });
+      if (!existing) return sendError(res, 'Payout not found', 404);
+      if (existing.status === 'PAID') return sendError(res, 'Already marked PAID', 400);
+
+      const updated = await prisma.payout.update({
+        where: { id },
+        data: {
+          status: 'PAID',
+          reference: body.reference.trim(),
+          paidAt: new Date(),
+          paidByUserId: req.user!.id,
+        },
+      });
+
+      await writeAudit({
+        actorId: req.user!.id,
+        action: 'PAYOUT_MARK_PAID',
+        targetType: 'Payout',
+        targetId: id,
+        before: { status: existing.status },
+        after: { status: 'PAID', reference: body.reference, net: existing.net },
+      });
+
+      await prisma.notification.create({
+        data: {
+          userId: existing.driver.user.id,
+          title: 'Payout sent',
+          body: `₹${existing.net.toFixed(2)} for ${existing.orderCount} deliveries has been transferred (ref ${body.reference}).`,
+        },
+      });
+
+      return sendSuccess(res, updated, 'Payout marked paid');
+    } catch (err) {
+      console.error('[Admin] payout mark-paid error:', err);
+      return sendError(res, 'Failed to mark payout paid', 500);
+    }
+  },
+);
+
+// POST /admin/payouts/aggregate — run the aggregator manually. Body either
+// `{ lastWeek: true }` for the just-ended ISO week, or `{ from, to }` for a
+// custom period. Useful before the weekly cron exists, or to backfill.
+const aggregateSchema = z.object({
+  lastWeek: z.boolean().optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+});
+
+router.post(
+  '/payouts/aggregate',
+  validate(aggregateSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const body = req.body as z.infer<typeof aggregateSchema>;
+      if (body.lastWeek) {
+        const result = await aggregateLastWeek();
+        return sendSuccess(res, result, 'Last week aggregated');
+      }
+      if (!body.from || !body.to) {
+        return sendError(res, 'Provide either lastWeek=true or both from/to', 400);
+      }
+      const result = await aggregatePayoutsForPeriod(new Date(body.from), new Date(body.to));
+      return sendSuccess(res, result, 'Aggregated');
+    } catch (err) {
+      console.error('[Admin] payout aggregate error:', err);
+      return sendError(res, 'Failed to aggregate payouts', 500);
+    }
+  },
+);
 
 export default router;

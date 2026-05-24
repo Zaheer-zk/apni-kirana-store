@@ -4,6 +4,7 @@ import { prisma } from '../config/prisma';
 import { authenticate } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
+import { getWalletWithTxns } from '../services/wallet.service';
 
 const router = Router();
 
@@ -98,6 +99,21 @@ router.delete('/me', authenticate, async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[Users] delete me error:', err);
     return sendError(res, 'Failed to delete account', 500);
+  }
+});
+
+// ─── Wallet ──────────────────────────────────────────────────────────────────
+// Returns the caller's own wallet balance + recent transactions. Lazy-creates
+// the wallet row on first read so there's no separate "create wallet" call.
+
+router.get('/me/wallet', authenticate, async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(200, Math.max(1, Number(req.query['limit']) || 50));
+    const view = await getWalletWithTxns(req.user!.id, limit);
+    return sendSuccess(res, view);
+  } catch (err) {
+    console.error('[Users] get wallet error:', err);
+    return sendError(res, 'Failed to fetch wallet', 500);
   }
 });
 

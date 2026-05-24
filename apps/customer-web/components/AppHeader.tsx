@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { LogIn, LogOut, MapPin, Receipt, Search, ShoppingCart, User } from 'lucide-react';
+import { LogIn, LogOut, MapPin, Receipt, Search, ShoppingCart, User, Wallet } from 'lucide-react';
 import { LocaleSwitcher } from './LocaleSwitcher';
 import { Button } from '@aks/ui/components/button';
 import {
@@ -122,6 +122,12 @@ export function AppHeader({ showSearch = true }: { showSearch?: boolean }) {
                 <Link href="/cart" className="flex items-center gap-2">
                   <ShoppingCart className="h-4 w-4" />
                   {tNav('cart')}
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/wallet" className="flex items-center gap-2">
+                  <Wallet className="h-4 w-4" />
+                  Wallet
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>

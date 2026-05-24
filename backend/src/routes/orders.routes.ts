@@ -109,9 +109,17 @@ router.post(
       }> = [];
 
       if (reqStoreItemIds.length > 0) {
-        // Mode 1: load store-items directly
+        // Mode 1: load store-items directly. Constrain the join so only items
+        // belonging to an ACTIVE, non-wholesaler store qualify — otherwise a
+        // client that guesses (or scrapes) a wholesaler / suspended store's
+        // StoreItem id can bypass the matching engine's wholesaler filter and
+        // place a customer order against a B2B-only or suspended store.
         const storeItems = await prisma.storeItem.findMany({
-          where: { id: { in: reqStoreItemIds }, isAvailable: true },
+          where: {
+            id: { in: reqStoreItemIds },
+            isAvailable: true,
+            store: { status: 'ACTIVE', isWholesaler: false },
+          },
           include: { catalogItem: true },
         });
         if (storeItems.length !== reqStoreItemIds.length) {
@@ -126,7 +134,18 @@ router.post(
         // Otherwise: pick the closest store carrying ALL items (fallback to first store with any).
         let candidateStoreId = req.body.storeId as string | undefined;
 
-        if (!candidateStoreId) {
+        if (candidateStoreId) {
+          // If the caller passed a storeId hint, it MUST refer to an ACTIVE,
+          // non-wholesaler store. Without this check a client could route a
+          // customer order to a wholesaler (B2B-only) or a suspended store.
+          const hinted = await prisma.store.findUnique({
+            where: { id: candidateStoreId },
+            select: { status: true, isWholesaler: true },
+          });
+          if (!hinted || hinted.status !== 'ACTIVE' || hinted.isWholesaler) {
+            return sendError(res, 'Selected store is not available for orders', 400);
+          }
+        } else {
           // Find a store that carries all the requested catalog items
           const carryingAll = await prisma.store.findMany({
             where: {
@@ -154,6 +173,10 @@ router.post(
             storeId: candidateStoreId,
             catalogItemId: { in: reqCatalogItemIds },
             isAvailable: true,
+            // Defence-in-depth: even with a validated storeId hint above, keep
+            // the wholesaler/status filter on the StoreItem join so the
+            // invariant is enforced in one place.
+            store: { status: 'ACTIVE', isWholesaler: false },
           },
           include: { catalogItem: true },
         });

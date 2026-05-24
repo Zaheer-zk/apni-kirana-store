@@ -43,6 +43,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/zones', label: 'Zones', icon: <Map className="h-4 w-4" /> },
   { href: '/users', label: 'Users', icon: <Users className="h-4 w-4" /> },
   { href: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
+  { href: '/notifications-log', label: 'Notifications log', icon: <Bell className="h-4 w-4" /> },
   { href: '/audit-logs', label: 'Audit Logs', icon: <History className="h-4 w-4" /> },
   { href: '/system', label: 'System', icon: <Activity className="h-4 w-4" /> },
 ];

@@ -1351,6 +1351,89 @@ router.get('/audit-logs', async (req: Request, res: Response) => {
   }
 });
 
+// ─── Notifications dispatch log ───────────────────────────────────────────────
+//
+// Per-attempt log of every notification dispatch (in-app + push + web push).
+// Lets admins see which messages were delivered, which failed, and why — and
+// drill into the raw payload for incident investigation.
+
+router.get('/notifications-log', async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt((req.query['page'] as string) || '1', 10));
+    const limit = Math.min(200, parseInt((req.query['limit'] as string) || '50', 10));
+    const skip = (page - 1) * limit;
+
+    const userId = req.query['userId'] as string | undefined;
+    const event = req.query['event'] as string | undefined;
+    const channel = req.query['channel'] as string | undefined;
+    const status = req.query['status'] as string | undefined;
+    const from = req.query['from'] as string | undefined;
+    const to = req.query['to'] as string | undefined;
+
+    const where: Prisma.NotificationWhereInput = {};
+    if (userId) where.userId = userId;
+    if (event) where.event = event;
+    if (channel) where.channel = channel as Prisma.NotificationWhereInput['channel'];
+    if (status) where.status = status as Prisma.NotificationWhereInput['status'];
+    if (from || to) {
+      where.createdAt = {};
+      if (from) {
+        const d = new Date(from);
+        if (!Number.isNaN(d.getTime())) (where.createdAt as { gte?: Date }).gte = d;
+      }
+      if (to) {
+        const d = new Date(to);
+        if (!Number.isNaN(d.getTime())) (where.createdAt as { lte?: Date }).lte = d;
+      }
+    }
+
+    const [rows, total] = await prisma.$transaction([
+      prisma.notification.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.notification.count({ where }),
+    ]);
+
+    // Enrich with recipient info — single lookup keyed by unique userIds.
+    const recipientIds = [...new Set(rows.map((r) => r.userId))];
+    const users = await prisma.user.findMany({
+      where: { id: { in: recipientIds } },
+      select: { id: true, name: true, phone: true, email: true, role: true },
+    });
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    const enriched = rows.map((r) => {
+      const u = userById.get(r.userId);
+      return {
+        ...r,
+        recipient: u
+          ? {
+              id: u.id,
+              name: u.name,
+              phone: u.phone,
+              email: u.email,
+              role: u.role,
+            }
+          : null,
+      };
+    });
+
+    return sendSuccess(res, {
+      logs: enriched,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    });
+  } catch (err) {
+    console.error('[Admin] notifications log error:', err);
+    return sendError(res, 'Failed to fetch notifications log', 500);
+  }
+});
+
 // ─── Disputes / Refunds ───────────────────────────────────────────────────────
 
 router.put('/orders/:id/refund', async (req: Request, res: Response) => {

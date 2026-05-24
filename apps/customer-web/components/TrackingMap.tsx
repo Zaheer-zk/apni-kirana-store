@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { CurrentLocationMarker } from '@aks/ui/components/current-location-marker';
 
 /**
  * Read-only Leaflet map used by the order-tracking page. Renders up to three
@@ -132,6 +133,11 @@ export function TrackingMap({ markers, heightClass = 'h-72' }: TrackingMapProps)
             <Popup>{m.label}</Popup>
           </Marker>
         ))}
+        {/* "You are here" — pulsing blue dot at the browser's GPS. Sits
+            on top of the store/driver/customer pins without interfering
+            with fitBounds (we deliberately don't include it in `markers`
+            because the auto-fit should frame the order, not the user). */}
+        <CurrentLocationMarker />
       </MapContainer>
     </div>
   );

@@ -1642,6 +1642,62 @@ router.delete('/zones/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ─── Live ops snapshot ──────────────────────────────────────────────────────
+// One-shot endpoint feeding the admin live-ops map. Returns every active
+// order + every ONLINE/OFFLINE driver with last-known coords so the page
+// can render initial markers, then subscribe to the existing
+// `driver:location` and `order:status` socket events for real-time deltas.
+
+router.get('/live-ops', async (_req: Request, res: Response) => {
+  try {
+    const [orders, drivers] = await Promise.all([
+      prisma.order.findMany({
+        where: {
+          status: { in: ['PENDING', 'STORE_ACCEPTED', 'DRIVER_ASSIGNED', 'PICKED_UP'] },
+        },
+        select: {
+          id: true,
+          status: true,
+          createdAt: true,
+          total: true,
+          customer: { select: { id: true, name: true, phone: true } },
+          store: { select: { id: true, name: true, lat: true, lng: true } },
+          driver: {
+            select: {
+              id: true,
+              currentLat: true,
+              currentLng: true,
+              user: { select: { id: true, name: true, phone: true } },
+            },
+          },
+          deliveryAddress: { select: { lat: true, lng: true, street: true, city: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      }),
+      prisma.driver.findMany({
+        where: {
+          status: { in: ['ONLINE', 'OFFLINE'] },
+          currentLat: { not: null },
+          currentLng: { not: null },
+        },
+        select: {
+          id: true,
+          status: true,
+          currentLat: true,
+          currentLng: true,
+          user: { select: { id: true, name: true, phone: true } },
+        },
+        take: 500,
+      }),
+    ]);
+    return sendSuccess(res, { orders, drivers, generatedAt: new Date().toISOString() });
+  } catch (err) {
+    console.error('[Admin] live-ops error:', err);
+    return sendError(res, 'Failed to fetch live-ops snapshot', 500);
+  }
+});
+
 // ─── Wallets + Refunds (admin visibility + manual goodwill credits) ─────────
 
 /** Validate `?page=N&limit=M&search=text` style query params. */

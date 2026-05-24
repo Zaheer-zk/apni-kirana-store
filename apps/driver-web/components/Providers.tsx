@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Toaster } from '@aks/ui/components/sonner';
+import { PwaInstallPrompt } from '@aks/ui/components/PwaInstallPrompt';
 import { OfferProvider } from './OfferProvider';
 
 /**
@@ -59,6 +60,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         closeButton
         toastOptions={{ duration: 3500 }}
       />
+      <PwaInstallPrompt appLabel="Apni Kirana for Drivers" />
     </QueryClientProvider>
   );
 }

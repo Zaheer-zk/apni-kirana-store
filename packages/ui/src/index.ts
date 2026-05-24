@@ -26,3 +26,4 @@ export * from './components/input-otp';
 export * from './components/sonner';
 export * from './components/location-map';
 export * from './components/current-location-marker';
+export * from './components/PwaInstallPrompt';

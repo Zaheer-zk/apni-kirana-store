@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Toaster } from '@aks/ui/components/sonner';
+import { PwaInstallPrompt } from '@aks/ui/components/PwaInstallPrompt';
 import { PwaRegister } from './PwaRegister';
 
 /**
@@ -38,6 +39,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         toastOptions={{ duration: 3500 }}
       />
       <PwaRegister />
+      <PwaInstallPrompt appLabel="Apni Kirana for Store Operators" />
     </QueryClientProvider>
   );
 }

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, ArrowLeft } from 'lucide-react';
@@ -58,6 +59,7 @@ function LoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get('next') ?? '/';
+  const tAuth = useTranslations('auth');
 
   // SSR renders the default OTP tab; once the client hydrates we promote the
   // user's persisted preference. Avoids a hydration mismatch.
@@ -102,13 +104,13 @@ function LoginInner() {
 
   return (
     <AuthShell
-      title="Welcome back"
-      subtitle="Log in to order from your neighbourhood store"
+      title={tAuth('signInTitle')}
+      subtitle={tAuth('signInSubtitle')}
       footer={
         <>
-          New to Quick Easy Mart?{' '}
+          {tAuth('noAccount')}{' '}
           <Link href="/register" className="font-semibold text-primary hover:text-primary-700">
-            Create an account
+            {tAuth('createAccount')}
           </Link>
         </>
       }

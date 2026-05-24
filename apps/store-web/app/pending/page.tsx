@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Clock, LogOut, Store as StoreIcon } from 'lucide-react';
 import { Button } from '@aks/ui/components/button';
@@ -37,6 +38,7 @@ interface PendingStoreProfile {
 export default function StorePendingPage() {
   const router = useRouter();
   const [user, setUser] = useState<StoredUser | null>(null);
+  const t = useTranslations('pending');
 
   useEffect(() => {
     setUser(getStoredUser());
@@ -84,7 +86,7 @@ export default function StorePendingPage() {
           <Clock className="h-12 w-12 text-warning" />
         </div>
         <h1 className="text-2xl font-bold text-gray-900">
-          Your store is awaiting admin approval
+          {t('title')}
         </h1>
         <p className="mt-2 text-sm text-gray-600">
           Thanks for signing up{user?.name ? `, ${user.name.split(' ')[0]}` : ''}! Our team is
@@ -149,7 +151,7 @@ export default function StorePendingPage() {
 
       <Button variant="outline" size="lg" className="mt-6 w-full" onClick={handleLogout}>
         <LogOut className="h-4 w-4" />
-        Sign out
+        {t('signOut')}
       </Button>
 
       <p className="mt-6 text-center text-xs text-gray-400">

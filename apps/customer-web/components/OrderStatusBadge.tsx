@@ -1,31 +1,42 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { Badge } from '@aks/ui/components/badge';
 import { OrderStatus } from '@aks/shared';
 
-const STATUS_META: Record<
+const STATUS_VARIANT: Record<
   OrderStatus | string,
-  { label: string; variant: 'default' | 'secondary' | 'warning' | 'success' | 'destructive' | 'outline' }
+  'default' | 'secondary' | 'warning' | 'success' | 'destructive' | 'outline'
 > = {
-  [OrderStatus.PENDING]: { label: 'Placed', variant: 'warning' },
-  [OrderStatus.STORE_ACCEPTED]: { label: 'Accepted', variant: 'secondary' },
-  [OrderStatus.DRIVER_ASSIGNED]: { label: 'Out for pickup', variant: 'secondary' },
-  [OrderStatus.PICKED_UP]: { label: 'On the way', variant: 'secondary' },
-  [OrderStatus.DELIVERED]: { label: 'Delivered', variant: 'success' },
-  [OrderStatus.CANCELLED]: { label: 'Cancelled', variant: 'destructive' },
-  [OrderStatus.REJECTED]: { label: 'Rejected', variant: 'destructive' },
+  [OrderStatus.PENDING]: 'warning',
+  [OrderStatus.STORE_ACCEPTED]: 'secondary',
+  [OrderStatus.DRIVER_ASSIGNED]: 'secondary',
+  [OrderStatus.PICKED_UP]: 'secondary',
+  [OrderStatus.DELIVERED]: 'success',
+  [OrderStatus.CANCELLED]: 'destructive',
+  [OrderStatus.REJECTED]: 'destructive',
 };
 
 /**
  * Single source of truth for order-status pill styling on customer-web.
  * Mirrors `apps/customer/components/OrderStatusBadge.tsx` so the same labels
- * appear on phone + web; if you change a label here, change it there too.
+ * appear on phone + web; labels here come from i18n message bundle.
  */
 export function OrderStatusBadge({ status }: { status: OrderStatus | string }) {
-  const meta = STATUS_META[status] ?? { label: String(status), variant: 'secondary' as const };
+  const t = useTranslations('orderStatus');
+  const variant = STATUS_VARIANT[status] ?? 'secondary';
+  // Translation key lookup is safe for known statuses; unknown ones fall
+  // back to the raw status string (matches old behaviour).
+  const key = String(status);
+  let label = key;
+  try {
+    label = t(key as Parameters<typeof t>[0]);
+  } catch {
+    label = key;
+  }
   return (
-    <Badge variant={meta.variant} className="text-[11px]">
-      {meta.label}
+    <Badge variant={variant} className="text-[11px]">
+      {label}
     </Badge>
   );
 }

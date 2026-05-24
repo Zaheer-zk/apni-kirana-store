@@ -1,0 +1,79 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "orders": "Orders",
+    "inventory": "Inventory",
+    "earnings": "Earnings",
+    "profile": "Store profile",
+    "settings": "Settings",
+    "signIn": "Sign in",
+    "signOut": "Log out",
+    "accountMenu": "Account menu",
+    "storeOwner": "Store owner",
+    "myStore": "My Store",
+    "open": "Open",
+    "closed": "Closed",
+    "openMenu": "Open menu",
+    "notifications": "Notifications",
+    "editStoreProfile": "Edit store profile",
+    "changePassword": "Change password"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "submit": "Submit",
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading…",
+    "required": "Required",
+    "retry": "Try again",
+    "continue": "Continue"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signInTitle": "Welcome back",
+    "signInSubtitle": "Sign in to manage your store and orders.",
+    "createAccount": "Create account",
+    "registerTitle": "Register your store",
+    "registerSubtitle": "List your kirana on Quick Easy Mart in a few minutes.",
+    "phone": "Phone number",
+    "password": "Password",
+    "name": "Full name",
+    "otp": "OTP",
+    "continue": "Continue",
+    "forgotPassword": "Forgot password?",
+    "noAccount": "New to Quick Easy Mart?",
+    "hasAccount": "Already have an account?",
+    "register": "Register",
+    "sendOtp": "Send OTP",
+    "verifyOtp": "Verify OTP",
+    "loginFailed": "Login failed. Please check your credentials."
+  },
+  "orderStatus": {
+    "PENDING": "New",
+    "STORE_ACCEPTED": "Accepted",
+    "DRIVER_ASSIGNED": "Driver assigned",
+    "PICKED_UP": "Picked up",
+    "DELIVERED": "Delivered",
+    "CANCELLED": "Cancelled",
+    "REJECTED": "Rejected"
+  },
+  "pending": {
+    "title": "Awaiting admin approval",
+    "body": "Your store is currently under review. We'll notify you on this number as soon as approval is complete.",
+    "polling": "Checking status…",
+    "signOut": "Sign out"
+  },
+  "toast": {
+    "storeOpen": "Store is now open for orders",
+    "storeClosed": "Store is now closed",
+    "statusUpdateFailed": "Could not update status"
+  },
+  "locale": {
+    "toggle": "हि",
+    "toggleAria": "Switch language to Hindi"
+  }
+}

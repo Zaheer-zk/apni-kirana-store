@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { NextIntlClientProvider } from 'next-intl';
 import { Providers } from '@/components/Providers';
+import { getLocale, getMessages } from '@/lib/i18n';
 
 export const metadata: Metadata = {
   title: {
@@ -33,11 +35,15 @@ export const viewport: Viewport = {
   themeColor: '#16A34A',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = await getLocale();
+  const messages = await getMessages(locale);
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <Providers>{children}</Providers>
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <Providers>{children}</Providers>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

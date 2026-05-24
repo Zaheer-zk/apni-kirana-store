@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useQuery } from '@tanstack/react-query';
 import { Bike, MapPin, Search, ShieldCheck, Clock3 } from 'lucide-react';
 import { Button } from '@aks/ui/components/button';
@@ -32,18 +33,18 @@ export default function HomePage() {
 }
 
 function Hero() {
+  const t = useTranslations('home');
   return (
     <section className="relative mb-8 overflow-hidden rounded-3xl bg-gradient-to-br from-primary to-primary-700 px-6 py-10 text-white shadow-md sm:px-10 sm:py-14">
       <div className="relative z-10 max-w-xl">
         <Badge variant="warning" className="mb-3">
-          New · Order from your neighbourhood store
+          {t('heroBadge')}
         </Badge>
         <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl">
-          Daily essentials, delivered in 30 minutes.
+          {t('heroTitle')}
         </h1>
         <p className="mt-3 text-sm text-primary-100 sm:text-base">
-          Quick Easy Mart connects you to your nearest kirana store. Fresh produce, medicines and
-          household items — same prices, same store, faster delivery.
+          {t('heroSubtitle')}
         </p>
       </div>
 
@@ -58,6 +59,8 @@ function Hero() {
 function SearchEntry() {
   const router = useRouter();
   const [query, setQuery] = useState('');
+  const t = useTranslations('home');
+  const tCommon = useTranslations('common');
 
   function go(q?: string) {
     const v = (q ?? query).trim();
@@ -76,17 +79,17 @@ function SearchEntry() {
           onKeyDown={(e) => {
             if (e.key === 'Enter') go();
           }}
-          placeholder="Search for rice, soap, paracetamol…"
-          aria-label="Search items"
+          placeholder={t('searchPlaceholder')}
+          aria-label={tCommon('search')}
           className="flex-1 bg-transparent text-base text-gray-900 placeholder:text-gray-400 focus:outline-none"
         />
         <Button onClick={() => go()} disabled={!query.trim()}>
-          Search
+          {tCommon('search')}
         </Button>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-gray-500">Trending:</span>
+        <span className="text-xs font-medium text-gray-500">{t('trending')}</span>
         {TRENDING.map((term) => (
           <button
             key={term}
@@ -104,6 +107,8 @@ function SearchEntry() {
 
 function FeaturedSection() {
   const { coords, status } = useLocation();
+  const t = useTranslations('home');
+  const tCommon = useTranslations('common');
 
   // "Featured" is just the search endpoint with an empty query — the
   // ranking engine returns the best-scoring nearby items.
@@ -124,14 +129,14 @@ function FeaturedSection() {
     <section className="mb-10">
       <header className="mb-4 flex items-end justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-900 sm:text-2xl">Popular near you</h2>
+          <h2 className="text-xl font-bold text-gray-900 sm:text-2xl">{t('popularNearYou')}</h2>
           <p className="mt-1 flex items-center gap-1 text-xs text-gray-500">
             <MapPin className="h-3 w-3" />
-            {status === 'granted' ? 'Using your current location' : 'Using a default Delhi location'}
+            {status === 'granted' ? t('usingCurrentLocation') : t('usingDefaultLocation')}
           </p>
         </div>
         <Link href="/search" className="text-sm font-semibold text-primary hover:text-primary-700">
-          View all
+          {tCommon('viewAll')}
         </Link>
       </header>
 
@@ -147,14 +152,14 @@ function FeaturedSection() {
         </div>
       ) : featuredQuery.isError ? (
         <ErrorPanel
-          message="Couldn't load nearby items right now."
+          message={t('loadError')}
           onRetry={() => featuredQuery.refetch()}
         />
       ) : items.length === 0 ? (
         <EmptyPanel
           icon={<Search className="h-6 w-6" />}
-          title="Nothing nearby yet"
-          subtitle="Stores in your area haven't listed items yet. Search for something specific to try a wider radius."
+          title={t('nothingNearbyTitle')}
+          subtitle={t('nothingNearbySubtitle')}
         />
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-2 sm:gap-4">
@@ -168,27 +173,28 @@ function FeaturedSection() {
 }
 
 function PromiseGrid() {
+  const t = useTranslations('home');
   const promises = [
     {
       icon: <Bike className="h-6 w-6 text-primary" />,
-      title: 'Lightning-fast delivery',
-      body: 'Average 30-minute drop-off from your nearest store.',
+      title: t('promiseFastTitle'),
+      body: t('promiseFastBody'),
     },
     {
       icon: <ShieldCheck className="h-6 w-6 text-primary" />,
-      title: 'Same kirana, same prices',
-      body: 'No middleman markup — you pay the store price.',
+      title: t('promiseSameTitle'),
+      body: t('promiseSameBody'),
     },
     {
       icon: <Clock3 className="h-6 w-6 text-primary" />,
-      title: 'Open early, open late',
-      body: 'Order whenever a store nearby is open. Cash on delivery accepted.',
+      title: t('promiseHoursTitle'),
+      body: t('promiseHoursBody'),
     },
   ];
 
   return (
     <section className="mb-6">
-      <h2 className="mb-4 text-xl font-bold text-gray-900 sm:text-2xl">The Quick Easy Mart promise</h2>
+      <h2 className="mb-4 text-xl font-bold text-gray-900 sm:text-2xl">{t('promiseTitle')}</h2>
       <div className="grid gap-4 sm:grid-cols-3">
         {promises.map((p) => (
           <article
@@ -208,12 +214,13 @@ function PromiseGrid() {
 }
 
 function Footer() {
+  const t = useTranslations('home');
   return (
     <footer className="border-t border-gray-200 bg-white">
       <div className="page-shell flex flex-col items-center justify-between gap-3 py-6 text-xs text-gray-500 sm:flex-row">
         <p>© {new Date().getFullYear()} Quick Easy Mart — Apni Kirana Store</p>
         <p>
-          Need help? Email <a className="font-semibold text-primary hover:text-primary-700" href="mailto:support@quickeasymart.com">support@quickeasymart.com</a>
+          {t('footerHelp')} <a className="font-semibold text-primary hover:text-primary-700" href="mailto:support@quickeasymart.com">support@quickeasymart.com</a>
         </p>
       </div>
     </footer>

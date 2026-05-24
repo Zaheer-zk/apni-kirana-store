@@ -1,0 +1,69 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "deliveries": "Deliveries",
+    "earnings": "Earnings",
+    "profile": "Profile",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "accountMenu": "Account menu",
+    "openMenu": "Open menu",
+    "driver": "Driver",
+    "changePassword": "Change password",
+    "online": "Online",
+    "offline": "Offline"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "submit": "Submit",
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading…",
+    "required": "Required",
+    "retry": "Try again",
+    "continue": "Continue"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signInTitle": "Driver sign in",
+    "signInSubtitle": "Sign in to accept deliveries near you.",
+    "createAccount": "Create account",
+    "registerTitle": "Become a delivery partner",
+    "registerSubtitle": "Earn flexible income by delivering for nearby stores.",
+    "phone": "Phone number",
+    "password": "Password",
+    "name": "Full name",
+    "otp": "OTP",
+    "continue": "Continue",
+    "forgotPassword": "Forgot password?",
+    "noAccount": "New to Quick Easy Mart?",
+    "hasAccount": "Already have an account?",
+    "register": "Register",
+    "sendOtp": "Send OTP",
+    "verifyOtp": "Verify OTP",
+    "loginFailed": "Login failed. Please check your credentials."
+  },
+  "orderStatus": {
+    "PENDING": "New",
+    "STORE_ACCEPTED": "Accepted",
+    "DRIVER_ASSIGNED": "Assigned to you",
+    "PICKED_UP": "Picked up",
+    "DELIVERED": "Delivered",
+    "CANCELLED": "Cancelled",
+    "REJECTED": "Rejected"
+  },
+  "pending": {
+    "title": "Awaiting admin approval",
+    "body": "Your driver application is under review. We'll notify you on this number once approved.",
+    "polling": "Checking status…",
+    "signOut": "Sign out"
+  },
+  "locale": {
+    "toggle": "हि",
+    "toggleAria": "Switch language to Hindi"
+  }
+}

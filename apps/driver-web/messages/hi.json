@@ -1,0 +1,69 @@
+{
+  "nav": {
+    "dashboard": "डैशबोर्ड",
+    "deliveries": "डिलीवरी",
+    "earnings": "कमाई",
+    "profile": "प्रोफ़ाइल",
+    "signIn": "साइन इन",
+    "signOut": "साइन आउट",
+    "accountMenu": "अकाउंट मेनू",
+    "openMenu": "मेनू खोलें",
+    "driver": "ड्राइवर",
+    "changePassword": "पासवर्ड बदलें",
+    "online": "ऑनलाइन",
+    "offline": "ऑफ़लाइन"
+  },
+  "common": {
+    "save": "सहेजें",
+    "cancel": "रद्द करें",
+    "delete": "हटाएं",
+    "edit": "संपादित करें",
+    "add": "जोड़ें",
+    "submit": "सबमिट करें",
+    "back": "वापस",
+    "next": "आगे",
+    "loading": "लोड हो रहा है…",
+    "required": "आवश्यक",
+    "retry": "पुनः प्रयास करें",
+    "continue": "जारी रखें"
+  },
+  "auth": {
+    "signIn": "साइन इन",
+    "signInTitle": "ड्राइवर साइन इन",
+    "signInSubtitle": "अपने पास की डिलीवरी स्वीकार करने के लिए साइन इन करें।",
+    "createAccount": "अकाउंट बनाएँ",
+    "registerTitle": "डिलीवरी पार्टनर बनें",
+    "registerSubtitle": "नज़दीकी दुकानों के लिए डिलीवरी करके लचीली आय कमाएँ।",
+    "phone": "फ़ोन नंबर",
+    "password": "पासवर्ड",
+    "name": "पूरा नाम",
+    "otp": "ओटीपी",
+    "continue": "जारी रखें",
+    "forgotPassword": "पासवर्ड भूल गए?",
+    "noAccount": "Quick Easy Mart पर नए हैं?",
+    "hasAccount": "क्या पहले से अकाउंट है?",
+    "register": "रजिस्टर करें",
+    "sendOtp": "ओटीपी भेजें",
+    "verifyOtp": "ओटीपी सत्यापित करें",
+    "loginFailed": "लॉगिन विफल। कृपया अपनी जानकारी जाँचें।"
+  },
+  "orderStatus": {
+    "PENDING": "नया",
+    "STORE_ACCEPTED": "स्वीकृत",
+    "DRIVER_ASSIGNED": "आपको असाइन",
+    "PICKED_UP": "पिक हो गया",
+    "DELIVERED": "डिलीवर हो गया",
+    "CANCELLED": "रद्द",
+    "REJECTED": "अस्वीकृत"
+  },
+  "pending": {
+    "title": "एडमिन की मंज़ूरी का इंतज़ार",
+    "body": "आपकी ड्राइवर एप्लिकेशन की समीक्षा चल रही है। मंज़ूरी मिलते ही हम आपको इस नंबर पर सूचित करेंगे।",
+    "polling": "स्थिति जाँच रहे हैं…",
+    "signOut": "साइन आउट"
+  },
+  "locale": {
+    "toggle": "EN",
+    "toggleAria": "भाषा बदलकर अंग्रेज़ी करें"
+  }
+}

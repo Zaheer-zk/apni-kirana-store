@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import {
   Bell,
   ClipboardList,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@aks/ui/components/button';
+import { LocaleSwitcher } from './LocaleSwitcher';
 import { Badge } from '@aks/ui/components/badge';
 import { Avatar, AvatarFallback } from '@aks/ui/components/avatar';
 import { Sheet, SheetContent, SheetTrigger } from '@aks/ui/components/sheet';
@@ -61,14 +63,16 @@ interface NavItem {
   match?: 'eq' | 'startsWith';
 }
 
-const NAV: NavItem[] = [
-  { href: '/', label: 'Dashboard', icon: <Home className="h-5 w-5" />, match: 'eq' },
-  { href: '/orders', label: 'Orders', icon: <ClipboardList className="h-5 w-5" />, match: 'startsWith' },
-  { href: '/inventory', label: 'Inventory', icon: <Package className="h-5 w-5" />, match: 'startsWith' },
-  { href: '/earnings', label: 'Earnings', icon: <IndianRupee className="h-5 w-5" />, match: 'startsWith' },
-  { href: '/profile', label: 'Store profile', icon: <StoreIcon className="h-5 w-5" />, match: 'startsWith' },
-  { href: '/settings', label: 'Settings', icon: <Settings className="h-5 w-5" />, match: 'startsWith' },
-];
+function buildNavItems(t: (k: string) => string): NavItem[] {
+  return [
+    { href: '/', label: t('dashboard'), icon: <Home className="h-5 w-5" />, match: 'eq' },
+    { href: '/orders', label: t('orders'), icon: <ClipboardList className="h-5 w-5" />, match: 'startsWith' },
+    { href: '/inventory', label: t('inventory'), icon: <Package className="h-5 w-5" />, match: 'startsWith' },
+    { href: '/earnings', label: t('earnings'), icon: <IndianRupee className="h-5 w-5" />, match: 'startsWith' },
+    { href: '/profile', label: t('profile'), icon: <StoreIcon className="h-5 w-5" />, match: 'startsWith' },
+    { href: '/settings', label: t('settings'), icon: <Settings className="h-5 w-5" />, match: 'startsWith' },
+  ];
+}
 
 interface StoreMeResponse {
   id: string;
@@ -86,6 +90,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<StoredUser | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const tNav = useTranslations('nav');
+  const tToast = useTranslations('toast');
 
   // Hydrate user + store snapshot from localStorage after mount (server can't
   // see localStorage, so SSR renders the anonymous shell first).
@@ -141,9 +147,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const next = !!data?.isOpen;
       setStoredStore({ ...store, isOpen: next });
       queryClient.invalidateQueries({ queryKey: ['storeMe'] });
-      toast.success(next ? 'Store is now open for orders' : 'Store is now closed');
+      toast.success(next ? tToast('storeOpen') : tToast('storeClosed'));
     },
-    onError: (err: Error) => toast.error(err.message || 'Could not update status'),
+    onError: (err: Error) => toast.error(err.message || tToast('statusUpdateFailed')),
   });
 
   function handleLogout() {
@@ -157,7 +163,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Desktop sidebar — hidden on mobile */}
       <aside className="hidden w-64 flex-shrink-0 border-r border-gray-200 bg-white md:flex md:flex-col">
         <div className="flex h-16 items-center border-b border-gray-100 px-5">
-          <Link href="/" aria-label="Store dashboard home">
+          <Link href="/" aria-label={tNav('dashboard')}>
             <BrandMark size="sm" withWordmark />
           </Link>
         </div>
@@ -170,7 +176,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {/* Mobile menu trigger */}
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open menu">
+              <Button variant="ghost" size="icon" className="md:hidden" aria-label={tNav('openMenu')}>
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
@@ -186,7 +192,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <StoreIcon className="hidden h-5 w-5 text-primary md:block" />
             <span className="truncate text-sm font-semibold text-gray-900 sm:text-base">
-              {store?.name ?? 'My Store'}
+              {store?.name ?? tNav('myStore')}
             </span>
           </div>
 
@@ -200,17 +206,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
                 : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
             }`}
-            aria-label={isOpen ? 'Store is open. Tap to close.' : 'Store is closed. Tap to open.'}
+            aria-label={isOpen ? tNav('open') : tNav('closed')}
           >
             <span
               className={`h-2 w-2 rounded-full ${isOpen ? 'bg-green-600' : 'bg-red-600'}`}
               aria-hidden
             />
-            {isOpen ? 'Open' : 'Closed'}
+            {isOpen ? tNav('open') : tNav('closed')}
           </button>
 
+          <LocaleSwitcher />
+
           {/* Notifications bell — placeholder badge until /notifications ships */}
-          <Button variant="ghost" size="icon" aria-label="Notifications" className="hidden sm:inline-flex">
+          <Button variant="ghost" size="icon" aria-label={tNav('notifications')} className="hidden sm:inline-flex">
             <Bell className="h-5 w-5" />
           </Button>
 
@@ -218,7 +226,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  aria-label="Account menu"
+                  aria-label={tNav('accountMenu')}
                   className="inline-flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 >
                   <Avatar className="h-9 w-9 cursor-pointer">
@@ -230,7 +238,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <DropdownMenuLabel>
                   <div className="flex flex-col">
                     <span className="text-sm font-semibold text-gray-900">
-                      {user.name ?? 'Store owner'}
+                      {user.name ?? tNav('storeOwner')}
                     </span>
                     <span className="text-xs font-normal text-gray-500">+91 {user.phone}</span>
                   </div>
@@ -239,25 +247,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <DropdownMenuItem asChild>
                   <Link href="/profile/edit" className="flex items-center gap-2">
                     <User className="h-4 w-4" />
-                    Edit store profile
+                    {tNav('editStoreProfile')}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/change-password" className="flex items-center gap-2">
                     <Settings className="h-4 w-4" />
-                    Change password
+                    {tNav('changePassword')}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
                   <LogOut className="h-4 w-4" />
-                  Log out
+                  {tNav('signOut')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
             <Button asChild variant="default" size="sm">
-              <Link href="/login">Sign in</Link>
+              <Link href="/login">{tNav('signIn')}</Link>
             </Button>
           )}
         </header>
@@ -275,9 +283,11 @@ function SideNav({
   pathname: string;
   onNavigate?: () => void;
 }) {
+  const tNav = useTranslations('nav');
+  const items = buildNavItems(tNav);
   return (
     <nav className="flex-1 space-y-1 px-3 py-4">
-      {NAV.map((item) => {
+      {items.map((item) => {
         const isActive =
           item.match === 'eq' ? pathname === item.href : pathname.startsWith(item.href) && item.href !== '/';
         const dashboardActive = item.href === '/' && pathname === '/';

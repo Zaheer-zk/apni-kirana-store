@@ -1,0 +1,79 @@
+{
+  "nav": {
+    "dashboard": "डैशबोर्ड",
+    "orders": "ऑर्डर",
+    "inventory": "इन्वेंटरी",
+    "earnings": "कमाई",
+    "profile": "दुकान प्रोफ़ाइल",
+    "settings": "सेटिंग्स",
+    "signIn": "साइन इन",
+    "signOut": "लॉग आउट",
+    "accountMenu": "अकाउंट मेनू",
+    "storeOwner": "दुकान मालिक",
+    "myStore": "मेरी दुकान",
+    "open": "खुली",
+    "closed": "बंद",
+    "openMenu": "मेनू खोलें",
+    "notifications": "सूचनाएँ",
+    "editStoreProfile": "दुकान प्रोफ़ाइल संपादित करें",
+    "changePassword": "पासवर्ड बदलें"
+  },
+  "common": {
+    "save": "सहेजें",
+    "cancel": "रद्द करें",
+    "delete": "हटाएं",
+    "edit": "संपादित करें",
+    "add": "जोड़ें",
+    "submit": "सबमिट करें",
+    "back": "वापस",
+    "next": "आगे",
+    "loading": "लोड हो रहा है…",
+    "required": "आवश्यक",
+    "retry": "पुनः प्रयास करें",
+    "continue": "जारी रखें"
+  },
+  "auth": {
+    "signIn": "साइन इन",
+    "signInTitle": "वापस स्वागत है",
+    "signInSubtitle": "अपनी दुकान और ऑर्डर प्रबंधित करने के लिए साइन इन करें।",
+    "createAccount": "अकाउंट बनाएँ",
+    "registerTitle": "अपनी दुकान रजिस्टर करें",
+    "registerSubtitle": "कुछ मिनटों में Quick Easy Mart पर अपनी किराना दुकान लिस्ट करें।",
+    "phone": "फ़ोन नंबर",
+    "password": "पासवर्ड",
+    "name": "पूरा नाम",
+    "otp": "ओटीपी",
+    "continue": "जारी रखें",
+    "forgotPassword": "पासवर्ड भूल गए?",
+    "noAccount": "Quick Easy Mart पर नए हैं?",
+    "hasAccount": "क्या पहले से अकाउंट है?",
+    "register": "रजिस्टर करें",
+    "sendOtp": "ओटीपी भेजें",
+    "verifyOtp": "ओटीपी सत्यापित करें",
+    "loginFailed": "लॉगिन विफल। कृपया अपनी जानकारी जाँचें।"
+  },
+  "orderStatus": {
+    "PENDING": "नया",
+    "STORE_ACCEPTED": "स्वीकृत",
+    "DRIVER_ASSIGNED": "ड्राइवर असाइन",
+    "PICKED_UP": "पिक हो गया",
+    "DELIVERED": "डिलीवर हो गया",
+    "CANCELLED": "रद्द",
+    "REJECTED": "अस्वीकृत"
+  },
+  "pending": {
+    "title": "एडमिन की मंज़ूरी का इंतज़ार",
+    "body": "आपकी दुकान की समीक्षा चल रही है। मंज़ूरी मिलते ही हम आपको इस नंबर पर सूचित करेंगे।",
+    "polling": "स्थिति जाँच रहे हैं…",
+    "signOut": "साइन आउट"
+  },
+  "toast": {
+    "storeOpen": "दुकान अब ऑर्डर के लिए खुली है",
+    "storeClosed": "दुकान अब बंद है",
+    "statusUpdateFailed": "स्थिति अपडेट नहीं हो सकी"
+  },
+  "locale": {
+    "toggle": "EN",
+    "toggleAria": "भाषा बदलकर अंग्रेज़ी करें"
+  }
+}

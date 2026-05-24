@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { LogIn, LogOut, MapPin, Receipt, Search, ShoppingCart, User } from 'lucide-react';
+import { LocaleSwitcher } from './LocaleSwitcher';
 import { Button } from '@aks/ui/components/button';
 import {
   DropdownMenu,
@@ -28,6 +30,8 @@ export function AppHeader({ showSearch = true }: { showSearch?: boolean }) {
   const router = useRouter();
   const [user, setUser] = useState<StoredUser | null>(null);
   const itemCount = useCart((s) => s.itemCount());
+  const tNav = useTranslations('nav');
+  const tHome = useTranslations('home');
 
   useEffect(() => {
     setUser(getStoredUser());
@@ -52,13 +56,15 @@ export function AppHeader({ showSearch = true }: { showSearch?: boolean }) {
             className="ml-auto hidden h-10 max-w-lg flex-1 items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 text-sm text-gray-500 transition hover:border-primary-200 hover:bg-white sm:flex"
           >
             <Search className="h-4 w-4 text-primary" />
-            Search for rice, soap, paracetamol…
+            {tHome('searchPlaceholder')}
           </Link>
         ) : (
           <div className="ml-auto" />
         )}
 
-        <Link href="/cart" aria-label="View cart" className="relative">
+        <LocaleSwitcher className="inline-flex h-9 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-semibold text-gray-700 transition hover:border-primary-200 hover:text-primary" />
+
+        <Link href="/cart" aria-label={tNav('viewCart')} className="relative">
           <Button variant="outline" size="icon">
             <ShoppingCart className="h-5 w-5" />
           </Button>
@@ -76,7 +82,7 @@ export function AppHeader({ showSearch = true }: { showSearch?: boolean }) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                aria-label="Account menu"
+                aria-label={tNav('accountMenu')}
                 className="inline-flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
                 <Avatar className="h-9 w-9 cursor-pointer">
@@ -88,7 +94,7 @@ export function AppHeader({ showSearch = true }: { showSearch?: boolean }) {
               <DropdownMenuLabel>
                 <div className="flex flex-col">
                   <span className="text-sm font-semibold text-gray-900">
-                    {user.name ?? 'Customer'}
+                    {user.name ?? tNav('customer')}
                   </span>
                   <span className="text-xs font-normal text-gray-500">+91 {user.phone}</span>
                 </div>
@@ -97,37 +103,37 @@ export function AppHeader({ showSearch = true }: { showSearch?: boolean }) {
               <DropdownMenuItem asChild>
                 <Link href="/profile" className="flex items-center gap-2">
                   <User className="h-4 w-4" />
-                  Profile
+                  {tNav('profile')}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/orders" className="flex items-center gap-2">
                   <Receipt className="h-4 w-4" />
-                  My orders
+                  {tNav('orders')}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/addresses" className="flex items-center gap-2">
                   <MapPin className="h-4 w-4" />
-                  Saved addresses
+                  {tNav('addresses')}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/cart" className="flex items-center gap-2">
                   <ShoppingCart className="h-4 w-4" />
-                  Your cart
+                  {tNav('cart')}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/change-password" className="flex items-center gap-2">
                   <User className="h-4 w-4" />
-                  Change password
+                  {tNav('changePassword')}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
                 <LogOut className="h-4 w-4" />
-                Log out
+                {tNav('signOut')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -135,7 +141,7 @@ export function AppHeader({ showSearch = true }: { showSearch?: boolean }) {
           <Button asChild variant="default" size="sm">
             <Link href="/login" className="gap-1">
               <LogIn className="h-4 w-4" />
-              Sign in
+              {tNav('signIn')}
             </Link>
           </Button>
         )}

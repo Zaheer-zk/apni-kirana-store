@@ -116,6 +116,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     staleTime: 60_000,
   });
 
+  // Pending-approval guard: if /stores/me reports the store is still under
+  // review, the dashboard is useless (every mutating call returns 403 via
+  // the requireApproved middleware). Bounce to /pending which polls the
+  // same endpoint and auto-routes back here on approval.
+  useEffect(() => {
+    const status = storeQuery.data?.status as string | undefined;
+    if (status === 'PENDING_APPROVAL' && pathname !== '/pending') {
+      router.replace('/pending');
+    }
+  }, [storeQuery.data?.status, pathname, router]);
+
   const store = storeQuery.data ?? getStoredStore() ?? null;
   const isOpen = !!store?.isOpen;
   const storeId = store?.id;

@@ -13,7 +13,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from '@aks/ui/components/input-
 import { toast } from '@aks/ui/components/sonner';
 import { AuthShell } from '@/components/AuthShell';
 import { api } from '@/lib/api';
-import { persistSession } from '@/lib/auth';
+import { clearSession, persistSession } from '@/lib/auth';
 import { registerSchema, type RegisterInput } from '@/lib/auth-schemas';
 
 interface AuthResponse {
@@ -21,6 +21,8 @@ interface AuthResponse {
   accessToken: string;
   refreshToken: string;
   hasAddress?: boolean;
+  pendingApproval?: true;
+  reason?: 'STORE_PENDING' | 'DRIVER_PENDING';
 }
 
 export default function RegisterPage() {
@@ -33,8 +35,30 @@ export default function RegisterPage() {
     register,
     handleSubmit,
     getValues,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<RegisterInput>({ resolver: zodResolver(registerSchema) });
+
+  /**
+   * Maps a backend 409 conflict message back to a specific form field so the
+   * error renders inline (next to the offending input) instead of as a toast.
+   */
+  function attachConflictError(message: string): boolean {
+    const lower = message.toLowerCase();
+    if (lower.includes('username')) {
+      setError('username', { type: 'server', message });
+      return true;
+    }
+    if (lower.includes('email')) {
+      setError('email', { type: 'server', message });
+      return true;
+    }
+    if (lower.includes('mobile number') || lower.includes('phone')) {
+      setError('phone', { type: 'server', message });
+      return true;
+    }
+    return false;
+  }
 
   async function onSubmit(values: RegisterInput) {
     try {
@@ -42,7 +66,8 @@ export default function RegisterPage() {
       setStep('otp');
       toast.success(`OTP sent to +91 ${values.phone}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Registration failed');
+      const message = err instanceof Error ? err.message : 'Registration failed';
+      if (!attachConflictError(message)) toast.error(message);
     }
   }
 
@@ -60,6 +85,13 @@ export default function RegisterPage() {
       );
       const payload = data.data;
       if (!payload?.accessToken) throw new Error('Verification failed');
+      // Customers never go through admin approval. If the flag ever appears
+      // we treat it as a backend mis-configuration and bail.
+      if (payload.pendingApproval) {
+        clearSession();
+        toast.error('This account is not enabled for customer access. Please contact support.');
+        return;
+      }
       persistSession(payload);
       toast.success(`Welcome aboard${payload.user.name ? `, ${payload.user.name.split(' ')[0]}` : ''}!`);
       router.replace('/');
@@ -73,7 +105,7 @@ export default function RegisterPage() {
   async function resendOtp() {
     try {
       const { phone } = getValues();
-      await api.post('/api/v1/auth/send-otp', { phone });
+      await api.post('/api/v1/auth/send-otp', { phone, role: 'CUSTOMER' });
       toast.success('A new OTP has been sent');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not resend OTP');
@@ -173,43 +205,59 @@ export default function RegisterPage() {
           {errors.phone ? <p className="text-xs text-destructive">{errors.phone.message}</p> : null}
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            {...register('email')}
-          />
-          {errors.email ? <p className="text-xs text-destructive">{errors.email.message}</p> : null}
-        </div>
+        {/* ── Optional password-login fields ─────────────────────────────── */}
+        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Optional — set a username/email to skip OTP next time
+          </p>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="username">Username</Label>
-          <Input
-            id="username"
-            autoComplete="username"
-            placeholder="Used to log in"
-            {...register('username')}
-          />
-          {errors.username ? (
-            <p className="text-xs text-destructive">{errors.username.message}</p>
-          ) : null}
-        </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="username">Username</Label>
+            <Input
+              id="username"
+              autoComplete="username"
+              placeholder="e.g. anita_s"
+              {...register('username')}
+            />
+            <p className="text-xs text-gray-500">
+              Used to sign in without an OTP (optional).
+            </p>
+            {errors.username ? (
+              <p className="text-xs text-destructive">{errors.username.message}</p>
+            ) : null}
+          </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            placeholder="At least 8 characters"
-            {...register('password')}
-          />
-          {errors.password ? (
-            <p className="text-xs text-destructive">{errors.password.message}</p>
-          ) : null}
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              {...register('email')}
+            />
+            <p className="text-xs text-gray-500">
+              We’ll use this for password reset and approval notifications.
+            </p>
+            {errors.email ? <p className="text-xs text-destructive">{errors.email.message}</p> : null}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
+              {...register('password')}
+            />
+            <p className="text-xs text-gray-500">
+              Required if you set a username or email.
+            </p>
+            {errors.password ? (
+              <p className="text-xs text-destructive">{errors.password.message}</p>
+            ) : null}
+          </div>
         </div>
 
         <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>

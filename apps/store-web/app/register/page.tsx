@@ -7,7 +7,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   ArrowLeft,
-  CheckCircle2,
   Clock3,
   Loader2,
   MapPin,
@@ -73,7 +72,7 @@ export default function RegisterPage() {
   // We can't read localStorage until the client hydrates — Next 16 + React
   // 19 will still SSR this page, so default to `account` and let an effect
   // promote to `store` if the user is already authenticated.
-  const [step, setStep] = useState<'account' | 'otp' | 'store' | 'pending'>(
+  const [step, setStep] = useState<'account' | 'otp' | 'store'>(
     typeof window !== 'undefined' && isAuthenticated() ? 'store' : 'account',
   );
 
@@ -85,11 +84,13 @@ export default function RegisterPage() {
       )}
       {step === 'store' && (
         <StoreDetailsStep
-          onSubmitted={() => setStep('pending')}
+          // Step 3 success → bounce to /pending. Backend just created the
+          // store with status=PENDING_APPROVAL; the /pending page polls
+          // /stores/me and auto-routes to / the moment admin approves.
+          onSubmitted={() => router.replace('/pending')}
           onLogout={() => router.replace('/login')}
         />
       )}
-      {step === 'pending' && <PendingApprovalCard />}
     </>
   );
 }
@@ -105,8 +106,27 @@ function AccountStep({ onNext }: { onNext: () => void }) {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<RegisterInput>({ resolver: zodResolver(registerSchema) });
+
+  /** Maps a backend 409 conflict to a specific form field for inline display. */
+  function attachConflictError(message: string): boolean {
+    const lower = message.toLowerCase();
+    if (lower.includes('username')) {
+      setError('username', { type: 'server', message });
+      return true;
+    }
+    if (lower.includes('email')) {
+      setError('email', { type: 'server', message });
+      return true;
+    }
+    if (lower.includes('mobile number') || lower.includes('phone')) {
+      setError('phone', { type: 'server', message });
+      return true;
+    }
+    return false;
+  }
 
   async function onSubmit(values: RegisterInput) {
     try {
@@ -115,7 +135,8 @@ function AccountStep({ onNext }: { onNext: () => void }) {
       toast.success(`OTP sent to +91 ${values.phone}`);
       onNext();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Registration failed');
+      const message = err instanceof Error ? err.message : 'Registration failed';
+      if (!attachConflictError(message)) toast.error(message);
     }
   }
 
@@ -158,43 +179,59 @@ function AccountStep({ onNext }: { onNext: () => void }) {
           {errors.phone ? <p className="text-xs text-destructive">{errors.phone.message}</p> : null}
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            {...register('email')}
-          />
-          {errors.email ? <p className="text-xs text-destructive">{errors.email.message}</p> : null}
-        </div>
+        {/* ── Optional password-login fields ───────────────────────── */}
+        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/40 p-4 space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Optional — set a username/email to skip OTP next time
+          </p>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="username">Username</Label>
-          <Input
-            id="username"
-            autoComplete="username"
-            placeholder="Used to log in"
-            {...register('username')}
-          />
-          {errors.username ? (
-            <p className="text-xs text-destructive">{errors.username.message}</p>
-          ) : null}
-        </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="username">Username</Label>
+            <Input
+              id="username"
+              autoComplete="username"
+              placeholder="e.g. sharma_kirana"
+              {...register('username')}
+            />
+            <p className="text-xs text-gray-500">
+              Used to sign in without an OTP (optional).
+            </p>
+            {errors.username ? (
+              <p className="text-xs text-destructive">{errors.username.message}</p>
+            ) : null}
+          </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            placeholder="At least 8 characters"
-            {...register('password')}
-          />
-          {errors.password ? (
-            <p className="text-xs text-destructive">{errors.password.message}</p>
-          ) : null}
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              {...register('email')}
+            />
+            <p className="text-xs text-gray-500">
+              We&apos;ll use this for password reset and approval notifications.
+            </p>
+            {errors.email ? <p className="text-xs text-destructive">{errors.email.message}</p> : null}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
+              {...register('password')}
+            />
+            <p className="text-xs text-gray-500">
+              Required if you set a username or email.
+            </p>
+            {errors.password ? (
+              <p className="text-xs text-destructive">{errors.password.message}</p>
+            ) : null}
+          </div>
         </div>
 
         <Button type="submit" size="lg" className="w-full" loading={isSubmitting}>
@@ -493,31 +530,6 @@ function StoreDetailsStep({
         </div>
       </form>
     </main>
-  );
-}
-
-// ─── Step 4: pending approval ─────────────────────────────────────────────
-
-function PendingApprovalCard() {
-  return (
-    <AuthShell
-      title="Store registered!"
-      subtitle="Your store application is pending admin approval."
-    >
-      <div className="flex flex-col items-center gap-4 py-4 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-100">
-          <CheckCircle2 className="h-7 w-7 text-primary" />
-        </div>
-        <p className="text-sm text-gray-600">
-          You&apos;ll be able to start accepting orders once an admin approves your store. This
-          usually takes 24–48 hours. We&apos;ll notify you on +91 {accountStepCache.phone || 'your phone'}.
-        </p>
-
-        <Button asChild size="lg" className="w-full">
-          <Link href="/">Go to dashboard</Link>
-        </Button>
-      </div>
-    </AuthShell>
   );
 }
 

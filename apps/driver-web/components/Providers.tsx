@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Toaster } from '@aks/ui/components/sonner';
+import { OfferProvider } from './OfferProvider';
 
 /**
  * Client-side providers wrapper for driver-web. Mirrors customer-web —
@@ -49,6 +50,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {children}
+      {/* Global socket listener — opens an offer modal anywhere in the app
+          when the matching engine pushes a delivery offer to this driver. */}
+      <OfferProvider />
       <Toaster
         position="top-center"
         richColors

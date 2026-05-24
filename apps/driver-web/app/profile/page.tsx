@@ -5,14 +5,21 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Banknote,
   Bike,
   Car,
   CheckCircle2,
+  FileText,
+  Info,
   KeyRound,
+  LifeBuoy,
+  Lock,
   LogOut,
+  MapPin,
   Pencil,
   Phone,
   Star,
+  Upload,
 } from 'lucide-react';
 import { Button } from '@aks/ui/components/button';
 import { Card, CardContent } from '@aks/ui/components/card';
@@ -21,6 +28,7 @@ import { Label } from '@aks/ui/components/label';
 import { Avatar, AvatarFallback } from '@aks/ui/components/avatar';
 import { Skeleton } from '@aks/ui/components/skeleton';
 import { Separator } from '@aks/ui/components/separator';
+import { Badge } from '@aks/ui/components/badge';
 import { toast } from '@aks/ui/components/sonner';
 import {
   Dialog,
@@ -35,6 +43,7 @@ import { RequireAuth } from '@/components/RequireAuth';
 import { api } from '@/lib/api';
 import { clearSession, getStoredUser, setStoredUser, type StoredUser } from '@/lib/auth';
 import { rupeesPrecise } from '@/lib/format';
+import { disconnectSocket } from '@/lib/socket';
 
 interface MeResponse {
   id: string;
@@ -60,6 +69,21 @@ interface DriverStatsResponse {
   status?: string;
   rating?: number;
   totalRatings?: number;
+  // Future fields — not in the schema today but reserved here so the UI
+  // automatically lights up once the backend ships them.
+  homeLat?: number | null;
+  homeLng?: number | null;
+  bankName?: string | null;
+  accountHolder?: string | null;
+  accountNumberMasked?: string | null;
+  ifscCode?: string | null;
+  documents?: Array<{
+    id: string;
+    type: 'LICENCE' | 'VEHICLE_RC' | 'INSURANCE' | 'AADHAAR';
+    status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+    rejectionReason?: string | null;
+    uploadedAt?: string;
+  }>;
 }
 
 export default function ProfilePage() {
@@ -114,7 +138,7 @@ function ProfileBody() {
   });
 
   const meEditMutation = useMutation({
-    mutationFn: async (values: { name: string }) => {
+    mutationFn: async (values: { name?: string; email?: string }) => {
       const r = await api.put<{ success: boolean; data: MeResponse }>(
         '/api/v1/users/me',
         values,
@@ -124,7 +148,11 @@ function ProfileBody() {
     onSuccess: (data) => {
       toast.success('Profile updated');
       if (user && data) {
-        const next: StoredUser = { ...user, name: data.name ?? user.name };
+        const next: StoredUser = {
+          ...user,
+          name: data.name ?? user.name,
+          email: data.email ?? user.email,
+        };
         setStoredUser(next);
         setUser(next);
       }
@@ -135,6 +163,7 @@ function ProfileBody() {
   });
 
   function handleLogout() {
+    disconnectSocket();
     clearSession();
     router.replace('/login');
   }
@@ -187,6 +216,9 @@ function ProfileBody() {
             <Phone className="h-3.5 w-3.5" />
             +91 {me?.phone ?? user?.phone}
           </p>
+          {me?.email ? (
+            <p className="text-xs text-gray-500">{me.email}</p>
+          ) : null}
 
           {rating > 0 ? (
             <div className="flex items-center justify-center gap-1 text-sm text-gray-700">
@@ -194,7 +226,9 @@ function ProfileBody() {
                 <Star
                   key={i}
                   className={
-                    i < Math.round(rating) ? 'h-4 w-4 fill-warning text-warning' : 'h-4 w-4 text-gray-300'
+                    i < Math.round(rating)
+                      ? 'h-4 w-4 fill-warning text-warning'
+                      : 'h-4 w-4 text-gray-300'
                   }
                 />
               ))}
@@ -227,29 +261,165 @@ function ProfileBody() {
         </CardContent>
       </Card>
 
-      {/* Vehicle info */}
+      {/* Vehicle info — read-only, admin-managed */}
       <section>
         <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
           Vehicle information
         </h3>
         <Card>
           <CardContent className="divide-y divide-gray-100 p-0">
-            <InfoRow label="Vehicle type" icon={vehicleType === 'CAR' ? <Car className="h-4 w-4" /> : <Bike className="h-4 w-4" />}>
+            <InfoRow
+              label="Vehicle type"
+              icon={
+                vehicleType === 'CAR' ? <Car className="h-4 w-4" /> : <Bike className="h-4 w-4" />
+              }
+            >
               {humanVehicle(vehicleType)}
             </InfoRow>
             <InfoRow label="Vehicle number">{vehicleNumber}</InfoRow>
             <InfoRow label="Licence number">{licenseNumber}</InfoRow>
           </CardContent>
         </Card>
-        <p className="mt-2 text-xs text-gray-500">
-          Vehicle details can only be updated by the admin team. Contact support if anything
-          here is wrong.
-        </p>
+        <LockedNote text="Vehicle details can only be updated by the admin team. Contact support if anything here is wrong." />
+      </section>
+
+      {/* Documents — stub today, lights up automatically when backend ships
+          the documents projection on `/drivers/stats/today` */}
+      <section>
+        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
+          Documents
+        </h3>
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            {(driver?.documents ?? []).length === 0 ? (
+              <p className="flex items-start gap-2 text-xs text-gray-500">
+                <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
+                Your verified documents (licence, vehicle RC, etc.) will appear here once
+                the document module is available. For now please reach out to support to
+                upload or replace any document.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {driver!.documents!.map((doc) => (
+                  <li
+                    key={doc.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2 text-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <FileText className="h-4 w-4 text-gray-500" />
+                      <div>
+                        <p className="font-semibold text-gray-900">
+                          {humanDocType(doc.type)}
+                        </p>
+                        {doc.status === 'REJECTED' && doc.rejectionReason ? (
+                          <p className="text-xs text-red-600">{doc.rejectionReason}</p>
+                        ) : doc.uploadedAt ? (
+                          <p className="text-xs text-gray-500">
+                            Uploaded {new Date(doc.uploadedAt).toLocaleDateString('en-IN')}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={
+                          doc.status === 'APPROVED'
+                            ? 'success'
+                            : doc.status === 'REJECTED'
+                              ? 'destructive'
+                              : 'warning'
+                        }
+                      >
+                        {doc.status.replace('_', ' ')}
+                      </Badge>
+                      {doc.status === 'REJECTED' ? (
+                        <Button size="sm" variant="outline" disabled>
+                          <Upload className="h-4 w-4" /> Re-upload
+                        </Button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Bank details for payouts */}
+      <section>
+        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
+          Bank details for payouts
+        </h3>
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            {driver?.accountNumberMasked ? (
+              <div className="divide-y divide-gray-100">
+                <InfoRow
+                  label="Account holder"
+                  icon={<Banknote className="h-4 w-4 text-gray-500" />}
+                >
+                  {driver?.accountHolder ?? '—'}
+                </InfoRow>
+                <InfoRow label="Bank">{driver?.bankName ?? '—'}</InfoRow>
+                <InfoRow label="Account">{driver?.accountNumberMasked}</InfoRow>
+                <InfoRow label="IFSC">{driver?.ifscCode ?? '—'}</InfoRow>
+              </div>
+            ) : (
+              <p className="flex items-start gap-2 text-xs text-gray-500">
+                <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
+                No bank account on file. Payouts cannot be processed until you add a
+                bank account. Please contact support to register one — the in-app bank
+                form is not yet available.
+              </p>
+            )}
+            <Button variant="outline" size="sm" disabled>
+              <Pencil className="h-4 w-4" /> Edit bank details
+            </Button>
+            <p className="text-[11px] italic text-gray-500">
+              In-app editing will be enabled once the backend ships the bank-details
+              endpoint.
+            </p>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Service area / home base */}
+      <section>
+        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
+          Service area
+        </h3>
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-start gap-3">
+              <MapPin className="mt-0.5 h-5 w-5 text-gray-500" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-gray-900">
+                  {typeof driver?.homeLat === 'number' && typeof driver?.homeLng === 'number'
+                    ? `${driver.homeLat.toFixed(4)}, ${driver.homeLng.toFixed(4)}`
+                    : 'Home base not set'}
+                </p>
+                <p className="text-xs text-gray-500">
+                  The matching engine uses your home base to score nearby orders. Update
+                  it from the driver mobile app — the web app does not capture
+                  background location.
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <a href="https://expo.dev/" target="_blank" rel="noreferrer">
+                <LifeBuoy className="h-4 w-4" /> How to install the mobile app
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
       </section>
 
       {/* Account */}
       <section>
-        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Account</h3>
+        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
+          Account
+        </h3>
         <Card>
           <CardContent className="divide-y divide-gray-100 p-0">
             <InfoRow label="Role">
@@ -277,14 +447,23 @@ function ProfileBody() {
         open={editOpen}
         onOpenChange={setEditOpen}
         defaultName={me?.name ?? user?.name ?? ''}
-        onSubmit={(name) => meEditMutation.mutate({ name })}
+        defaultEmail={me?.email ?? user?.email ?? ''}
+        onSubmit={(name, email) => meEditMutation.mutate({ name, email })}
         submitting={meEditMutation.isPending}
       />
     </div>
   );
 }
 
-function SummaryStat({ label, value, loading }: { label: string; value: string; loading: boolean }) {
+function SummaryStat({
+  label,
+  value,
+  loading,
+}: {
+  label: string;
+  value: string;
+  loading: boolean;
+}) {
   return (
     <div>
       {loading ? (
@@ -319,21 +498,36 @@ function InfoRow({
   );
 }
 
+function LockedNote({ text }: { text: string }) {
+  return (
+    <p className="mt-2 flex items-start gap-1 text-xs text-gray-500">
+      <Lock className="mt-0.5 h-3 w-3 flex-shrink-0" />
+      {text}
+    </p>
+  );
+}
+
 function EditDialog({
   open,
   onOpenChange,
   defaultName,
+  defaultEmail,
   onSubmit,
   submitting,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultName: string;
-  onSubmit: (name: string) => void;
+  defaultEmail: string;
+  onSubmit: (name: string, email: string | undefined) => void;
   submitting: boolean;
 }) {
   const [name, setName] = useState(defaultName);
-  useEffect(() => setName(defaultName), [defaultName, open]);
+  const [email, setEmail] = useState(defaultEmail);
+  useEffect(() => {
+    setName(defaultName);
+    setEmail(defaultEmail);
+  }, [defaultName, defaultEmail, open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -341,25 +535,41 @@ function EditDialog({
         <DialogHeader>
           <DialogTitle>Edit profile</DialogTitle>
           <DialogDescription>
-            You can update your display name. Vehicle and contact details are managed by the
-            admin team.
+            You can update your display name and email. Vehicle, bank and document
+            details are admin-managed.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-1.5">
-          <Label htmlFor="edit-name">Full name</Label>
-          <Input
-            id="edit-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Chotu Singh"
-            autoFocus
-          />
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-name">Full name</Label>
+            <Input
+              id="edit-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Chotu Singh"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-email">Email (for password reset)</Label>
+            <Input
+              id="edit-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={() => onSubmit(name.trim())} loading={submitting} disabled={name.trim().length < 2}>
+          <Button
+            onClick={() => onSubmit(name.trim(), email.trim() || undefined)}
+            loading={submitting}
+            disabled={name.trim().length < 2}
+          >
             Save changes
           </Button>
         </DialogFooter>
@@ -380,4 +590,12 @@ function humanVehicle(v: string): string {
   if (v === 'SCOOTER') return 'Scooter';
   if (v === 'CAR') return 'Car';
   return v;
+}
+
+function humanDocType(t: string): string {
+  if (t === 'LICENCE') return 'Driving licence';
+  if (t === 'VEHICLE_RC') return 'Vehicle RC';
+  if (t === 'INSURANCE') return 'Insurance';
+  if (t === 'AADHAAR') return 'Aadhaar';
+  return t;
 }

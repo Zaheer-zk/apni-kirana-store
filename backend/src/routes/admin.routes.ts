@@ -895,9 +895,15 @@ router.get('/orders/:id/eligible-stores', async (req: Request, res: Response) =>
     const totalItems = new Set(orderCatalogIds).size;
     if (totalItems === 0) return sendSuccess(res, []);
 
+    // Filter candidates by order type: customer orders must never be rescued
+    // to a wholesaler, and restock orders must only consider wholesalers.
+    // Without this an admin reassigning a stuck customer order could send it
+    // to a B2B-only wholesaler (mirrors the matching.service.ts invariant).
+    const isRestock = order.orderType === 'RESTOCK';
     const stores = await prisma.store.findMany({
       where: {
         status: 'ACTIVE',
+        isWholesaler: isRestock,
         items: {
           some: {
             catalogItemId: { in: orderCatalogIds },
@@ -1068,6 +1074,20 @@ router.put('/orders/:id/assign-store', async (req: Request, res: Response) => {
     if (order.status === 'DELIVERED') {
       return sendError(res, 'Cannot reassign a delivered order', 400);
     }
+    // Enforce the customer-vs-wholesaler boundary on manual reassignment:
+    // a CUSTOMER order must never land on a wholesaler (B2B-only), and a
+    // RESTOCK order must only land on a wholesaler. Without this an admin
+    // could route a customer order to a wholesaler via this endpoint, which
+    // bypasses the same invariant the matching engine enforces.
+    if (order.orderType === 'RESTOCK' && !store.isWholesaler) {
+      return sendError(res, 'Restock orders can only be assigned to a wholesaler', 400);
+    }
+    if (order.orderType !== 'RESTOCK' && store.isWholesaler) {
+      return sendError(res, 'Customer orders cannot be assigned to a wholesaler', 400);
+    }
+    if (store.status !== 'ACTIVE') {
+      return sendError(res, 'Assigned store must be ACTIVE', 400);
+    }
     // CANCELLED orders are intentionally still rescuable: admin can assign a
     // store to un-cancel and resume the order. cancelReason is cleared so the
     // customer / store don't see the stale reason once it's live again.
@@ -1085,16 +1105,19 @@ router.put('/orders/:id/assign-store', async (req: Request, res: Response) => {
 
     await broadcastOrderStatus(orderId, 'STORE_ACCEPTED', { byAdmin: true });
 
-    // Notify store owner via templated push (honors prefs)
+    // Notify store owner via templated push (honors prefs). The previous
+    // implementation referenced `totalAmount` / `items.quantity`, neither of
+    // which exist on the schema (Order has `total`, OrderItem has `qty`) —
+    // that 500'd the whole response even though the reassignment succeeded.
     const orderForCount = await prisma.order.findUnique({
       where: { id: orderId },
-      select: { totalAmount: true, items: { select: { quantity: true } } },
+      select: { total: true, items: { select: { qty: true } } },
     });
-    const itemCount = orderForCount?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
+    const itemCount = orderForCount?.items.reduce((sum, i) => sum + i.qty, 0) ?? 0;
     await notify('STORE_NEW_ORDER', store.ownerId, {
       orderShort: orderId.slice(-6),
       itemCount,
-      total: orderForCount?.totalAmount ?? 0,
+      total: orderForCount?.total ?? 0,
       orderId,
     });
     await prisma.auditLog.create({
@@ -1380,6 +1403,23 @@ router.put('/orders/:id/refund', async (req: Request, res: Response) => {
 
 // ─── Zones (delivery configuration) ───────────────────────────────────────────
 
+// Whitelist the fields admins may set on Zone. Without this, POST/PUT used
+// `data: req.body` directly — a stray key (e.g. an internal field added to
+// the schema later) would silently persist or crash, and an attacker who got
+// hold of an admin token could write arbitrary columns.
+const zoneCreateSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  city: z.string().trim().min(1).max(100),
+  centerLat: z.number().min(-90).max(90),
+  centerLng: z.number().min(-180).max(180),
+  radiusKm: z.number().positive().max(100).optional(),
+  baseDeliveryFee: z.number().min(0).max(10000).optional(),
+  perKmFee: z.number().min(0).max(1000).optional(),
+  commissionRate: z.number().min(0).max(1).optional(),
+  isActive: z.boolean().optional(),
+});
+const zoneUpdateSchema = zoneCreateSchema.partial();
+
 router.get('/zones', async (req: Request, res: Response) => {
   try {
     const zones = await prisma.zone.findMany({ orderBy: { createdAt: 'desc' } });
@@ -1390,7 +1430,7 @@ router.get('/zones', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/zones', async (req: Request, res: Response) => {
+router.post('/zones', validate(zoneCreateSchema), async (req: Request, res: Response) => {
   try {
     const created = await prisma.zone.create({ data: req.body });
     await prisma.auditLog.create({
@@ -1411,7 +1451,7 @@ router.post('/zones', async (req: Request, res: Response) => {
   }
 });
 
-router.put('/zones/:id', async (req: Request, res: Response) => {
+router.put('/zones/:id', validate(zoneUpdateSchema), async (req: Request, res: Response) => {
   try {
     const before = await prisma.zone.findUnique({ where: { id: req.params['id'] } });
     if (!before) return sendError(res, 'Zone not found', 404);

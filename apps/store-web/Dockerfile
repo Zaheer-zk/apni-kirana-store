@@ -13,7 +13,12 @@ COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
 COPY packages/ui/package.json ./packages/ui/
 COPY apps/store-web/package.json ./apps/store-web/
-RUN npm install --legacy-peer-deps
+# --no-audit / --no-fund: also serves to bust BuildKit's stale layer cache
+# from earlier failed attempts that produced an incomplete node_modules.
+# See apps/customer-web/Dockerfile for context.
+RUN npm install --legacy-peer-deps --no-audit --no-fund && \
+    test -f /app/node_modules/react/package.json && \
+    test -f /app/node_modules/react-dom/package.json
 
 # Stage 2: Local development (hot reload via volume mount)
 FROM deps AS dev

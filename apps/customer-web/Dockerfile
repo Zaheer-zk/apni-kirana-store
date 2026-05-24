@@ -20,7 +20,14 @@ COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
 COPY packages/ui/package.json ./packages/ui/
 COPY apps/customer-web/package.json ./apps/customer-web/
-RUN npm install --legacy-peer-deps
+# --no-audit / --no-fund: also serves to bust BuildKit's stale layer cache
+# from earlier failed attempts that produced an incomplete node_modules.
+# The sanity check fails loud if react ever doesn't get hoisted — we hit
+# that twice on the server and want a clear error, not a downstream
+# "Cannot find module 'react'" from next build.
+RUN npm install --legacy-peer-deps --no-audit --no-fund && \
+    test -f /app/node_modules/react/package.json && \
+    test -f /app/node_modules/react-dom/package.json
 
 # Stage 2: Local development (hot reload via volume mount)
 FROM deps AS dev

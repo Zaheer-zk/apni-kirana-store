@@ -327,6 +327,282 @@ describe('POST /api/v1/auth/login', () => {
   });
 });
 
+describe('POST /api/v1/auth/login-password', () => {
+  async function makeUser(overrides: Record<string, unknown> = {}) {
+    return createUser({
+      phone: '9700000001',
+      username: 'unifieduser',
+      email: 'unified@example.com',
+      passwordHash: await bcrypt.hash('secret123', 10),
+      role: 'CUSTOMER',
+      roles: ['CUSTOMER'],
+      phoneVerified: true,
+      ...overrides,
+    });
+  }
+
+  it('logs in by username + correct password + role', async () => {
+    await makeUser();
+    const res = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: 'unifieduser', password: 'secret123', role: 'CUSTOMER' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.accessToken).toBeDefined();
+    expect(res.body.data.refreshToken).toBeDefined();
+    expect(res.body.data.user.username).toBe('unifieduser');
+    expect(res.body.data.user.passwordHash).toBeUndefined();
+  });
+
+  it('logs in by email + correct password + role', async () => {
+    await makeUser();
+    const res = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: 'unified@example.com', password: 'secret123', role: 'CUSTOMER' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.user.email).toBe('unified@example.com');
+  });
+
+  it('returns 401 for a wrong password', async () => {
+    await makeUser();
+    const res = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: 'unifieduser', password: 'wrongpass', role: 'CUSTOMER' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 401 when the requested role doesn\'t exist for that identifier', async () => {
+    // makeUser() seeds a CUSTOMER; asking for STORE_OWNER should look like
+    // 'no such account' — not leak that another role exists.
+    await makeUser();
+    const res = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: 'unifieduser', password: 'secret123', role: 'STORE_OWNER' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 when role is missing', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: 'unifieduser', password: 'secret123' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 401 with a helpful hint when the account has no password set', async () => {
+    // Phone+OTP-only signup — no passwordHash on record yet.
+    await createUser({
+      phone: '9700000002',
+      username: 'nopwduser',
+      passwordHash: undefined,
+      role: 'CUSTOMER',
+      roles: ['CUSTOMER'],
+      phoneVerified: true,
+    });
+    const res = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: 'nopwduser', password: 'anypassword', role: 'CUSTOMER' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toMatch(/password is not set|OTP/i);
+  });
+
+  it('multi-role: same email under CUSTOMER + STORE_OWNER returns the right row per role', async () => {
+    // Both rows share an email — that's the whole point of per-role uniqueness.
+    const sharedEmail = 'multi@example.com';
+    const customer = await createUser({
+      phone: '9700001111',
+      email: sharedEmail,
+      username: 'multicus',
+      passwordHash: await bcrypt.hash('cuspass1', 10),
+      role: 'CUSTOMER',
+      roles: ['CUSTOMER'],
+      phoneVerified: true,
+    });
+    const owner = await createUser({
+      phone: '9700002222',
+      email: sharedEmail,
+      username: 'multiowner',
+      passwordHash: await bcrypt.hash('ownpass1', 10),
+      role: 'STORE_OWNER',
+      roles: ['STORE_OWNER'],
+      phoneVerified: true,
+    });
+
+    const cusRes = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: sharedEmail, password: 'cuspass1', role: 'CUSTOMER' });
+    expect(cusRes.status).toBe(200);
+    expect(cusRes.body.data.user.id).toBe(customer.id);
+    expect(cusRes.body.data.user.role).toBe('CUSTOMER');
+
+    const ownerRes = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: sharedEmail, password: 'ownpass1', role: 'STORE_OWNER' });
+    expect(ownerRes.status).toBe(200);
+    expect(ownerRes.body.data.user.id).toBe(owner.id);
+    expect(ownerRes.body.data.user.role).toBe('STORE_OWNER');
+
+    // Wrong password against the OTHER role on the same email — 401.
+    const xRes = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: sharedEmail, password: 'cuspass1', role: 'STORE_OWNER' });
+    expect(xRes.status).toBe(401);
+  });
+
+  it('returns pendingApproval=true with reason=STORE_PENDING for a pending store owner', async () => {
+    const owner = await createUser({
+      phone: '9700003333',
+      username: 'pendingowner',
+      passwordHash: await bcrypt.hash('secret123', 10),
+      role: 'STORE_OWNER',
+      roles: ['STORE_OWNER'],
+      phoneVerified: true,
+    });
+    // Pending store linked to this owner.
+    await prisma.store.create({
+      data: {
+        ownerId: owner.id,
+        name: 'Pending Mart',
+        category: 'GROCERY',
+        lat: 28.6,
+        lng: 77.2,
+        street: '1 St',
+        city: 'Delhi',
+        state: 'DL',
+        pincode: '110001',
+        openTime: '09:00',
+        closeTime: '21:00',
+        status: 'PENDING_APPROVAL',
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: 'pendingowner', password: 'secret123', role: 'STORE_OWNER' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.accessToken).toBeDefined();
+    expect(res.body.data.pendingApproval).toBe(true);
+    expect(res.body.data.reason).toBe('STORE_PENDING');
+  });
+
+  it('returns pendingApproval=true with reason=DRIVER_PENDING for a pending driver', async () => {
+    const driverUser = await createUser({
+      phone: '9700004444',
+      username: 'pendingdriver',
+      passwordHash: await bcrypt.hash('secret123', 10),
+      role: 'DRIVER',
+      roles: ['DRIVER'],
+      phoneVerified: true,
+    });
+    await prisma.driver.create({
+      data: {
+        userId: driverUser.id,
+        vehicleType: 'BIKE',
+        vehicleNumber: 'DL01AA0001',
+        licenseNumber: 'LIC-1',
+        status: 'PENDING_APPROVAL',
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: 'pendingdriver', password: 'secret123', role: 'DRIVER' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.pendingApproval).toBe(true);
+    expect(res.body.data.reason).toBe('DRIVER_PENDING');
+  });
+
+  it('omits pendingApproval once the store is ACTIVE', async () => {
+    const owner = await createUser({
+      phone: '9700005555',
+      username: 'activeowner',
+      passwordHash: await bcrypt.hash('secret123', 10),
+      role: 'STORE_OWNER',
+      roles: ['STORE_OWNER'],
+      phoneVerified: true,
+    });
+    await prisma.store.create({
+      data: {
+        ownerId: owner.id,
+        name: 'Active Mart',
+        category: 'GROCERY',
+        lat: 28.6,
+        lng: 77.2,
+        street: '2 St',
+        city: 'Delhi',
+        state: 'DL',
+        pincode: '110001',
+        openTime: '09:00',
+        closeTime: '21:00',
+        status: 'ACTIVE',
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/v1/auth/login-password')
+      .send({ identifier: 'activeowner', password: 'secret123', role: 'STORE_OWNER' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.pendingApproval).toBeUndefined();
+  });
+});
+
+describe('POST /api/v1/auth/register — optional fields', () => {
+  it('accepts a phone-only registration (no email / username / password)', async () => {
+    const res = await request(app).post('/api/v1/auth/register').send({
+      name: 'Phone Only',
+      phone: '9711111111',
+      role: 'CUSTOMER',
+    });
+
+    expect(res.status).toBe(201);
+    const user = await prisma.user.findFirst({ where: { phone: '9711111111' } });
+    expect(user).not.toBeNull();
+    expect(user!.email).toBeNull();
+    expect(user!.username).toBeNull();
+    expect(user!.passwordHash).toBeNull();
+  });
+
+  it('allows the same email across two different roles', async () => {
+    const email = 'cross.role@example.com';
+
+    const a = await request(app).post('/api/v1/auth/register').send({
+      name: 'A',
+      phone: '9722222222',
+      email,
+      role: 'CUSTOMER',
+    });
+    expect(a.status).toBe(201);
+
+    const b = await request(app).post('/api/v1/auth/register').send({
+      name: 'B',
+      phone: '9733333333',
+      email,
+      role: 'STORE_OWNER',
+    });
+    expect(b.status).toBe(201);
+
+    const rows = await prisma.user.findMany({ where: { email } });
+    expect(rows.length).toBe(2);
+    expect(rows.map((r) => r.role).sort()).toEqual(['CUSTOMER', 'STORE_OWNER']);
+  });
+
+  it('blocks the same email being reused on the SAME role', async () => {
+    const email = 'same.role@example.com';
+    await createUser({ phone: '9744444444', email, role: 'CUSTOMER' });
+
+    const res = await request(app).post('/api/v1/auth/register').send({
+      name: 'Dup',
+      phone: '9755555555',
+      email,
+      role: 'CUSTOMER',
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/email/i);
+  });
+});
+
 describe('POST /api/v1/auth/change-password', () => {
   it('changes the password, clears mustChangePassword, and revokes sessions', async () => {
     const passwordHash = await bcrypt.hash('oldpass123', 10);

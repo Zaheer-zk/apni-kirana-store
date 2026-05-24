@@ -43,7 +43,7 @@ export default function CartPage() {
     <>
       <AppHeader showSearch={false} />
       <main className="page-shell py-6">
-        <header className="mb-6 flex items-end justify-between gap-3">
+        <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Your cart</h1>
             <p className="mt-1 text-sm text-gray-500">

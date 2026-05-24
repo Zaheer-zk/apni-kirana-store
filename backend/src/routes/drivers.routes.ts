@@ -8,6 +8,7 @@ import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { assignDriverForOrder } from '../services/driver.service';
 import { sendNotification } from '../services/notification.service';
+import { generateInvoiceForOrder } from '../services/invoice.service';
 import { broadcastOrderStatus } from '../services/order-events.service';
 import { sendNewDriverAwaitingApprovalEmail } from '../services/email.service';
 import { sendWebPushToUser } from '../services/web-push.service';
@@ -441,6 +442,14 @@ router.put(
         'Your order has been delivered. Enjoy!',
         { orderId: order.id },
       );
+
+      // Generate the GST invoice in the background — don't block the
+      // delivery-confirm response on PDF I/O. The customer can download
+      // it from the order detail page; if generation fails it'll retry
+      // on the first download attempt.
+      generateInvoiceForOrder(order.id).catch((err) => {
+        console.warn('[Drivers] invoice generation failed for', order.id, err);
+      });
 
       return sendSuccess(res, updated, 'Delivery confirmed');
     } catch (err) {

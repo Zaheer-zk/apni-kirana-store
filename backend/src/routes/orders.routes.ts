@@ -12,6 +12,7 @@ import { broadcastOrderStatus } from '../services/order-events.service';
 import { getSettings } from '../services/settings.service';
 import { haversineDistance } from '../utils/geo';
 import { creditWallet } from '../services/wallet.service';
+import { generateInvoiceForOrder, resolveInvoiceAbsolutePath } from '../services/invoice.service';
 
 const router = Router();
 
@@ -952,5 +953,66 @@ router.post(
     }
   },
 );
+
+// ─── GET /:id/invoice — download the GST invoice PDF ────────────────────────
+// Auth: order's customer, the assigned driver, the store owner (intra-store),
+// or any ADMIN. Streams the PDF; lazy-generates on first call if it wasn't
+// yet (so the customer never sees a 404 just because the post-delivery
+// background job hasn't run yet).
+
+router.get('/:id/invoice', authenticate, async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params['id']!;
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { store: { select: { ownerId: true } }, driver: { select: { userId: true } } },
+    });
+    if (!order) return sendError(res, 'Order not found', 404);
+
+    const me = req.user!;
+    const allowed =
+      me.role === 'ADMIN' ||
+      me.id === order.customerId ||
+      me.id === order.store.ownerId ||
+      (order.driver && me.id === order.driver.userId);
+    if (!allowed) return sendError(res, 'Forbidden', 403);
+
+    if (order.status !== 'DELIVERED') {
+      return sendError(res, 'Invoice is generated after delivery', 400);
+    }
+
+    // Lazy-generate (also covers the case where the post-delivery background
+    // task failed silently — first download attempt retries it).
+    let invoicePath = order.invoicePath;
+    if (!invoicePath) {
+      const result = await generateInvoiceForOrder(orderId);
+      if (!result) return sendError(res, 'Failed to generate invoice', 500);
+      invoicePath = result.invoicePath;
+    }
+
+    const absPath = resolveInvoiceAbsolutePath(invoicePath);
+    if (!absPath) {
+      // File was deleted off the volume — regenerate.
+      const result = await generateInvoiceForOrder(orderId);
+      if (!result) return sendError(res, 'Failed to generate invoice', 500);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="${(order.invoiceNumber ?? 'invoice').replace(/[^a-zA-Z0-9-]/g, '_')}.pdf"`,
+      );
+      return res.sendFile(result.absolutePath);
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${(order.invoiceNumber ?? 'invoice').replace(/[^a-zA-Z0-9-]/g, '_')}.pdf"`,
+    );
+    return res.sendFile(absPath);
+  } catch (err) {
+    console.error('[Orders] invoice download error:', err);
+    return sendError(res, 'Failed to fetch invoice', 500);
+  }
+});
 
 export default router;

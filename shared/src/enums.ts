@@ -42,6 +42,7 @@ export enum ItemCategory {
   HOUSEHOLD = 'HOUSEHOLD',
   SNACKS = 'SNACKS',
   BEVERAGES = 'BEVERAGES',
+  ELECTRONICS = 'ELECTRONICS',
   OTHER = 'OTHER',
 }
 

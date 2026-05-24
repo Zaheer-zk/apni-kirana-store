@@ -55,6 +55,7 @@ const CATEGORY_OPTIONS: { value: ItemCategory | ''; label: string }[] = [
   { value: ItemCategory.HOUSEHOLD, label: 'Household' },
   { value: ItemCategory.SNACKS, label: 'Snacks' },
   { value: ItemCategory.BEVERAGES, label: 'Beverages' },
+  { value: ItemCategory.ELECTRONICS, label: 'Electronics' },
   { value: ItemCategory.OTHER, label: 'Other' },
 ];
 
@@ -66,6 +67,7 @@ const CATEGORY_EMOJI: Record<ItemCategory, string> = {
   [ItemCategory.HOUSEHOLD]: '🧴',
   [ItemCategory.SNACKS]: '🍪',
   [ItemCategory.BEVERAGES]: '🥤',
+  [ItemCategory.ELECTRONICS]: '🔌',
   [ItemCategory.OTHER]: '📦',
 };
 
@@ -75,6 +77,7 @@ const CATEGORY_BADGE_CLASSES: Record<ItemCategory, string> = {
   [ItemCategory.HOUSEHOLD]: 'bg-blue-50 text-blue-700 border-blue-200',
   [ItemCategory.SNACKS]: 'bg-amber-50 text-amber-700 border-amber-200',
   [ItemCategory.BEVERAGES]: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+  [ItemCategory.ELECTRONICS]: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   [ItemCategory.OTHER]: 'bg-gray-100 text-gray-600 border-gray-200',
 };
 

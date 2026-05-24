@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { setToken, setSuperAdmin } from '@/lib/auth';
+import { setToken, setSuperAdmin, setAdminInfo } from '@/lib/auth';
 import type { ApiResponse } from '@aks/shared';
 
 interface AdminLoginResponse {
@@ -44,6 +44,18 @@ export default function LoginPage() {
       if (data.success && data.data?.accessToken) {
         setToken(data.data.accessToken);
         setSuperAdmin(!!data.data.user?.isSuperAdmin);
+        // Cache identity for the top-right profile dropdown.
+        const u = data.data.user as
+          | { id?: string; name?: string; username?: string; email?: string }
+          | undefined;
+        if (u) {
+          setAdminInfo({
+            id: u.id,
+            name: u.name,
+            username: u.username ?? username.trim(),
+            email: u.email,
+          });
+        }
         // Admin-created accounts must replace their temporary password first.
         router.replace(data.data.user?.mustChangePassword ? '/change-password' : '/');
       } else {

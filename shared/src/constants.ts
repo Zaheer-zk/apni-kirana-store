@@ -37,5 +37,6 @@ export const ItemCategoryLabels: Record<ItemCategory, string> = {
   [ItemCategory.HOUSEHOLD]: 'Household',
   [ItemCategory.SNACKS]: 'Snacks',
   [ItemCategory.BEVERAGES]: 'Beverages',
+  [ItemCategory.ELECTRONICS]: 'Electronics',
   [ItemCategory.OTHER]: 'Other',
 };

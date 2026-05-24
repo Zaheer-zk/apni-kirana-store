@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar';
 import NotificationBell from '@/components/NotificationBell';
 import EnableNotificationsBanner from '@/components/EnableNotificationsBanner';
 import NavProgressBar from '@/components/NavProgressBar';
+import AdminProfileMenu from '@/components/AdminProfileMenu';
 
 export default function DashboardLayout({
   children,
@@ -40,12 +41,16 @@ export default function DashboardLayout({
             </div>
             <p className="text-sm font-semibold text-gray-900">Apni Kirana Admin</p>
           </div>
-          <NotificationBell />
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            <AdminProfileMenu />
+          </div>
         </header>
 
-        {/* Desktop top bar — visible only at lg+ to host the bell on the right. */}
-        <header className="sticky top-0 z-20 hidden h-14 items-center justify-end border-b border-gray-200 bg-white px-6 lg:flex">
+        {/* Desktop top bar — visible only at lg+ to host the bell + profile on the right. */}
+        <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-3 border-b border-gray-200 bg-white px-6 lg:flex">
           <NotificationBell />
+          <AdminProfileMenu />
         </header>
 
         <EnableNotificationsBanner />

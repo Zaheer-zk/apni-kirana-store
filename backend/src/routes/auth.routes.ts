@@ -44,17 +44,24 @@ const verifyOtpSchema = z.object({
   role: z.enum(APP_ROLES).optional(),
 });
 
+// Username rule: 3-30 chars, alphanumerics + `_` `-` `.`. Kept here so
+// /register and /login-password validate identically.
+const usernameRule = z
+  .string()
+  .trim()
+  .min(3, 'Username must be at least 3 characters')
+  .max(30, 'Username must be at most 30 characters')
+  .regex(/^[a-zA-Z0-9_.\-]+$/, 'Username may only contain letters, numbers, "_", "-" and "."');
+
 const registerSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(100),
   phone: phoneRule,
-  email: z.string().trim().toLowerCase().email('Enter a valid email address'),
-  username: z
-    .string()
-    .trim()
-    .min(3, 'Username must be at least 3 characters')
-    .max(30, 'Username must be at most 30 characters')
-    .regex(/^[a-zA-Z0-9_.]+$/, 'Username may only contain letters, numbers, "_" and "."'),
-  password: passwordRule,
+  // Email, username and password are OPTIONAL on registration. A user who
+  // signs up with phone alone can still log in via the OTP flow. They can
+  // add an email + password later from the profile screen (separate flow).
+  email: z.string().trim().toLowerCase().email('Enter a valid email address').optional(),
+  username: usernameRule.optional(),
+  password: passwordRule.optional(),
   role: z.enum(APP_ROLES),
 });
 
@@ -63,6 +70,15 @@ const loginSchema = z.object({
   identifier: z.string().trim().min(1, 'Enter your username or mobile number'),
   password: z.string().min(1, 'Password is required'),
   role: z.enum(APP_ROLES).optional(),
+});
+
+// Body for the unified /login-password endpoint. Identifier may be a username
+// or an email. Role is required because (identifier, role) is the new unique
+// key — without it, the same value could resolve to multiple accounts.
+const loginPasswordSchema = z.object({
+  identifier: z.string().trim().min(1, 'Enter your username or email'),
+  password: z.string().min(1, 'Password is required'),
+  role: z.enum(['CUSTOMER', 'STORE_OWNER', 'DRIVER', 'ADMIN']),
 });
 
 const changePasswordSchema = z.object({
@@ -93,12 +109,44 @@ const adminLoginSchema = z.object({
 const roleLabel = (r: UserRole): string => r.replace('_', ' ').toLowerCase();
 
 /** Issues an access + refresh token pair and persists the refresh token. */
-async function issueSession(user: { id: string; phone: string }, activeRole: UserRole) {
-  const accessToken = signAccessToken({ id: user.id, role: activeRole, phone: user.phone });
+async function issueSession(user: { id: string; phone: string | null }, activeRole: UserRole) {
+  const accessToken = signAccessToken({ id: user.id, role: activeRole, phone: user.phone ?? '' });
   const refreshToken = signRefreshToken({ id: user.id, role: activeRole });
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
   await prisma.refreshToken.create({ data: { token: refreshToken, userId: user.id, expiresAt } });
   return { accessToken, refreshToken };
+}
+
+/**
+ * Tells the login response whether the resolved (userId, role) is still
+ * waiting for admin approval. Mirrors the existing DRIVER pattern (status =
+ * PENDING_APPROVAL means "logged in, but can't act yet"). The token still
+ * works for /auth/me + the role's profile endpoint; everything else returns
+ * 403 via the requirePending middleware.
+ */
+async function getApprovalGate(
+  userId: string,
+  role: UserRole,
+): Promise<{ pendingApproval?: true; reason?: 'STORE_PENDING' | 'DRIVER_PENDING' }> {
+  if (role === 'STORE_OWNER') {
+    const store = await prisma.store.findUnique({
+      where: { ownerId: userId },
+      select: { status: true },
+    });
+    if (store?.status === 'PENDING_APPROVAL') {
+      return { pendingApproval: true, reason: 'STORE_PENDING' };
+    }
+  }
+  if (role === 'DRIVER') {
+    const driver = await prisma.driver.findUnique({
+      where: { userId },
+      select: { status: true },
+    });
+    if (driver?.status === 'PENDING_APPROVAL') {
+      return { pendingApproval: true, reason: 'DRIVER_PENDING' };
+    }
+  }
+  return {};
 }
 
 // ─── POST /send-otp ───────────────────────────────────────────────────────────
@@ -128,9 +176,9 @@ router.post('/register', otpLimiter, validate(registerSchema), async (req: Reque
     const { name, phone, email, username, password, role } = req.body as {
       name: string;
       phone: string;
-      email: string;
-      username: string;
-      password: string;
+      email?: string;
+      username?: string;
+      password?: string;
       role: AppRole;
     };
 
@@ -149,25 +197,42 @@ router.post('/register', otpLimiter, validate(registerSchema), async (req: Reque
       );
     }
 
-    // Email / username must be unique across all accounts (ignoring this same
-    // unverified record, which we may be re-registering).
-    const [emailOwner, usernameOwner] = await Promise.all([
-      prisma.user.findUnique({ where: { email }, select: { id: true } }),
-      prisma.user.findUnique({ where: { username }, select: { id: true } }),
-    ]);
-    if (emailOwner && emailOwner.id !== existing?.id) {
-      return sendError(res, 'This email address is already in use.', 409);
+    // Email + username are unique PER ROLE (mirrors the (phone, role) rule).
+    // A user can be alice@x.com on both CUSTOMER and STORE_OWNER — but only
+    // once per role. Skip these checks if the caller didn't provide them.
+    if (email) {
+      const emailOwner = await prisma.user.findUnique({
+        where: { email_role: { email, role: role as UserRole } },
+        select: { id: true },
+      });
+      if (emailOwner && emailOwner.id !== existing?.id) {
+        return sendError(
+          res,
+          `This email is already registered as a ${roleLabel(role)}.`,
+          409,
+        );
+      }
     }
-    if (usernameOwner && usernameOwner.id !== existing?.id) {
-      return sendError(res, 'This username is already taken.', 409);
+    if (username) {
+      const usernameOwner = await prisma.user.findUnique({
+        where: { username_role: { username, role: role as UserRole } },
+        select: { id: true },
+      });
+      if (usernameOwner && usernameOwner.id !== existing?.id) {
+        return sendError(
+          res,
+          `This username is already taken for ${roleLabel(role)} accounts.`,
+          409,
+        );
+      }
     }
 
-    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const passwordHash = password ? await bcrypt.hash(password, BCRYPT_ROUNDS) : null;
     const data = {
       name,
-      email,
-      username,
-      passwordHash,
+      ...(email !== undefined ? { email } : {}),
+      ...(username !== undefined ? { username } : {}),
+      ...(passwordHash !== null ? { passwordHash } : {}),
       role: role as UserRole,
       roles: [role as UserRole],
       phoneVerified: false,
@@ -242,6 +307,7 @@ router.post('/verify-otp', otpLimiter, validate(verifyOtpSchema), async (req: Re
 
     const { accessToken, refreshToken } = await issueSession(user, activeRole);
     const addressCount = await prisma.address.count({ where: { userId: user.id } });
+    const approvalGate = await getApprovalGate(user.id, activeRole);
 
     return sendSuccess(
       res,
@@ -251,6 +317,7 @@ router.post('/verify-otp', otpLimiter, validate(verifyOtpSchema), async (req: Re
         user: publicUser({ ...user, role: activeRole, phoneVerified: true }),
         hasAddress: addressCount > 0,
         mustChangePassword: user.mustChangePassword,
+        ...approvalGate,
       },
       'Login successful',
     );
@@ -274,7 +341,11 @@ router.post('/login', otpLimiter, validate(loginSchema), async (req: Request, re
 
     // A 10-digit identifier is a phone number, anything else is a username.
     // Phone alone is no longer unique (each role has its own row), so a phone
-    // login requires the role to know which account to authenticate.
+    // login requires the role to know which account to authenticate. Username
+    // is also no longer globally unique — but for backwards compat with older
+    // clients that don't pass a role, we fall back to findFirst() and pick
+    // the only row if there happens to be exactly one. New clients should
+    // call /login-password which always requires the role.
     const isPhone = /^\d{10}$/.test(identifier);
     if (isPhone && !role) {
       return sendError(
@@ -283,11 +354,28 @@ router.post('/login', otpLimiter, validate(loginSchema), async (req: Request, re
         400,
       );
     }
-    const user = isPhone
-      ? await prisma.user.findUnique({
-          where: { phone_role: { phone: identifier, role: role as UserRole } },
-        })
-      : await prisma.user.findUnique({ where: { username: identifier } });
+    let user;
+    if (isPhone) {
+      user = await prisma.user.findUnique({
+        where: { phone_role: { phone: identifier, role: role as UserRole } },
+      });
+    } else if (role) {
+      user = await prisma.user.findUnique({
+        where: { username_role: { username: identifier, role: role as UserRole } },
+      });
+    } else {
+      // No role + username identifier — best-effort lookup for legacy callers.
+      // Returns the row only when one (and only one) account uses this
+      // username; otherwise the caller is asked to disambiguate with a role.
+      const matches = await prisma.user.findMany({
+        where: { username: identifier },
+        take: 2,
+      });
+      if (matches.length > 1) {
+        return sendError(res, 'Please select a role when logging in.', 400);
+      }
+      user = matches[0] ?? null;
+    }
 
     // Generic message — never reveal whether the account exists.
     if (!user || !user.passwordHash) {
@@ -315,6 +403,7 @@ router.post('/login', otpLimiter, validate(loginSchema), async (req: Request, re
 
     const { accessToken, refreshToken } = await issueSession(user, activeRole);
     const addressCount = await prisma.address.count({ where: { userId: user.id } });
+    const approvalGate = await getApprovalGate(user.id, activeRole);
 
     return sendSuccess(
       res,
@@ -324,6 +413,7 @@ router.post('/login', otpLimiter, validate(loginSchema), async (req: Request, re
         user: publicUser({ ...user, role: activeRole }),
         hasAddress: addressCount > 0,
         mustChangePassword: user.mustChangePassword,
+        ...approvalGate,
       },
       'Login successful',
     );
@@ -394,8 +484,12 @@ router.post(
     try {
       const { email } = req.body as { email: string };
 
-      const user = await prisma.user.findUnique({ where: { email } });
-      if (user && user.isActive) {
+      // Email is no longer globally unique (multi-role). Email all active
+      // accounts that share this address — each gets its own reset link
+      // tied to its own User row. In practice almost every user has only
+      // one account per email, so this stays a single send.
+      const users = await prisma.user.findMany({ where: { email, isActive: true } });
+      for (const user of users) {
         // Only one live reset link per user — drop any earlier unused ones.
         await prisma.passwordResetToken.deleteMany({
           where: { userId: user.id, usedAt: null },
@@ -490,7 +584,10 @@ router.post('/admin-login', otpLimiter, validate(adminLoginSchema), async (req: 
   try {
     const { username, password } = req.body as { username: string; password: string };
 
-    const user = await prisma.user.findUnique({ where: { username } });
+    // Username is unique per role — look up the (username, ADMIN) row.
+    const user = await prisma.user.findUnique({
+      where: { username_role: { username, role: 'ADMIN' } },
+    });
     // Generic message whether the username or the password is wrong — don't
     // reveal which admin usernames exist.
     if (!user || user.role !== 'ADMIN' || !user.passwordHash) {
@@ -516,6 +613,109 @@ router.post('/admin-login', otpLimiter, validate(adminLoginSchema), async (req: 
     return sendError(res, 'Login failed', 500);
   }
 });
+
+// ─── POST /login-password ─────────────────────────────────────────────────────
+// Unified password login for ALL roles (including ADMIN). Mode 1 of three:
+//   1. POST /login-password         — username OR email + password + role
+//   2. POST /send-otp + /verify-otp — phone + OTP  (unchanged)
+//   3. POST /login                  — legacy "username or phone" + password
+//
+// Identifier is matched against User.username OR User.email on the (X, role)
+// tuple. Role is REQUIRED — the same email may belong to two different
+// rows (one CUSTOMER and one STORE_OWNER), so we can't resolve without it.
+
+router.post(
+  '/login-password',
+  otpLimiter,
+  validate(loginPasswordSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const { identifier, password, role } = req.body as {
+        identifier: string;
+        password: string;
+        role: UserRole;
+      };
+
+      const looksLikeEmail = identifier.includes('@');
+      const normalised = looksLikeEmail ? identifier.toLowerCase() : identifier;
+
+      // Try the matching uniqueness boundary first; if not found AND identifier
+      // looks like an email, also try username (and vice versa). Real-world
+      // users sometimes paste their email into the username field.
+      let user = looksLikeEmail
+        ? await prisma.user.findUnique({
+            where: { email_role: { email: normalised, role } },
+          })
+        : await prisma.user.findUnique({
+            where: { username_role: { username: normalised, role } },
+          });
+      if (!user) {
+        user = looksLikeEmail
+          ? await prisma.user.findUnique({
+              where: { username_role: { username: normalised, role } },
+            })
+          : await prisma.user.findUnique({
+              where: { email_role: { email: normalised, role } },
+            });
+      }
+
+      // Generic message — never reveal whether the account exists.
+      if (!user) {
+        return sendError(res, 'Invalid credentials. Check your username/email and password.', 401);
+      }
+      if (!user.passwordHash) {
+        // Account exists but has never set a password. Don't fall through to
+        // "invalid credentials" — that's misleading. Steer them to the OTP
+        // flow.
+        return sendError(
+          res,
+          'Password is not set on this account. Sign in with the OTP sent to your mobile number instead.',
+          401,
+        );
+      }
+      const passwordOk = await bcrypt.compare(password, user.passwordHash);
+      if (!passwordOk) {
+        return sendError(res, 'Invalid credentials. Check your username/email and password.', 401);
+      }
+      if (!user.isActive) {
+        return sendError(res, 'Your account has been suspended', 403);
+      }
+      // Non-admin roles must have a verified phone before they can log in via
+      // password (admin accounts are created with phoneVerified=true by the
+      // admin-create-user script).
+      if (role !== 'ADMIN' && !user.phoneVerified) {
+        return sendError(
+          res,
+          'Please verify your mobile number with the OTP before logging in.',
+          403,
+        );
+      }
+      if (!user.roles.includes(role)) {
+        return sendError(res, `This account is not registered as a ${roleLabel(role)}.`, 403);
+      }
+
+      const { accessToken, refreshToken } = await issueSession(user, role);
+      const addressCount = await prisma.address.count({ where: { userId: user.id } });
+      const approvalGate = await getApprovalGate(user.id, role);
+
+      return sendSuccess(
+        res,
+        {
+          accessToken,
+          refreshToken,
+          user: publicUser({ ...user, role }),
+          hasAddress: addressCount > 0,
+          mustChangePassword: user.mustChangePassword,
+          ...approvalGate,
+        },
+        'Login successful',
+      );
+    } catch (err) {
+      console.error('[Auth] login-password error:', err);
+      return sendError(res, 'Login failed', 500);
+    }
+  },
+);
 
 // ─── POST /refresh ────────────────────────────────────────────────────────────
 
@@ -545,7 +745,7 @@ router.post('/refresh', validate(refreshSchema), async (req: Request, res: Respo
     // Preserve the role the session was opened with (multi-role accounts).
     const activeRole =
       payload.role && user.roles.includes(payload.role) ? payload.role : user.role;
-    const accessToken = signAccessToken({ id: user.id, role: activeRole, phone: user.phone });
+    const accessToken = signAccessToken({ id: user.id, role: activeRole, phone: user.phone ?? '' });
 
     return sendSuccess(res, { accessToken }, 'Token refreshed');
   } catch (err) {

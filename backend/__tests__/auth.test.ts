@@ -305,12 +305,16 @@ describe('POST /api/v1/auth/login', () => {
     expect(res.status).toBe(403);
   });
 
-  it('returns 403 when the requested role is not granted', async () => {
+  it('returns 401 when no account exists for the requested role (per-role isolation)', async () => {
+    // makeUser() seeds a CUSTOMER account; asking to log in as STORE_OWNER
+    // should not leak that another role exists on the same username. Under
+    // per-role isolation the lookup is (username, role) so the wrong role
+    // looks identical to "no such user" — 401 generic.
     await makeUser();
     const res = await request(app)
       .post('/api/v1/auth/login')
       .send({ identifier: 'loginuser', password: 'secret123', role: 'STORE_OWNER' });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(401);
   });
 
   it('reports mustChangePassword for admin-created accounts', async () => {

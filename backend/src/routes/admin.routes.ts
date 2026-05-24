@@ -153,13 +153,25 @@ router.post('/users', validate(createUserSchema), async (req: Request, res: Resp
       return sendError(res, `This number is already registered as a ${roleLabel}.`, 409);
     }
 
-    // Email and username must be unique globally.
+    // Email + username are unique per (X, role) — the same value may exist
+    // on a different role's row. Only block when the conflict is on THIS
+    // role.
     const [emailOwner, usernameOwner] = await Promise.all([
-      prisma.user.findUnique({ where: { email }, select: { id: true } }),
-      prisma.user.findUnique({ where: { username }, select: { id: true } }),
+      prisma.user.findUnique({
+        where: { email_role: { email, role } },
+        select: { id: true },
+      }),
+      prisma.user.findUnique({
+        where: { username_role: { username, role } },
+        select: { id: true },
+      }),
     ]);
-    if (emailOwner) return sendError(res, 'This email address is already in use.', 409);
-    if (usernameOwner) return sendError(res, 'This username is already taken.', 409);
+    if (emailOwner) {
+      return sendError(res, `This email is already used by a ${roleLabel} account.`, 409);
+    }
+    if (usernameOwner) {
+      return sendError(res, `This username is already taken for ${roleLabel} accounts.`, 409);
+    }
 
     const tempPassword = generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
@@ -259,8 +271,17 @@ router.put('/users/:id', validate(updateUserSchema), async (req: Request, res: R
       }
     }
     if (body.email && body.email !== user.email) {
-      const owner = await prisma.user.findUnique({ where: { email: body.email }, select: { id: true } });
-      if (owner) return sendError(res, 'This email address is already in use.', 409);
+      const owner = await prisma.user.findUnique({
+        where: { email_role: { email: body.email, role: user.role } },
+        select: { id: true },
+      });
+      if (owner) {
+        return sendError(
+          res,
+          `This email is already used by another ${user.role.replace('_', ' ').toLowerCase()} account.`,
+          409,
+        );
+      }
     }
 
     const data: Prisma.UserUpdateInput = {};

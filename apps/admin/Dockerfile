@@ -2,10 +2,15 @@
 # Build with: docker compose build admin
 
 # Stage 1: Install dependencies
+#
+# Admin depends on @aks/ui (the shared shadcn library) for the
+# CurrentLocationMarker on its map pickers, so packages/ui MUST be in the
+# install graph — otherwise `next build` fails with "Can't resolve '@aks/ui'".
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
+COPY packages/ui/package.json ./packages/ui/
 COPY apps/admin/package.json ./apps/admin/
 RUN npm install --legacy-peer-deps
 
@@ -13,6 +18,7 @@ RUN npm install --legacy-peer-deps
 FROM deps AS dev
 WORKDIR /app
 COPY shared ./shared
+COPY packages/ui ./packages/ui
 COPY apps/admin ./apps/admin
 WORKDIR /app/apps/admin
 EXPOSE 3000
@@ -26,6 +32,7 @@ ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 WORKDIR /app
 COPY shared ./shared
+COPY packages/ui ./packages/ui
 COPY apps/admin ./apps/admin
 WORKDIR /app/apps/admin
 RUN npm run build
@@ -36,9 +43,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
+COPY packages/ui/package.json ./packages/ui/
 COPY apps/admin/package.json ./apps/admin/
 RUN npm install --omit=dev --ignore-scripts --legacy-peer-deps
 COPY --from=builder /app/shared ./shared
+COPY --from=builder /app/packages/ui ./packages/ui
 COPY --from=builder /app/apps/admin/.next ./apps/admin/.next
 COPY --from=builder /app/apps/admin/public ./apps/admin/public
 COPY --from=builder /app/apps/admin/next.config.ts ./apps/admin/next.config.ts

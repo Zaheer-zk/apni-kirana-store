@@ -14,7 +14,11 @@
  * Bump CACHE_VERSION on every deploy so old shells get evicted.
  */
 
-const CACHE_VERSION = 'aks-customer-web-v1';
+// v2: forces eviction of v1 caches that held the broken bundle (axios baseURL
+// was inlined as http://localhost:3000 when NEXT_PUBLIC_API_URL_CUSTOMER was
+// empty pre-EMAIL_FROM-quote fix). Bump on every deploy that changes the
+// app shell or breaks compat with old caches.
+const CACHE_VERSION = 'aks-customer-web-v2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

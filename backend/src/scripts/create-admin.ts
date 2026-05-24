@@ -24,8 +24,9 @@ async function main(): Promise<void> {
 
   const passwordHash = await bcrypt.hash(password, 10);
 
+  // Username is unique per (username, role) — upsert against the composite key.
   const user = await prisma.user.upsert({
-    where: { username },
+    where: { username_role: { username, role: 'ADMIN' } },
     update: { passwordHash, role: 'ADMIN', roles: ['ADMIN'], isActive: true },
     create: {
       username,

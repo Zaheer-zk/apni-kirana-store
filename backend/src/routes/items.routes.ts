@@ -4,7 +4,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import Fuse from 'fuse.js';
 import { prisma } from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth.middleware';
+import { authenticate, authorize, requireApproved } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { getBoundingBox, haversineDistance } from '../utils/geo';
@@ -325,6 +325,7 @@ router.post(
   '/',
   authenticate,
   authorize('STORE_OWNER'),
+  requireApproved,
   validate(addItemSchema),
   async (req: Request, res: Response) => {
     try {
@@ -360,6 +361,7 @@ router.put(
   '/:id',
   authenticate,
   authorize('STORE_OWNER'),
+  requireApproved,
   validate(addItemSchema.partial().omit({ catalogItemId: true })),
   async (req: Request, res: Response) => {
     try {
@@ -383,6 +385,7 @@ router.delete(
   '/:id',
   authenticate,
   authorize('STORE_OWNER'),
+  requireApproved,
   async (req: Request, res: Response) => {
     try {
       const item = await prisma.storeItem.findUnique({
@@ -403,6 +406,7 @@ router.put(
   '/:id/toggle-availability',
   authenticate,
   authorize('STORE_OWNER'),
+  requireApproved,
   async (req: Request, res: Response) => {
     try {
       const item = await prisma.storeItem.findUnique({
@@ -426,6 +430,7 @@ router.put(
   '/:id/stock',
   authenticate,
   authorize('STORE_OWNER'),
+  requireApproved,
   validate(stockSchema),
   async (req: Request, res: Response) => {
     try {
@@ -455,6 +460,7 @@ router.post(
   '/bulk-import',
   authenticate,
   authorize('STORE_OWNER'),
+  requireApproved,
   async (req: Request, res: Response) => {
     try {
       const myStore = await prisma.store.findUnique({ where: { ownerId: req.user!.id } });

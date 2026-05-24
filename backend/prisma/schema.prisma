@@ -85,33 +85,39 @@ enum DriverStatus {
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
-  id           String     @id @default(cuid())
-  name         String?
-  // One phone number can hold multiple roles, but every (phone, role) is its
-  // OWN row with its own name/email/username/password. So phone is NOT unique
-  // on its own — `@@unique([phone, role])` below enforces "at most one of
-  // each role per number". `roles` is kept as a `[role]` denormalisation for
-  // backward-compat with code that checks `user.roles.includes(...)`.
-  phone        String
-  email        String?    @unique // used for password-reset; unique globally
-  role         UserRole   @default(CUSTOMER)
-  roles        UserRole[] @default([])
-  username     String?    @unique // login id for username/password login
-  passwordHash String?    // bcrypt hash for username/password login
+  id                 String     @id @default(cuid())
+  name               String?
+  // One phone number / email / username can each hold multiple roles, but
+  // every (phone, role), (email, role) and (username, role) is its OWN row
+  // with its own name/email/username/password. So none of phone / email /
+  // username are unique on their own — the composite `@@unique([X, role])`
+  // indexes below enforce "at most one of each role per identifier". `roles`
+  // is kept as a `[role]` denormalisation for backward-compat with code that
+  // checks `user.roles.includes(...)`.
+  //
+  // Phone is nullable so an email-only account is possible in the future.
+  // Today every registration still requires phone (validated in the route),
+  // but the schema doesn't.
+  phone              String?
+  email              String? // used for password-reset, login; unique per (email, role)
+  role               UserRole   @default(CUSTOMER)
+  roles              UserRole[] @default([])
+  username           String? // login id for username/password login; unique per (username, role)
+  passwordHash       String? // bcrypt hash for username/password login
   // Admin-created accounts get a temporary password and must set their own on
   // first login. Also set when an admin resets a user's credentials.
-  mustChangePassword Boolean @default(false)
+  mustChangePassword Boolean    @default(false)
   // Exactly one account carries this. The super admin is an ADMIN that can
   // additionally create and manage other ADMIN accounts. Never exposed for
   // assignment via the API — set once, by migration.
-  isSuperAdmin Boolean @default(false)
+  isSuperAdmin       Boolean    @default(false)
   // false until the registration OTP is verified. Existing users are backfilled
   // to true by the migration.
-  phoneVerified Boolean   @default(false)
-  fcmToken     String?
-  isActive     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  phoneVerified      Boolean    @default(false)
+  fcmToken           String?
+  isActive           Boolean    @default(true)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   addresses           Address[]
   orders              Order[]              @relation("CustomerOrders")
@@ -121,7 +127,11 @@ model User {
   driver              Driver?
 
   @@unique([phone, role])
+  @@unique([email, role])
+  @@unique([username, role])
   @@index([phone])
+  @@index([email])
+  @@index([username])
 }
 
 // One row per password-reset request. The raw token is emailed to the user as
@@ -192,7 +202,7 @@ model Store {
 
   owner       User        @relation(fields: [ownerId], references: [id])
   items       StoreItem[]
-  orders      Order[]     @relation("StoreOrders")      // orders this store received (as seller)
+  orders      Order[]     @relation("StoreOrders") // orders this store received (as seller)
   buyerOrders Order[]     @relation("BuyerStoreOrders") // restock orders this store placed (as buyer)
 
   @@index([lat, lng])
@@ -243,7 +253,7 @@ model Order {
   storeId           String
   driverId          String?
   orderType         OrderType     @default(CUSTOMER)
-  buyerStoreId      String?       // set on RESTOCK orders: the retail store that placed the order
+  buyerStoreId      String? // set on RESTOCK orders: the retail store that placed the order
   status            OrderStatus   @default(PENDING)
   subtotal          Float
   deliveryFee       Float
@@ -256,9 +266,9 @@ model Order {
   notes             String?
   rejectionReason   String?
   cancelReason      String?
-  dropoffOtp        String?       // 4-digit OTP for driver-to-customer handoff verification
+  dropoffOtp        String? // 4-digit OTP for driver-to-customer handoff verification
   promoCode         String?
-  promoDiscount     Float?        // amount deducted by the applied promo (snapshot)
+  promoDiscount     Float? // amount deducted by the applied promo (snapshot)
   storeAcceptedAt   DateTime?
   driverAssignedAt  DateTime?
   pickedUpAt        DateTime?
@@ -339,34 +349,34 @@ model Notification {
 // Admin-created discount/promo code that customers can apply at checkout.
 // Either flat (e.g. ₹50 off) or percentage (e.g. 10% off, capped at maxDiscount).
 model Promo {
-  id              String       @id @default(cuid())
-  code            String       @unique
-  description     String?
-  discountType    DiscountType // FLAT or PERCENT
-  discountValue   Float        // for FLAT: rupees off; for PERCENT: 0–100
-  maxDiscount     Float?       // cap for PERCENT discounts (rupees)
-  minOrderValue   Float        @default(0)
-  usageLimit      Int?         // total usage cap across all users; null = unlimited
-  perUserLimit    Int?         // per-customer usage cap; null = unlimited
-  usedCount       Int          @default(0)
-  validFrom       DateTime     @default(now())
-  validUntil      DateTime?
-  isActive        Boolean      @default(true)
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  redemptions     PromoRedemption[]
+  id            String            @id @default(cuid())
+  code          String            @unique
+  description   String?
+  discountType  DiscountType // FLAT or PERCENT
+  discountValue Float // for FLAT: rupees off; for PERCENT: 0–100
+  maxDiscount   Float? // cap for PERCENT discounts (rupees)
+  minOrderValue Float             @default(0)
+  usageLimit    Int? // total usage cap across all users; null = unlimited
+  perUserLimit  Int? // per-customer usage cap; null = unlimited
+  usedCount     Int               @default(0)
+  validFrom     DateTime          @default(now())
+  validUntil    DateTime?
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  redemptions   PromoRedemption[]
 
   @@index([code])
   @@index([isActive])
 }
 
 model PromoRedemption {
-  id         String   @id @default(cuid())
-  promoId    String
-  userId     String
-  orderId    String   @unique
-  discount   Float    // actual amount discounted
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  promoId   String
+  userId    String
+  orderId   String   @unique
+  discount  Float // actual amount discounted
+  createdAt DateTime @default(now())
 
   promo Promo @relation(fields: [promoId], references: [id], onDelete: Cascade)
 
@@ -382,12 +392,12 @@ enum DiscountType {
 // promo edits, refund issuance, etc.
 model AuditLog {
   id         String   @id @default(cuid())
-  actorId    String   // user id of admin
-  action     String   // e.g. "ORDER_ASSIGN_STORE", "STORE_SUSPEND"
-  targetType String?  // "Order" | "Store" | "Driver" | "User" | "Promo"
+  actorId    String // user id of admin
+  action     String // e.g. "ORDER_ASSIGN_STORE", "STORE_SUSPEND"
+  targetType String? // "Order" | "Store" | "Driver" | "User" | "Promo"
   targetId   String?
-  before     Json?    // state before change (optional)
-  after      Json?    // state after change (optional)
+  before     Json? // state before change (optional)
+  after      Json? // state after change (optional)
   reason     String?
   createdAt  DateTime @default(now())
 
@@ -432,20 +442,20 @@ model NotificationPreferences {
 // `closedAt` and hard-deletes 90 days after. Messages are stored in plain
 // text (no encryption) so support / fraud-investigation can review.
 model Chat {
-  id          String        @id @default(cuid())
-  orderId     String
+  id        String    @id @default(cuid())
+  orderId   String
   // The two participants — sorted alphabetically by id at insert time so the
   // unique constraint catches duplicates regardless of who sent the first
   // message. We don't enforce specific roles at the schema level — any pair
   // out of (customer, storeOwner, driverUser) is allowed.
-  userAId     String
-  userBId     String
-  closedAt    DateTime?     // set when the order reaches a terminal state
-  deletedAt   DateTime?     // soft-delete marker (30d after closedAt)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  userAId   String
+  userBId   String
+  closedAt  DateTime? // set when the order reaches a terminal state
+  deletedAt DateTime? // soft-delete marker (30d after closedAt)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  messages    ChatMessage[]
+  messages ChatMessage[]
 
   @@unique([orderId, userAId, userBId])
   @@index([orderId])
@@ -455,12 +465,12 @@ model Chat {
 }
 
 model ChatMessage {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   chatId    String
   senderId  String
-  body      String   @db.Text
+  body      String    @db.Text
   readAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
@@ -474,11 +484,11 @@ model ChatMessage {
 //
 // Status flow: OPEN → RESOLVED. Admin can re-open by sending a new message.
 model SupportThread {
-  id           String                @id @default(cuid())
+  id           String              @id @default(cuid())
   // The user reaching out. We don't store an adminId because any admin can
   // reply — see SupportMessage.senderId for who actually sent each message.
-  userId       String                @unique
-  status       SupportThreadStatus   @default(OPEN)
+  userId       String              @unique
+  status       SupportThreadStatus @default(OPEN)
   subject      String?
   // Last message preview + timestamp keep the inbox fast — no need to JOIN
   // ChatMessage to render the list.
@@ -486,10 +496,10 @@ model SupportThread {
   lastSenderId String?
   lastAt       DateTime?
   // Counts so admin sees unread badges per-thread
-  userUnread   Int                   @default(0) // unread for the user (admin sent)
-  adminUnread  Int                   @default(0) // unread for admins (user sent)
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  userUnread   Int                 @default(0) // unread for the user (admin sent)
+  adminUnread  Int                 @default(0) // unread for admins (user sent)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
 
   messages SupportMessage[]
 
@@ -503,12 +513,12 @@ enum SupportThreadStatus {
 }
 
 model SupportMessage {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   threadId  String
   senderId  String
-  body      String   @db.Text
+  body      String    @db.Text
   readAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   thread SupportThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 
@@ -526,7 +536,7 @@ model Device {
   id         String   @id @default(cuid())
   userId     String
   token      String   @unique
-  platform   String?  // 'ios' | 'android' | 'web' — free-form for now
+  platform   String? // 'ios' | 'android' | 'web' — free-form for now
   lastSeenAt DateTime @default(now()) @updatedAt
   createdAt  DateTime @default(now())
 

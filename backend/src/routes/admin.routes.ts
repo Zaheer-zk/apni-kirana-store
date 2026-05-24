@@ -12,7 +12,7 @@ import { haversineDistance } from '../utils/geo';
 import { notify } from '../services/notification.service';
 import { getSettings, updateSettings } from '../services/settings.service';
 import { generateResetToken, generateTempPassword } from '../utils/token';
-import { sendPasswordResetEmail } from '../services/email.service';
+import { sendPasswordResetEmail, sendAccountApprovedEmail } from '../services/email.service';
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const BCRYPT_ROUNDS = 10;
@@ -153,13 +153,25 @@ router.post('/users', validate(createUserSchema), async (req: Request, res: Resp
       return sendError(res, `This number is already registered as a ${roleLabel}.`, 409);
     }
 
-    // Email and username must be unique globally.
+    // Email + username are unique per (X, role) — the same value may exist
+    // on a different role's row. Only block when the conflict is on THIS
+    // role.
     const [emailOwner, usernameOwner] = await Promise.all([
-      prisma.user.findUnique({ where: { email }, select: { id: true } }),
-      prisma.user.findUnique({ where: { username }, select: { id: true } }),
+      prisma.user.findUnique({
+        where: { email_role: { email, role } },
+        select: { id: true },
+      }),
+      prisma.user.findUnique({
+        where: { username_role: { username, role } },
+        select: { id: true },
+      }),
     ]);
-    if (emailOwner) return sendError(res, 'This email address is already in use.', 409);
-    if (usernameOwner) return sendError(res, 'This username is already taken.', 409);
+    if (emailOwner) {
+      return sendError(res, `This email is already used by a ${roleLabel} account.`, 409);
+    }
+    if (usernameOwner) {
+      return sendError(res, `This username is already taken for ${roleLabel} accounts.`, 409);
+    }
 
     const tempPassword = generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
@@ -259,8 +271,17 @@ router.put('/users/:id', validate(updateUserSchema), async (req: Request, res: R
       }
     }
     if (body.email && body.email !== user.email) {
-      const owner = await prisma.user.findUnique({ where: { email: body.email }, select: { id: true } });
-      if (owner) return sendError(res, 'This email address is already in use.', 409);
+      const owner = await prisma.user.findUnique({
+        where: { email_role: { email: body.email, role: user.role } },
+        select: { id: true },
+      });
+      if (owner) {
+        return sendError(
+          res,
+          `This email is already used by another ${user.role.replace('_', ' ').toLowerCase()} account.`,
+          409,
+        );
+      }
     }
 
     const data: Prisma.UserUpdateInput = {};
@@ -487,13 +508,28 @@ router.get('/stores/:id', async (req: Request, res: Response) => {
 
 router.put('/stores/:id/approve', async (req: Request, res: Response) => {
   try {
-    const store = await prisma.store.findUnique({ where: { id: req.params['id'] } });
+    const id = req.params['id'] as string;
+    const store = await prisma.store.findUnique({
+      where: { id },
+      include: { owner: { select: { id: true, name: true, email: true } } },
+    });
     if (!store) return sendError(res, 'Store not found', 404);
 
     const updated = await prisma.store.update({
-      where: { id: req.params['id'] },
+      where: { id },
       data: { status: 'ACTIVE' },
     });
+
+    // Notify the owner: email if they have one + in-app push/web push.
+    if (store.owner.email) {
+      sendAccountApprovedEmail({
+        to: store.owner.email,
+        name: store.owner.name,
+        kind: 'STORE',
+        loginUrl: `${config.webAppUrl}/login`,
+      }).catch((err) => console.warn('[Admin] approval email failed:', err));
+    }
+    notify('STORE_APPROVED', store.owner.id).catch(() => undefined);
 
     return sendSuccess(res, updated, 'Store approved successfully');
   } catch (err) {
@@ -705,13 +741,28 @@ router.put('/drivers/:id/suspend', async (req: Request, res: Response) => {
 
 router.put('/drivers/:id/approve', async (req: Request, res: Response) => {
   try {
-    const driver = await prisma.driver.findUnique({ where: { id: req.params['id'] } });
+    const id = req.params['id'] as string;
+    const driver = await prisma.driver.findUnique({
+      where: { id },
+      include: { user: { select: { id: true, name: true, email: true } } },
+    });
     if (!driver) return sendError(res, 'Driver not found', 404);
 
     const updated = await prisma.driver.update({
-      where: { id: req.params['id'] },
+      where: { id },
       data: { status: 'OFFLINE' }, // Approved but starts as OFFLINE
     });
+
+    // Notify the driver: email + in-app push.
+    if (driver.user.email) {
+      sendAccountApprovedEmail({
+        to: driver.user.email,
+        name: driver.user.name,
+        kind: 'DRIVER',
+        loginUrl: `${config.webAppUrl}/login`,
+      }).catch((err) => console.warn('[Admin] approval email failed:', err));
+    }
+    notify('DRIVER_APPROVED', driver.user.id).catch(() => undefined);
 
     return sendSuccess(res, updated, 'Driver approved successfully');
   } catch (err) {

@@ -13,9 +13,22 @@ jest.mock('../src/queues/queues', () => ({
 }));
 jest.mock('../src/services/notification.service', () => ({
   sendNotification: jest.fn().mockResolvedValue(undefined),
+  notify: jest.fn().mockResolvedValue(undefined),
+  notifyAdmins: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../src/services/driver.service', () => ({
   assignDriverForOrder: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../src/services/email.service', () => ({
+  sendEmail: jest.fn().mockResolvedValue(undefined),
+  sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
+  sendNewStoreAwaitingApprovalEmail: jest.fn().mockResolvedValue(undefined),
+  sendNewDriverAwaitingApprovalEmail: jest.fn().mockResolvedValue(undefined),
+  sendAccountApprovedEmail: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../src/services/web-push.service', () => ({
+  sendWebPushToUser: jest.fn().mockResolvedValue(undefined),
+  getVapidPublicKey: jest.fn().mockReturnValue(''),
 }));
 
 import request from 'supertest';

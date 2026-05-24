@@ -21,6 +21,7 @@ import {
   Activity,
   Wallet,
   HandCoins,
+  Radio,
   X,
 } from 'lucide-react';
 import { clearToken } from '@/lib/auth';
@@ -35,6 +36,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
+  { href: '/live-ops', label: 'Live ops', icon: <Radio className="h-4 w-4" /> },
   { href: '/notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" /> },
   { href: '/support', label: 'Support', icon: <LifeBuoy className="h-4 w-4" /> },
   { href: '/stores', label: 'Stores', icon: <Store className="h-4 w-4" /> },

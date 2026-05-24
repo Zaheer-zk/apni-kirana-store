@@ -13,6 +13,8 @@ import { notify } from '../services/notification.service';
 import { getSettings, updateSettings } from '../services/settings.service';
 import { generateResetToken, generateTempPassword } from '../utils/token';
 import { sendPasswordResetEmail, sendAccountApprovedEmail } from '../services/email.service';
+import { writeAudit } from '../utils/audit';
+import { creditWallet, getWalletWithTxns } from '../services/wallet.service';
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const BCRYPT_ROUNDS = 10;
@@ -379,6 +381,16 @@ router.put('/users/:id/suspend', async (req: Request, res: Response) => {
       select: { id: true, isActive: true },
     });
 
+    await writeAudit({
+      actorId: req.user!.id,
+      action: updated.isActive ? 'user.reactivate' : 'user.suspend',
+      entity: 'User',
+      entityId: updated.id,
+      before: { isActive: user.isActive },
+      after: { isActive: updated.isActive },
+      ip: req.ip ?? null,
+    });
+
     return sendSuccess(
       res,
       updated,
@@ -520,6 +532,16 @@ router.put('/stores/:id/approve', async (req: Request, res: Response) => {
       data: { status: 'ACTIVE' },
     });
 
+    await writeAudit({
+      actorId: req.user!.id,
+      action: 'store.approve',
+      entity: 'Store',
+      entityId: updated.id,
+      before: { status: store.status },
+      after: { status: updated.status },
+      ip: req.ip ?? null,
+    });
+
     // Notify the owner: email if they have one + in-app push/web push.
     if (store.owner.email) {
       sendAccountApprovedEmail({
@@ -550,6 +572,16 @@ router.put('/stores/:id/suspend', async (req: Request, res: Response) => {
       data: { status: 'SUSPENDED', isOpen: false },
     });
 
+    await writeAudit({
+      actorId: req.user!.id,
+      action: 'store.suspend',
+      entity: 'Store',
+      entityId: updated.id,
+      before: { status: store.status, isOpen: store.isOpen },
+      after: { status: updated.status, isOpen: updated.isOpen },
+      ip: req.ip ?? null,
+    });
+
     return sendSuccess(res, updated, 'Store suspended successfully');
   } catch (err) {
     console.error('[Admin] suspend store error:', err);
@@ -571,6 +603,16 @@ router.put('/stores/:id/wholesaler', async (req: Request, res: Response) => {
     const updated = await prisma.store.update({
       where: { id: req.params['id'] },
       data: { isWholesaler },
+    });
+
+    await writeAudit({
+      actorId: req.user!.id,
+      action: isWholesaler ? 'store.flag-wholesaler' : 'store.unflag-wholesaler',
+      entity: 'Store',
+      entityId: updated.id,
+      before: { isWholesaler: store.isWholesaler },
+      after: { isWholesaler: updated.isWholesaler },
+      ip: req.ip ?? null,
     });
 
     return sendSuccess(
@@ -598,6 +640,16 @@ router.put('/stores/:id/preferred', async (req: Request, res: Response) => {
     const updated = await prisma.store.update({
       where: { id: req.params['id'] },
       data: { isPreferred },
+    });
+
+    await writeAudit({
+      actorId: req.user!.id,
+      action: isPreferred ? 'store.flag-preferred' : 'store.unflag-preferred',
+      entity: 'Store',
+      entityId: updated.id,
+      before: { isPreferred: store.isPreferred },
+      after: { isPreferred: updated.isPreferred },
+      ip: req.ip ?? null,
     });
 
     return sendSuccess(
@@ -1469,11 +1521,29 @@ router.put('/orders/:id/refund', async (req: Request, res: Response) => {
       },
     });
 
+    // Credit the customer's wallet for the full order total (in paise). The
+    // /orders/:id/refund path may be called for an already-paid order or one
+    // that never reached PAID; either way the customer gets credited so they
+    // can use it on their next order. If the same order is refunded twice
+    // (shouldn't happen — guarded above), the wallet would double-credit;
+    // the paymentStatus check prevents that.
+    const refundPaise = Math.round((order.total ?? 0) * 100);
+    if (refundPaise > 0) {
+      await creditWallet({
+        userId: order.customerId,
+        amount: refundPaise,
+        kind: 'REFUND',
+        orderId,
+        note: reason,
+        actorId: req.user!.id,
+      });
+    }
+
     await prisma.notification.create({
       data: {
         userId: order.customerId,
         title: 'Refund issued',
-        body: `Your refund for order #${orderId.slice(-6)} has been initiated.`,
+        body: `₹${(refundPaise / 100).toFixed(2)} refunded to your wallet for order #${orderId.slice(-6)}.`,
       },
     });
 
@@ -1569,6 +1639,163 @@ router.delete('/zones/:id', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[Admin] delete zone error:', err);
     return sendError(res, 'Failed to delete zone', 500);
+  }
+});
+
+// ─── Wallets + Refunds (admin visibility + manual goodwill credits) ─────────
+
+/** Validate `?page=N&limit=M&search=text` style query params. */
+function parsePaging(req: Request, defaults = { page: 1, limit: 20 }) {
+  const page = Math.max(1, Number(req.query['page']) || defaults.page);
+  const limit = Math.min(100, Math.max(1, Number(req.query['limit']) || defaults.limit));
+  const search = (req.query['search'] as string | undefined)?.trim() || undefined;
+  return { page, limit, search, skip: (page - 1) * limit };
+}
+
+// GET /admin/wallets — paginated list of all wallets, sortable by balance desc
+router.get('/wallets', async (req: Request, res: Response) => {
+  try {
+    const { page, limit, search, skip } = parsePaging(req);
+    const where: Prisma.WalletWhereInput = search
+      ? {
+          user: {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { phone: { contains: search } },
+              { email: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+        }
+      : {};
+    const [items, total] = await Promise.all([
+      prisma.wallet.findMany({
+        where,
+        include: { user: { select: { id: true, name: true, phone: true, email: true, role: true } } },
+        orderBy: { balance: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.wallet.count({ where }),
+    ]);
+    return sendSuccess(res, { items, total, page, limit });
+  } catch (err) {
+    console.error('[Admin] list wallets error:', err);
+    return sendError(res, 'Failed to fetch wallets', 500);
+  }
+});
+
+// GET /admin/wallets/:userId — wallet detail + recent transactions
+router.get('/wallets/:userId', async (req: Request, res: Response) => {
+  try {
+    const userId = req.params['userId']!;
+    const view = await getWalletWithTxns(userId, 100);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, phone: true, email: true, role: true },
+    });
+    if (!user) return sendError(res, 'User not found', 404);
+    return sendSuccess(res, { user, ...view });
+  } catch (err) {
+    console.error('[Admin] wallet detail error:', err);
+    return sendError(res, 'Failed to fetch wallet', 500);
+  }
+});
+
+const creditWalletSchema = z.object({
+  amountRupees: z.number().positive().max(100000),
+  kind: z.enum(['GOODWILL', 'ADJUSTMENT', 'PROMO_CREDIT']),
+  note: z.string().trim().min(1).max(500),
+});
+
+// POST /admin/wallets/:userId/credit — admin issues goodwill / promo / adjustment
+router.post(
+  '/wallets/:userId/credit',
+  validate(creditWalletSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = req.params['userId']!;
+      const body = req.body as z.infer<typeof creditWalletSchema>;
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+      if (!user) return sendError(res, 'User not found', 404);
+
+      const amountPaise = Math.round(body.amountRupees * 100);
+      const txn = await creditWallet({
+        userId,
+        amount: amountPaise,
+        kind: body.kind,
+        note: body.note,
+        actorId: req.user!.id,
+      });
+
+      await writeAudit({
+        actorId: req.user!.id,
+        action: 'WALLET_CREDIT',
+        targetType: 'User',
+        targetId: userId,
+        after: { amountPaise, kind: body.kind, note: body.note },
+      });
+
+      await prisma.notification.create({
+        data: {
+          userId,
+          title: 'Credit added to your wallet',
+          body: `₹${body.amountRupees.toFixed(2)} (${body.kind.toLowerCase()}). ${body.note}`,
+        },
+      });
+
+      return sendSuccess(res, txn, 'Credit issued');
+    } catch (err) {
+      console.error('[Admin] wallet credit error:', err);
+      return sendError(res, 'Failed to credit wallet', 500);
+    }
+  },
+);
+
+// GET /admin/refunds — filterable log of every wallet transaction (refunds,
+// goodwill, etc.). Default scope is "money-out-the-door" events (REFUND +
+// GOODWILL + ADJUSTMENT) — pass ?kind=ALL to include ORDER_PAYMENT debits.
+router.get('/refunds', async (req: Request, res: Response) => {
+  try {
+    const { page, limit, skip } = parsePaging(req);
+    const kindParam = (req.query['kind'] as string | undefined)?.toUpperCase();
+    const fromParam = req.query['from'] as string | undefined;
+    const toParam = req.query['to'] as string | undefined;
+
+    const where: Prisma.WalletTransactionWhereInput = {
+      ...(kindParam && kindParam !== 'ALL'
+        ? { kind: kindParam as 'REFUND' | 'GOODWILL' | 'ADJUSTMENT' | 'PROMO_CREDIT' | 'ORDER_PAYMENT' }
+        : { kind: { in: ['REFUND', 'GOODWILL', 'ADJUSTMENT', 'PROMO_CREDIT'] } }),
+      ...(fromParam || toParam
+        ? {
+            createdAt: {
+              ...(fromParam ? { gte: new Date(fromParam) } : {}),
+              ...(toParam ? { lte: new Date(toParam) } : {}),
+            },
+          }
+        : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      prisma.walletTransaction.findMany({
+        where,
+        include: {
+          wallet: {
+            include: {
+              user: { select: { id: true, name: true, phone: true, email: true } },
+            },
+          },
+          order: { select: { id: true, total: true, status: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.walletTransaction.count({ where }),
+    ]);
+    return sendSuccess(res, { items, total, page, limit });
+  } catch (err) {
+    console.error('[Admin] refunds list error:', err);
+    return sendError(res, 'Failed to fetch refunds', 500);
   }
 });
 

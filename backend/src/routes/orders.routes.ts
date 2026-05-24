@@ -11,6 +11,7 @@ import { sendNotification, notifyAdmins, notify } from '../services/notification
 import { broadcastOrderStatus } from '../services/order-events.service';
 import { getSettings } from '../services/settings.service';
 import { haversineDistance } from '../utils/geo';
+import { creditWallet } from '../services/wallet.service';
 
 const router = Router();
 
@@ -783,21 +784,90 @@ router.put(
   validate(cancelOrderSchema),
   async (req: Request, res: Response) => {
     try {
-      const order = await prisma.order.findUnique({ where: { id: req.params['id'] } });
+      const order = await prisma.order.findUnique({
+        where: { id: req.params['id'] },
+        include: { store: { select: { ownerId: true, name: true } } },
+      }) as
+        | (Awaited<ReturnType<typeof prisma.order.findUnique>> & {
+            store: { ownerId: string; name: string } | null;
+          })
+        | null;
       if (!order) return sendError(res, 'Order not found', 404);
 
       if (order.customerId !== req.user!.id) return sendError(res, 'Unauthorized', 403);
 
-      if (!['PENDING', 'STORE_ACCEPTED'].includes(order.status)) {
-        return sendError(res, 'Order can only be cancelled before it is picked up', 400);
+      // Cancellable when:
+      //   - PENDING / STORE_ACCEPTED (no driver yet), OR
+      //   - DRIVER_ASSIGNED but driver hasn't picked up yet (pickedUpAt null)
+      const cancellable =
+        order.status === 'PENDING' ||
+        order.status === 'STORE_ACCEPTED' ||
+        (order.status === 'DRIVER_ASSIGNED' && order.pickedUpAt === null);
+      if (!cancellable) {
+        return sendError(res, 'Order can no longer be cancelled', 400);
       }
+
+      const reason = req.body.reason as string;
+      const shouldRefund = order.paymentStatus === 'PAID';
+      // Refund the customer-paid amount: subtotal + deliveryFee, in paise.
+      // (commission is platform revenue, not money paid by the customer.)
+      const refundPaiseRaw =
+        Math.round(order.subtotal * 100) + Math.round(order.deliveryFee * 100);
+      const refundPaise = Math.max(0, refundPaiseRaw);
 
       const updated = await prisma.order.update({
         where: { id: order.id },
-        data: { status: 'CANCELLED', cancelReason: req.body.reason },
+        data: {
+          status: 'CANCELLED',
+          cancelReason: reason,
+          paymentStatus: shouldRefund ? 'REFUNDED' : order.paymentStatus,
+        },
       });
 
-      await broadcastOrderStatus(order.id, 'CANCELLED', { reason: req.body.reason });
+      // Credit the wallet AFTER the order state is durable. If this throws
+      // we surface the error — the order is already cancelled, the customer
+      // can retry refund via admin support.
+      if (shouldRefund && refundPaise > 0) {
+        try {
+          await creditWallet({
+            userId: order.customerId,
+            amount: refundPaise,
+            kind: 'REFUND',
+            orderId: order.id,
+            note: `Refund for cancelled order #${order.id.slice(-6)}`,
+          });
+        } catch (refundErr) {
+          console.error('[Orders] cancel refund error:', refundErr);
+          // Don't fail the cancel — the order is cancelled, admin can issue a manual credit.
+        }
+      }
+
+      await broadcastOrderStatus(order.id, 'CANCELLED', { reason });
+
+      // Notify the store owner if they had accepted (so they stop preparing)
+      if (
+        order.store?.ownerId &&
+        (order.status === 'STORE_ACCEPTED' || order.status === 'DRIVER_ASSIGNED')
+      ) {
+        notify('STORE_ORDER_RESCINDED', order.store.ownerId, {
+          orderShort: order.id.slice(-6),
+          orderId: order.id,
+        }).catch((e) => console.error('[Orders] notify store rescind error:', e));
+      }
+
+      // Notify the customer about the wallet credit
+      if (shouldRefund && refundPaise > 0) {
+        const refundRupees = (refundPaise / 100).toFixed(2);
+        // Re-read the balance so the push body reflects the post-credit total
+        const wallet = await prisma.wallet.findUnique({ where: { userId: order.customerId } });
+        const balanceRupees = wallet ? (wallet.balance / 100).toFixed(2) : refundRupees;
+        notify('WALLET_CREDIT', order.customerId, {
+          amount: refundRupees,
+          balance: balanceRupees,
+          reason: 'order cancelled',
+          orderId: order.id,
+        }).catch((e) => console.error('[Orders] notify wallet credit error:', e));
+      }
 
       return sendSuccess(res, updated, 'Order cancelled successfully');
     } catch (err) {

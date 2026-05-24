@@ -118,7 +118,8 @@ export type NotificationEvent =
   | 'PROMO_ANNOUNCE'
   | 'CHAT_MESSAGE'
   | 'SUPPORT_REPLY'         // admin → user reply on a support thread
-  | 'ADMIN_SUPPORT_NEW';    // user → admin: new message in any thread
+  | 'ADMIN_SUPPORT_NEW'     // user → admin: new message in any thread
+  | 'WALLET_CREDIT';        // customer wallet credited (refund / promo / goodwill)
 
 interface Template {
   title: string;
@@ -231,6 +232,13 @@ const TEMPLATES: Record<NotificationEvent, TemplateFn> = {
   ADMIN_SUPPORT_NEW: (v) => ({
     title: v.senderName ? `Support: ${v.senderName} (${v.role})` : 'New support message',
     body: v.preview ?? 'A user is asking for help.',
+  }),
+
+  WALLET_CREDIT: (v) => ({
+    title: 'Wallet credited',
+    body: v.reason
+      ? `₹${v.amount} added to your wallet — ${v.reason}. New balance: ₹${v.balance}.`
+      : `₹${v.amount} added to your wallet. New balance: ₹${v.balance}.`,
   }),
 };
 

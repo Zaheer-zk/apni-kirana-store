@@ -4,7 +4,10 @@ import { useEffect, useMemo } from 'react';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { CurrentLocationMarker, useCurrentLocation } from '@aks/ui/components/current-location-marker';
+// Import from the @aks/ui barrel rather than the subpath. Admin's Turbopack
+// doesn't resolve the wildcard "./components/*" export for kebab-cased file
+// names ("Module not found" during build); the barrel always works.
+import { CurrentLocationMarker, useCurrentLocation } from '@aks/ui';
 import { Locate, Loader2 } from 'lucide-react';
 
 // Leaflet's default marker icons rely on bundler asset URLs that Next.js doesn't

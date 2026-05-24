@@ -4,7 +4,8 @@ import { useEffect, useMemo } from 'react';
 import { MapContainer, Marker, TileLayer, Circle, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { CurrentLocationMarker, useCurrentLocation } from '@aks/ui/components/current-location-marker';
+// See note in LocationMap.tsx — admin's Turbopack needs the barrel import.
+import { CurrentLocationMarker, useCurrentLocation } from '@aks/ui';
 import { Locate, Loader2 } from 'lucide-react';
 
 // Leaflet's default marker icons rely on bundler asset URLs that Next.js doesn't

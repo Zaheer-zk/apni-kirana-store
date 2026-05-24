@@ -46,6 +46,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/orders', label: 'Orders', icon: <ShoppingCart className="h-4 w-4" /> },
   { href: '/wallets', label: 'Wallets', icon: <Wallet className="h-4 w-4" /> },
   { href: '/refunds', label: 'Refunds', icon: <HandCoins className="h-4 w-4" /> },
+  { href: '/payouts', label: 'Payouts', icon: <HandCoins className="h-4 w-4" /> },
   { href: '/zones', label: 'Zones', icon: <Map className="h-4 w-4" /> },
   { href: '/users', label: 'Users', icon: <Users className="h-4 w-4" /> },
   { href: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },

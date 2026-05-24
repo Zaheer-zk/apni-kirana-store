@@ -13,6 +13,7 @@ import {
   Package,
   Plus,
   Search,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@aks/ui/components/button';
 import { Input } from '@aks/ui/components/input';
@@ -32,6 +33,7 @@ import { AuthGuard } from '@/components/AuthGuard';
 import { AppShell } from '@/components/AppShell';
 import { EmptyPanel, ErrorPanel } from '@/components/StatePanels';
 import { api, unwrapList } from '@/lib/api';
+import { rupees } from '@/lib/format';
 
 const CATEGORY_FILTERS: { label: string; value: string }[] = [
   { label: 'All', value: 'ALL' },
@@ -52,6 +54,15 @@ function useDebounced<T>(value: T, delay = 300): T {
   return debounced;
 }
 
+interface PendingRow {
+  catalogItemId: string;
+  name: string;
+  category: string;
+  unit: string;
+  price: string;
+  stockQty: string;
+}
+
 export default function BrowseCatalogPage() {
   return (
     <AuthGuard>
@@ -67,9 +78,10 @@ function BrowseCatalogInner() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('ALL');
   const [addingItem, setAddingItem] = useState<CatalogItemRow | null>(null);
+  const [pending, setPending] = useState<PendingRow[]>([]);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const debouncedSearch = useDebounced(search, 300);
 
-  // Owner's existing inventory — used to render "Already added" pills.
   const { data: myInventory } = useQuery<StoreInventoryItem[]>({
     queryKey: ['storeInventory'],
     queryFn: async () => {
@@ -82,7 +94,6 @@ function BrowseCatalogInner() {
     [myInventory],
   );
 
-  // Catalog browse / search
   const {
     data: catalogItems,
     isLoading,
@@ -109,13 +120,40 @@ function BrowseCatalogInner() {
     staleTime: 30_000,
   });
 
-  // When searching, filter by category client-side (search ignores category param)
   const visible = useMemo(() => {
     if (!catalogItems) return [];
     if (category === 'ALL' || !debouncedSearch.trim()) return catalogItems;
     return catalogItems.filter((it) => it.category === category);
   }, [catalogItems, category, debouncedSearch]);
 
+  const pendingIds = useMemo(() => new Set(pending.map((p) => p.catalogItemId)), [pending]);
+
+  function queueItem(item: CatalogItemRow) {
+    if (pendingIds.has(item.id) || myCatalogIds.has(item.id)) return;
+    setPending((prev) => [
+      ...prev,
+      {
+        catalogItemId: item.id,
+        name: item.name,
+        category: item.category,
+        unit: item.unit,
+        price: '',
+        stockQty: '',
+      },
+    ]);
+  }
+
+  function removeFromQueue(id: string) {
+    setPending((prev) => prev.filter((p) => p.catalogItemId !== id));
+  }
+
+  function updateQueueField(id: string, field: 'price' | 'stockQty', value: string) {
+    setPending((prev) =>
+      prev.map((p) => (p.catalogItemId === id ? { ...p, [field]: value } : p)),
+    );
+  }
+
+  // Single-item add (still useful when only one row needs to be added).
   const addMutation = useMutation({
     mutationFn: ({ catalogItemId, price, stockQty }: { catalogItemId: string; price: number; stockQty: number }) =>
       api
@@ -136,6 +174,49 @@ function BrowseCatalogInner() {
     },
   });
 
+  // Bulk-add fan-out — there's no batched endpoint so we POST per row in
+  // parallel via Promise.allSettled and report a summary.
+  const bulkAdd = useMutation({
+    mutationFn: async () => {
+      // Validate all rows up-front so the user can fix mistakes in one pass.
+      const rows = pending.map((p) => {
+        const price = parseFloat(p.price);
+        const stockQty = parseInt(p.stockQty, 10);
+        if (!Number.isFinite(price) || price <= 0) {
+          throw new Error(`Invalid price for ${p.name}`);
+        }
+        if (!Number.isFinite(stockQty) || stockQty < 0) {
+          throw new Error(`Invalid stock for ${p.name}`);
+        }
+        return { catalogItemId: p.catalogItemId, price, stockQty, name: p.name };
+      });
+      const results = await Promise.allSettled(
+        rows.map((r) =>
+          api.post('/api/v1/items', {
+            catalogItemId: r.catalogItemId,
+            price: r.price,
+            stockQty: r.stockQty,
+            isAvailable: true,
+          }),
+        ),
+      );
+      const okCount = results.filter((r) => r.status === 'fulfilled').length;
+      const failCount = results.length - okCount;
+      return { okCount, failCount };
+    },
+    onSuccess: ({ okCount, failCount }) => {
+      queryClient.invalidateQueries({ queryKey: ['storeInventory'] });
+      if (failCount === 0) {
+        toast.success(`Added ${okCount} item${okCount === 1 ? '' : 's'} to your store`);
+      } else {
+        toast.warning(`Added ${okCount}, ${failCount} failed (likely already in your store)`);
+      }
+      setPending([]);
+      setBulkConfirmOpen(false);
+    },
+    onError: (err: Error) => toast.error(err.message || 'Bulk add failed'),
+  });
+
   return (
     <div className="page-shell space-y-5">
       <Button asChild variant="ghost" size="sm" className="self-start">
@@ -148,8 +229,8 @@ function BrowseCatalogInner() {
       <header>
         <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Browse master catalog</h1>
         <p className="text-sm text-gray-500">
-          Find items, set your price and add them to your store. Customers see your price and
-          stock in real time.
+          Find items, set your price and add them to your store. Add several at once with the
+          batch tray.
         </p>
       </header>
 
@@ -183,6 +264,7 @@ function BrowseCatalogInner() {
         </div>
       </div>
 
+      {/* Catalog list */}
       {isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -205,6 +287,7 @@ function BrowseCatalogInner() {
         <ul className="space-y-3">
           {visible.map((item) => {
             const added = myCatalogIds.has(item.id);
+            const queued = pendingIds.has(item.id);
             const carry = item._count?.storeItems ?? 0;
             return (
               <li key={item.id}>
@@ -228,10 +311,29 @@ function BrowseCatalogInner() {
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
                         <CheckCircle2 className="h-3.5 w-3.5" /> Added
                       </span>
-                    ) : (
-                      <Button size="sm" onClick={() => setAddingItem(item)} className="gap-1">
-                        <Plus className="h-4 w-4" /> Add
+                    ) : queued ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeFromQueue(item.id)}
+                        className="gap-1"
+                      >
+                        <Trash2 className="h-4 w-4" /> Remove
                       </Button>
+                    ) : (
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => queueItem(item)}
+                          className="gap-1"
+                        >
+                          <Plus className="h-4 w-4" /> Queue
+                        </Button>
+                        <Button size="sm" onClick={() => setAddingItem(item)} className="gap-1">
+                          Add now
+                        </Button>
+                      </div>
                     )}
                   </CardContent>
                 </Card>
@@ -240,6 +342,68 @@ function BrowseCatalogInner() {
           })}
         </ul>
       )}
+
+      {/* Batch tray (sticky at the bottom on mobile, side-rail-ish on desktop) */}
+      {pending.length > 0 ? (
+        <div className="sticky bottom-4 z-30 rounded-xl border-2 border-primary bg-white p-4 shadow-lg sm:p-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-base font-bold text-gray-900">
+              Batch queue ({pending.length})
+            </h2>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPending([])}>
+                Clear
+              </Button>
+              <Button size="sm" onClick={() => setBulkConfirmOpen(true)}>
+                Add all to store
+              </Button>
+            </div>
+          </div>
+          <ul className="space-y-2 max-h-72 overflow-y-auto">
+            {pending.map((row) => (
+              <li
+                key={row.catalogItemId}
+                className="flex flex-col gap-2 rounded-md border border-gray-200 p-3 sm:flex-row sm:items-center"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-gray-900">{row.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {row.unit} · {row.category}
+                  </p>
+                </div>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  placeholder="Price (₹)"
+                  value={row.price}
+                  onChange={(e) => updateQueueField(row.catalogItemId, 'price', e.target.value)}
+                  className="sm:w-32"
+                  aria-label={`Price for ${row.name}`}
+                />
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="Stock"
+                  value={row.stockQty}
+                  onChange={(e) => updateQueueField(row.catalogItemId, 'stockQty', e.target.value)}
+                  className="sm:w-24"
+                  aria-label={`Stock for ${row.name}`}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeFromQueue(row.catalogItemId)}
+                  className="text-gray-500 hover:text-red-700"
+                  aria-label={`Remove ${row.name} from queue`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <AddToStoreDialog
         item={addingItem}
@@ -250,6 +414,48 @@ function BrowseCatalogInner() {
         }}
         submitting={addMutation.isPending}
       />
+
+      {/* Confirm + submit the entire queue. We don't reuse AddToStoreDialog
+          because we want the operator to see the per-row prices before
+          firing off the parallel POSTs. */}
+      <Dialog open={bulkConfirmOpen} onOpenChange={(o) => !o && setBulkConfirmOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add {pending.length} item{pending.length === 1 ? '' : 's'} to your store?</DialogTitle>
+            <DialogDescription>
+              We'll send one POST per row. Any rows you've left blank or with invalid prices will
+              cause the batch to abort before any item is added.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-1 max-h-60 overflow-y-auto rounded-md bg-gray-50 p-3 text-xs">
+            {pending.map((row) => {
+              const price = parseFloat(row.price);
+              const stockQty = parseInt(row.stockQty, 10);
+              const ok = Number.isFinite(price) && price > 0 && Number.isFinite(stockQty) && stockQty >= 0;
+              return (
+                <li key={row.catalogItemId} className="flex justify-between">
+                  <span className="truncate">{row.name}</span>
+                  <span className={`font-mono ${ok ? 'text-gray-700' : 'text-red-600'}`}>
+                    {ok ? `${rupees(price)} · ${stockQty}` : 'incomplete'}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBulkConfirmOpen(false)}
+              disabled={bulkAdd.isPending}
+            >
+              Back
+            </Button>
+            <Button onClick={() => bulkAdd.mutate()} loading={bulkAdd.isPending}>
+              Add all
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -268,7 +474,6 @@ function AddToStoreDialog({
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('');
 
-  // Reset when a different item opens
   useEffect(() => {
     setPrice('');
     setStock('');

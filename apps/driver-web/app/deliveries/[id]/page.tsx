@@ -272,13 +272,13 @@ function ActiveDelivery({ orderId }: { orderId: string }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/deliveries" aria-label="Back to deliveries">
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold text-gray-500">
             Order #{order.id.slice(-8).toUpperCase()}
           </p>
@@ -294,7 +294,7 @@ function ActiveDelivery({ orderId }: { orderId: string }) {
                 ? 'destructive'
                 : 'default'
           }
-          className="ml-auto"
+          className="ml-auto shrink-0"
         >
           {humanStatus(order.status)}
         </Badge>

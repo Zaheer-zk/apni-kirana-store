@@ -382,8 +382,8 @@ function ActiveDeliveryCard({
   return (
     <Card className="border-primary-200">
       <CardContent className="space-y-4 p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <Badge variant="default">
               {isAtStore ? 'STEP 1 OF 2' : isToCustomer ? 'STEP 2 OF 2' : order.status}
             </Badge>
@@ -395,7 +395,7 @@ function ActiveDeliveryCard({
                   : 'Active delivery'}
             </h3>
           </div>
-          <Badge variant={order.paymentMethod === 'CASH_ON_DELIVERY' ? 'warning' : 'success'}>
+          <Badge variant={order.paymentMethod === 'CASH_ON_DELIVERY' ? 'warning' : 'success'} className="shrink-0">
             {order.paymentMethod === 'CASH_ON_DELIVERY' ? 'Collect cash' : 'Already paid'}
           </Badge>
         </div>

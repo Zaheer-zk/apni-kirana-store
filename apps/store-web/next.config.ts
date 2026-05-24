@@ -1,14 +1,15 @@
 import type { NextConfig } from 'next';
 
 // Mirrors apps/customer-web/next.config.ts. NextConfig in Next 16's typings
-// no longer declares `eslint`/`typescript` top-level blocks even though
-// `next build` honours them — build as a plain object first, then cast.
+// no longer declares the `typescript` top-level block even though
+// `next build` honours it — build as a plain object first, then cast.
+// The `eslint` top-level key was removed in Next 16 (warns on every start),
+// so it is intentionally absent.
 const config = {
   // Workspace packages compiled in-place — Next has to transpile them
   // because they ship raw TS/TSX (no `dist/` build step).
   transpilePackages: ['@aks/shared', '@aks/ui'],
   typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'res.cloudinary.com' },

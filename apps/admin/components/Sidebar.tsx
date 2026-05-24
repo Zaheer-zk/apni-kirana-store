@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  ShoppingBasket,
   LayoutDashboard,
   Store,
   Bike,
@@ -124,17 +124,16 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
       >
         {/* Logo + mobile close */}
         <div className="flex items-center justify-between gap-2.5 border-b border-gray-100 px-5 py-5">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-sm">
-              <ShoppingBasket className="h-4 w-4 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-bold leading-tight text-gray-900">Apni Kirana</p>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                Admin Panel
-              </p>
-            </div>
-          </div>
+          <Link href="/" onClick={handleNavClick} aria-label="Apni Kirana — Admin home">
+            <Image
+              src="/logo-horizontal.png"
+              alt="Apni Kirana"
+              width={180}
+              height={60}
+              priority
+              className="h-9 w-auto"
+            />
+          </Link>
           <button
             type="button"
             onClick={onClose}

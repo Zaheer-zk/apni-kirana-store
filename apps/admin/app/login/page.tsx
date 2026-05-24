@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { ShoppingBasket, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { setToken, setSuperAdmin } from '@/lib/auth';
 import type { ApiResponse } from '@aks/shared';
@@ -61,11 +62,15 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-lg">
-            <ShoppingBasket className="h-7 w-7 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Apni Kirana Store</h1>
+        <div className="mb-8 flex flex-col items-center text-center">
+          <Image
+            src="/logo-horizontal.png"
+            alt="Apni Kirana"
+            width={200}
+            height={67}
+            priority
+            className="mb-4 h-auto w-[200px]"
+          />
           <p className="mt-1 text-sm text-gray-500">Admin Dashboard — sign in</p>
         </div>
 

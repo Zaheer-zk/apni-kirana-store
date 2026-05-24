@@ -40,6 +40,8 @@ WORKDIR /app
 COPY shared ./shared
 COPY packages/ui ./packages/ui
 COPY apps/store-web ./apps/store-web
+# Compile @aks/shared to dist/ — see admin's Dockerfile for the rationale.
+RUN cd shared && npx tsc
 WORKDIR /app/apps/store-web
 RUN npm run build
 

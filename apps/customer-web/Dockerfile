@@ -49,6 +49,10 @@ WORKDIR /app
 COPY shared ./shared
 COPY packages/ui ./packages/ui
 COPY apps/customer-web ./apps/customer-web
+# Compile @aks/shared to dist/ — see admin's Dockerfile for the rationale.
+# Defensive: today this app's imports happen to all get inlined, but if any
+# future SSR boundary touches @aks/shared it'd 500 without this.
+RUN cd shared && npx tsc
 WORKDIR /app/apps/customer-web
 RUN npm run build
 

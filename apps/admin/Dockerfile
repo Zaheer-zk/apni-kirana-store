@@ -34,6 +34,11 @@ WORKDIR /app
 COPY shared ./shared
 COPY packages/ui ./packages/ui
 COPY apps/admin ./apps/admin
+# Compile @aks/shared to dist/ — shared/package.json's "main" points to
+# ./dist/index.js, and Next.js' SSR runtime resolves the workspace via
+# require() (not the bundled output). Without this, server-render of admin
+# pages 500s with 'Cannot find module @aks/shared/dist/index.js'.
+RUN cd shared && npx tsc
 WORKDIR /app/apps/admin
 RUN npm run build
 

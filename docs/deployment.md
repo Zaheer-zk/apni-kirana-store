@@ -4,7 +4,7 @@ The entire backend runs on **one Ubuntu 22.04 VPS** with Docker Compose, Nginx, 
 
 ## What gets deployed
 
-One `docker compose` command brings up **six containers** on the single VPS:
+One `docker compose` command brings up **nine containers** on the single VPS:
 
 | Container | What it is | Reachable from |
 |---|---|---|
@@ -12,10 +12,22 @@ One `docker compose` command brings up **six containers** on the single VPS:
 | `redis` | Redis 7 — cache + BullMQ job queue | internal network only |
 | `backend` | Express API + Socket.io + BullMQ workers | internal `:3000` |
 | `admin` | Next.js admin dashboard | internal `:3000` |
+| `customer-web` | Next.js customer storefront | internal `:3000` |
+| `store-web` | Next.js store-operator dashboard | internal `:3000` |
+| `driver-web` | Next.js driver companion | internal `:3000` |
 | `nginx` | Reverse proxy + TLS termination | **public `:80` / `:443`** |
 | `certbot` | Auto-renews the Let's Encrypt certificates | — |
 
-Only Nginx is exposed to the internet. It routes `api.<domain>` → `backend` and `admin.<domain>` → `admin`. Postgres and Redis are never exposed.
+Only Nginx is exposed to the internet. It routes five virtual hosts on
+one shared SAN cert:
+
+- `<domain>` → `customer-web` (apex; `www` 301-redirects to apex)
+- `store.<domain>` → `store-web`
+- `driver.<domain>` → `driver-web`
+- `admin.<domain>` → `admin`
+- `api.<domain>` → `backend`
+
+Postgres and Redis are never exposed.
 
 ## Production server
 
@@ -186,21 +198,32 @@ grep -h server_name nginx/conf.d/*.conf      # verify it now shows YOUR domain
 
 ### Step 5 — Issue SSL certificates
 
+The init script produces one SAN cert covering every public hostname:
+api, admin, customer storefront (apex), store-operator, driver. **DNS for
+every name listed must already point at the VPS** (add A records at your
+registrar — for GoDaddy: type `A`, name = subdomain only e.g. `store`,
+value = VPS IP). Verify with `dig <subdomain>.yourdomain.com +short`
+before running this.
+
 ```bash
 bash scripts/init-ssl.sh \
   api.yourdomain.com \
   admin.yourdomain.com \
+  yourdomain.com \
+  store.yourdomain.com \
+  driver.yourdomain.com \
   you@yourdomain.com
 ```
 
-This serves the ACME HTTP-01 challenge on port 80, calls Certbot for both
-hostnames, and installs the certificates. The `certbot` container then
-auto-renews them on a 12-hour loop.
+The cert is stored under `nginx/certbot/conf/live/api.yourdomain.com/`
+(Let's Encrypt names the directory after the first SAN). All five vhosts
+in `nginx/conf.d/` already point at that path. The `certbot` container
+then auto-renews on a 12-hour loop.
 
 ### Step 6 — Start the stack
 
 ```bash
-# 6.1 — Build the images and start all six containers
+# 6.1 — Build the images and start all nine containers
 dc up -d --build
 
 # 6.2 — Apply the database migrations

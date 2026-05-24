@@ -7,8 +7,35 @@ import { clearSession, getToken } from './auth';
  * web surfaces. On 401 we clear the local session and bounce to /login —
  * but only in the browser (server components shouldn't redirect from here).
  */
+/**
+ * Resolve the API base URL at build time. In production we hard-fail if
+ * the var is missing or HTTP — silently defaulting to `http://localhost:3000`
+ * (the previous behaviour) bakes that broken URL into the client bundle,
+ * causes mixed-content warnings on the HTTPS site, and breaks every API
+ * call. Better to fail the Docker build loudly than to ship a dead site.
+ */
+function resolveBaseUrl(): string {
+  const url = process.env.NEXT_PUBLIC_API_URL;
+  if (process.env.NODE_ENV === 'production') {
+    if (!url) {
+      throw new Error(
+        'NEXT_PUBLIC_API_URL is required for production builds. Set it in .env.prod ' +
+          'and pass --env-file .env.prod to docker compose. Without it the bundle ' +
+          'falls back to http://localhost:3000 which breaks the deployed site.',
+      );
+    }
+    if (!url.startsWith('https://')) {
+      throw new Error(
+        `NEXT_PUBLIC_API_URL must be HTTPS in production (got: "${url}"). ` +
+          'An HTTP value triggers mixed-content blocking on the HTTPS frontend.',
+      );
+    }
+  }
+  return url ?? 'http://localhost:3000';
+}
+
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000',
+  baseURL: resolveBaseUrl(),
   headers: { 'Content-Type': 'application/json' },
   timeout: 15_000,
 });

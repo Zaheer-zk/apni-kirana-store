@@ -4,6 +4,8 @@ import { useEffect, useMemo } from 'react';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { CurrentLocationMarker, useCurrentLocation } from '@aks/ui/components/current-location-marker';
+import { Locate, Loader2 } from 'lucide-react';
 
 // Leaflet's default marker icons rely on bundler asset URLs that Next.js doesn't
 // resolve out of the box. Point them at the CDN so the marker actually renders.
@@ -53,6 +55,11 @@ export default function LocationMap({ lat, lng, onChange, height = 280 }: Props)
   const center = useMemo<[number, number]>(() => [safeLat, safeLng], [safeLat, safeLng]);
   const isPicker = typeof onChange === 'function';
 
+  // For picker mode we expose a "Use my location" floating button that
+  // snaps the marker to the browser's GPS. Read-only mode doesn't need it.
+  const { coords: myCoords, status: geoStatus } = useCurrentLocation({ watch: false });
+  const locating = geoStatus === 'requesting';
+
   return (
     <div
       className="relative overflow-hidden rounded-lg border border-gray-200"
@@ -86,11 +93,40 @@ export default function LocationMap({ lat, lng, onChange, height = 280 }: Props)
               : undefined
           }
         />
+        {/* "You are here" pulsing blue dot — always rendered, even in
+            read-only mode, so an admin viewing a store/driver page can
+            see how far that pin is from where they're sitting. */}
+        <CurrentLocationMarker />
       </MapContainer>
       <div className="pointer-events-none absolute bottom-2 left-2 z-[1000] rounded-md bg-white/95 px-2 py-1 text-xs font-mono text-gray-700 shadow">
         {safeLat.toFixed(5)}, {safeLng.toFixed(5)}
         {isPicker && <span className="ml-1 text-gray-400">· tap or drag to move</span>}
       </div>
+      {isPicker && onChange ? (
+        <button
+          type="button"
+          onClick={() => {
+            // Snap to last-known GPS (fetched once on mount). If the user
+            // hasn't accepted the prompt yet, getCurrentPosition fires it
+            // synchronously here.
+            if (myCoords) {
+              onChange(myCoords.lat, myCoords.lng);
+              return;
+            }
+            if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return;
+            navigator.geolocation.getCurrentPosition(
+              (pos) => onChange(pos.coords.latitude, pos.coords.longitude),
+              () => undefined,
+              { timeout: 8_000, maximumAge: 60_000 },
+            );
+          }}
+          title="Use my current location"
+          aria-label="Use my current location"
+          className="absolute bottom-2 right-2 z-[1000] inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-primary shadow-md hover:bg-gray-50"
+        >
+          {locating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Locate className="h-4 w-4" />}
+        </button>
+      ) : null}
     </div>
   );
 }

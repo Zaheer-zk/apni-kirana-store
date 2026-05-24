@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LogIn, LogOut, Search, ShoppingCart, User } from 'lucide-react';
+import { LogIn, LogOut, MapPin, Receipt, Search, ShoppingCart, User } from 'lucide-react';
 import { Button } from '@aks/ui/components/button';
 import {
   DropdownMenu,
@@ -94,6 +94,24 @@ export function AppHeader({ showSearch = true }: { showSearch?: boolean }) {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/profile" className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Profile
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/orders" className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4" />
+                  My orders
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/addresses" className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Saved addresses
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/cart" className="flex items-center gap-2">
                   <ShoppingCart className="h-4 w-4" />

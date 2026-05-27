@@ -219,6 +219,9 @@ export default function OrderDetailPage({
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundReason, setRefundReason] = useState('');
   const [refundError, setRefundError] = useState<string | null>(null);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [statusNext, setStatusNext] = useState<OrderStatus>(OrderStatus.STORE_ACCEPTED);
+  const [statusReason, setStatusReason] = useState('');
 
   useEffect(() => {
     if (!toast) return;
@@ -290,6 +293,30 @@ export default function OrderDetailPage({
         id: Date.now(),
         type: 'error',
         message: e?.response?.data?.error?.message ?? 'Failed to reassign store.',
+      });
+    },
+  });
+
+  const overrideStatusMutation = useMutation({
+    mutationFn: async (args: { status: OrderStatus; reason?: string }) => {
+      const res = await api.put<{ success: boolean; data: OrderDetail }>(
+        `/api/v1/admin/orders/${id}/status`,
+        args
+      );
+      return res.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-order', id] });
+      setStatusOpen(false);
+      setStatusReason('');
+      setToast({ id: Date.now(), type: 'success', message: 'Status updated. Customer notified.' });
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: { message?: string } } } };
+      setToast({
+        id: Date.now(),
+        type: 'error',
+        message: e?.response?.data?.error?.message ?? 'Failed to update status.',
       });
     },
   });
@@ -473,6 +500,23 @@ export default function OrderDetailPage({
           )}
         </div>
         <div className="flex items-center gap-4">
+          {/* Admin override: force-set the order status when normal store/
+              driver flow has stalled. Hidden for terminal states. */}
+          {data.status !== 'DELIVERED' &&
+            data.status !== 'CANCELLED' &&
+            data.status !== 'REJECTED' && (
+              <button
+                onClick={() => {
+                  setStatusOpen(true);
+                  setStatusReason('');
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                title="Force-update the order status (admin override)"
+              >
+                <RefreshCcw className="h-3.5 w-3.5" />
+                Set status
+              </button>
+            )}
           {data.paymentStatus !== 'REFUNDED' && (
             <button
               onClick={() => {
@@ -1043,6 +1087,82 @@ export default function OrderDetailPage({
           })}
         </ol>
       </div>
+
+      {/* Admin status-override modal */}
+      {statusOpen && (
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-y-auto bg-gray-900/50 sm:items-center sm:p-4">
+          <div className="card flex w-full max-w-md flex-col rounded-none p-4 sm:rounded-lg sm:p-6">
+            <div className="mb-4 flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <RefreshCcw className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Override order status</h2>
+                  <p className="text-xs text-gray-500">
+                    Use when the store/driver flow is stuck. Customer will be notified.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setStatusOpen(false)}
+                className="text-gray-400 hover:text-gray-700"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600">
+              New status
+            </label>
+            <select
+              value={statusNext}
+              onChange={(e) => setStatusNext(e.target.value as OrderStatus)}
+              className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value={OrderStatus.STORE_ACCEPTED}>Store accepted</option>
+              <option value={OrderStatus.DRIVER_ASSIGNED}>Driver assigned</option>
+              <option value={OrderStatus.PICKED_UP}>Picked up</option>
+              <option value={OrderStatus.DELIVERED}>Delivered</option>
+              <option value={OrderStatus.CANCELLED}>Cancelled</option>
+              <option value={OrderStatus.REJECTED}>Rejected</option>
+            </select>
+
+            <label className="mt-3 block text-xs font-semibold uppercase tracking-wider text-gray-600">
+              Reason (optional, recommended)
+            </label>
+            <textarea
+              value={statusReason}
+              onChange={(e) => setStatusReason(e.target.value)}
+              rows={3}
+              placeholder="e.g. Store called to confirm delivery; updating manually."
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setStatusOpen(false)}
+                className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() =>
+                  overrideStatusMutation.mutate({
+                    status: statusNext,
+                    reason: statusReason.trim() || undefined,
+                  })
+                }
+                disabled={overrideStatusMutation.isPending || data.status === statusNext}
+                className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50"
+              >
+                {overrideStatusMutation.isPending ? 'Updating…' : `Set to ${statusNext}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Refund modal */}
       {refundOpen && (

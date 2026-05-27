@@ -1658,6 +1658,94 @@ router.get('/notifications-log', async (req: Request, res: Response) => {
   }
 });
 
+// ─── Admin order-status override ───────────────────────────────────────────
+// Lets admin force-transition an order through any non-terminal state when
+// the normal store/driver flow has stalled (e.g., a store accepted but never
+// marked packed, a driver picked up but forgot to confirm delivery, an
+// order needs to be cancelled by support). Sets the right timestamp for
+// each transition, broadcasts via the existing socket events, writes an
+// audit log, and notifies the customer.
+
+const ORDER_STATUSES = [
+  'PENDING',
+  'STORE_ACCEPTED',
+  'DRIVER_ASSIGNED',
+  'PICKED_UP',
+  'DELIVERED',
+  'CANCELLED',
+  'REJECTED',
+] as const;
+
+const adminSetOrderStatusSchema = z.object({
+  status: z.enum(ORDER_STATUSES),
+  reason: z.string().trim().max(500).optional(),
+});
+
+router.put(
+  '/orders/:id/status',
+  validate(adminSetOrderStatusSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const orderId = req.params['id']!;
+      const { status: nextStatus, reason } = req.body as z.infer<typeof adminSetOrderStatusSchema>;
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: { store: { select: { ownerId: true } }, driver: { select: { userId: true } } },
+      });
+      if (!order) return sendError(res, 'Order not found', 404);
+      if (order.status === nextStatus) {
+        return sendError(res, `Order is already ${nextStatus}`, 400);
+      }
+
+      // Auto-set the right timestamp column for each transition so downstream
+      // analytics (earnings, fulfilment-time stats) stay coherent. We don't
+      // overwrite an existing timestamp — the original handler had it first.
+      const now = new Date();
+      const data: Prisma.OrderUpdateInput = { status: nextStatus };
+      if (nextStatus === 'STORE_ACCEPTED' && !order.storeAcceptedAt) data.storeAcceptedAt = now;
+      if (nextStatus === 'DRIVER_ASSIGNED' && !order.driverAssignedAt) data.driverAssignedAt = now;
+      if (nextStatus === 'PICKED_UP' && !order.pickedUpAt) data.pickedUpAt = now;
+      if (nextStatus === 'DELIVERED' && !order.deliveredAt) data.deliveredAt = now;
+      if (nextStatus === 'CANCELLED' || nextStatus === 'REJECTED') {
+        if (reason) data.cancelReason = reason;
+      }
+
+      const updated = await prisma.order.update({ where: { id: orderId }, data });
+
+      await broadcastOrderStatus(orderId, nextStatus, { byAdmin: true, reason });
+
+      await writeAudit({
+        actorId: req.user!.id,
+        action: 'ORDER_STATUS_OVERRIDE',
+        targetType: 'Order',
+        targetId: orderId,
+        before: { status: order.status },
+        after: { status: nextStatus, reason: reason ?? null },
+      });
+
+      // Notify the customer of the change. Store / driver get the socket
+      // event so their dashboards refresh automatically.
+      await prisma.notification
+        .create({
+          data: {
+            userId: order.customerId,
+            title: 'Order status updated',
+            body: `Order #${orderId.slice(-6)} is now ${nextStatus}${reason ? ` (${reason})` : ''}.`,
+            event: 'ORDER_STATUS_OVERRIDE',
+            channel: 'INAPP',
+            status: 'DELIVERED',
+          },
+        })
+        .catch(() => undefined);
+
+      return sendSuccess(res, updated, 'Order status updated');
+    } catch (err) {
+      console.error('[Admin] order status override error:', err);
+      return sendError(res, 'Failed to update status', 500);
+    }
+  },
+);
+
 // ─── Disputes / Refunds ───────────────────────────────────────────────────────
 
 router.put('/orders/:id/refund', async (req: Request, res: Response) => {

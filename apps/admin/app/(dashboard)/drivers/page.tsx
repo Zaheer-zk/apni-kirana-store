@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Star, ChevronLeft, ChevronRight, Pencil } from 'lucide-react';
+import { Search, CheckCircle, XCircle, PauseCircle, Loader2, Star, ChevronLeft, ChevronRight, Pencil, MapPin } from 'lucide-react';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import DataTable, { Column } from '@/components/DataTable';
 import DriverEditModal from '@/components/DriverEditModal';
+import DriverZonesModal from '@/components/DriverZonesModal';
 import UserFormModal, { type ManagedUser } from '@/components/UserFormModal';
 import { DriverStatus } from '@aks/shared';
 
@@ -72,6 +73,7 @@ export default function DriversPage() {
   const [page, setPage] = useState(1);
   const [editingDriver, setEditingDriver] = useState<DriverRow | null>(null);
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+  const [zonesDriver, setZonesDriver] = useState<DriverRow | null>(null);
   const queryClient = useQueryClient();
 
   // Reset to page 1 when the tab or search changes
@@ -203,6 +205,17 @@ export default function DriversPage() {
           >
             <Pencil className="h-3.5 w-3.5" />
             Edit
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setZonesDriver(d);
+            }}
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
+            title="Override driver's serving zones"
+          >
+            <MapPin className="h-3.5 w-3.5" />
+            Zones
           </button>
           <button
             onClick={(e) => {
@@ -362,6 +375,13 @@ export default function DriversPage() {
             setEditingUser(null);
             queryClient.invalidateQueries({ queryKey: ['admin-drivers'], refetchType: 'all' });
           }}
+        />
+      )}
+      {zonesDriver && (
+        <DriverZonesModal
+          driverId={zonesDriver.id}
+          driverName={zonesDriver.name ?? 'Driver'}
+          onClose={() => setZonesDriver(null)}
         />
       )}
     </div>

@@ -28,21 +28,20 @@ import {
   DialogTitle,
 } from '@aks/ui/components/dialog';
 import { toast } from '@aks/ui/components/sonner';
-import type { CatalogItemRow, StoreInventoryItem } from '@aks/shared';
+import { ItemCategory, ItemCategoryLabels, type CatalogItemRow, type StoreInventoryItem } from '@aks/shared';
 import { AuthGuard } from '@/components/AuthGuard';
 import { AppShell } from '@/components/AppShell';
 import { EmptyPanel, ErrorPanel } from '@/components/StatePanels';
 import { api, unwrapList } from '@/lib/api';
 import { rupees } from '@/lib/format';
 
+// Derived from the canonical @aks/shared enum so any new category (e.g.
+// ELECTRONICS added on 2026-05-24) automatically shows up here. The earlier
+// hardcoded list had DAIRY + PERSONAL_CARE which don't exist in the schema
+// AND was missing MEDICINE/ELECTRONICS/OTHER → broken filter chips.
 const CATEGORY_FILTERS: { label: string; value: string }[] = [
   { label: 'All', value: 'ALL' },
-  { label: 'Grocery', value: 'GROCERY' },
-  { label: 'Dairy', value: 'DAIRY' },
-  { label: 'Beverages', value: 'BEVERAGES' },
-  { label: 'Snacks', value: 'SNACKS' },
-  { label: 'Personal care', value: 'PERSONAL_CARE' },
-  { label: 'Household', value: 'HOUSEHOLD' },
+  ...Object.values(ItemCategory).map((v) => ({ label: ItemCategoryLabels[v], value: v })),
 ];
 
 function useDebounced<T>(value: T, delay = 300): T {

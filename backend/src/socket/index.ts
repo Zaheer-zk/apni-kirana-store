@@ -1,6 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import { verifyAccessToken } from '../utils/jwt';
 import { prisma } from '../config/prisma';
+import { pingLiveOps } from '../services/liveops.service';
 
 interface LocationUpdatePayload {
   lat: number;
@@ -129,6 +130,23 @@ export function setupSocket(server: Server): void {
       if (orderId) {
         socket.to(`order:${orderId}`).emit('driver:location', { lat, lng, orderId });
       }
+
+      // Ping zone-scoped live-ops dashboards so admin sees the pin move.
+      // Fire-and-forget — never block a driver location update on this.
+      pingLiveOps('driver:location', [{ lat, lng }]).catch(() => undefined);
+    });
+
+    // ── Admin live-ops zone subscription ────────────────────────────────────
+    // Admin live-ops page calls this with the currently-selected zoneId (or
+    // 'all' for the unfiltered view). Server fans out invalidation pings
+    // to this room when relevant entities move/transition.
+    socket.on('liveops:join', (zoneId: string | null | undefined) => {
+      const room = zoneId ? `liveops:${zoneId}` : 'liveops:all';
+      socket.join(room);
+    });
+    socket.on('liveops:leave', (zoneId: string | null | undefined) => {
+      const room = zoneId ? `liveops:${zoneId}` : 'liveops:all';
+      socket.leave(room);
     });
 
     // ── Disconnect ───────────────────────────────────────────────────────────

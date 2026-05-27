@@ -16,6 +16,7 @@ import { sendPasswordResetEmail, sendAccountApprovedEmail } from '../services/em
 import { writeAudit } from '../utils/audit';
 import { creditWallet, getWalletWithTxns } from '../services/wallet.service';
 import { aggregateLastWeek, aggregatePayoutsForPeriod } from '../services/payout.service';
+import { invalidateZoneCache } from '../services/liveops.service';
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const BCRYPT_ROUNDS = 10;
@@ -1988,6 +1989,7 @@ router.post('/zones', validate(zoneCreateSchema), async (req: Request, res: Resp
         after: created as never,
       },
     });
+    invalidateZoneCache();
     return sendSuccess(res, created, 'Zone created', 201);
   } catch (err: unknown) {
     const e = err as { code?: string };
@@ -2009,6 +2011,7 @@ router.put('/zones/:id', validate(zoneUpdateSchema), async (req: Request, res: R
         before: before as never, after: updated as never,
       },
     });
+    invalidateZoneCache();
     return sendSuccess(res, updated, 'Zone updated');
   } catch (err) {
     console.error('[Admin] update zone error:', err);
@@ -2028,6 +2031,7 @@ router.delete('/zones/:id', async (req: Request, res: Response) => {
         before: before as never,
       },
     });
+    invalidateZoneCache();
     return sendSuccess(res, null, 'Zone deleted');
   } catch (err) {
     console.error('[Admin] delete zone error:', err);

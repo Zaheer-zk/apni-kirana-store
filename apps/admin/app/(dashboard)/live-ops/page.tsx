@@ -2,10 +2,11 @@
 
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Loader2, Radio } from 'lucide-react';
 import { api } from '@/lib/api';
+import { getSocket } from '@/lib/socket';
 
 // Leaflet must be dynamically imported (it touches window at module load).
 const LiveOpsMap = dynamic(() => import('@/components/LiveOpsMap'), {
@@ -116,8 +117,12 @@ export default function LiveOpsPage() {
     staleTime: 60_000,
   });
 
-  // Refetch every 5s. Cheap on the server (single query with selective
-  // includes); good enough granularity for ops monitoring.
+  const queryClient = useQueryClient();
+
+  // Polling cadence is now 30s — the socket subscription below pushes
+  // invalidation pings the instant something relevant happens in this
+  // zone, so the 5s poll is no longer needed. The 30s is just a safety
+  // net for socket-disconnected sessions.
   const snap = useQuery({
     queryKey: ['admin-live-ops', zoneId],
     queryFn: async () => {
@@ -125,9 +130,27 @@ export default function LiveOpsPage() {
       const res = await api.get<{ success: true; data: LiveOpsSnapshot }>(url);
       return res.data.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 30_000,
     refetchIntervalInBackground: true,
   });
+
+  // Zone-scoped real-time updates. Backend pings the room corresponding
+  // to our selected zone (or 'all') on every order/driver change whose
+  // footprint intersects the zone. We just invalidate the query — the
+  // payload itself isn't needed, the next refetch carries the truth.
+  useEffect(() => {
+    const sock = getSocket();
+    const room = zoneId || null; // server treats null/undefined as 'all'
+    sock.emit('liveops:join', room);
+    function onInvalidate() {
+      queryClient.invalidateQueries({ queryKey: ['admin-live-ops', zoneId] });
+    }
+    sock.on('liveops:invalidate', onInvalidate);
+    return () => {
+      sock.emit('liveops:leave', room);
+      sock.off('liveops:invalidate', onInvalidate);
+    };
+  }, [zoneId, queryClient]);
 
   const orders = snap.data?.orders ?? [];
   const drivers = snap.data?.drivers ?? [];

@@ -10,6 +10,7 @@
 import { io } from '../socket';
 import { prisma } from '../config/prisma';
 import { closeChatsForOrder, isOrderClosed } from './chat.service';
+import { pingLiveOps } from './liveops.service';
 import { OrderStatus } from '@prisma/client';
 
 export async function broadcastOrderStatus(
@@ -30,14 +31,17 @@ export async function broadcastOrderStatus(
   // Always broadcast on the order room (subscribers join via 'order:subscribe')
   io.to(`order:${orderId}`).emit('order:status', { orderId, status, ...extra });
 
-  // Also push to each role's personal room so unsubscribed apps see the change
+  // Also push to each role's personal room so unsubscribed apps see the change,
+  // AND ping the admin live-ops dashboards that intersect this order's
+  // geographic footprint.
   try {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       select: {
         customerId: true,
-        store: { select: { ownerId: true } },
-        driver: { select: { userId: true } },
+        store: { select: { ownerId: true, lat: true, lng: true } },
+        driver: { select: { userId: true, currentLat: true, currentLng: true } },
+        deliveryAddress: { select: { lat: true, lng: true } },
       },
     });
     if (!order) return;
@@ -50,6 +54,19 @@ export async function broadcastOrderStatus(
     if (order.driver?.userId) {
       io.to(`user:${order.driver.userId}`).emit('order:status', payload);
     }
+
+    // Live-ops dashboards: zone-scoped fan-out. An order touches up to 3
+    // points (store, dropoff, driver) — admin sees the change if their
+    // selected zone contains any of them.
+    await pingLiveOps('order:update', [
+      order.store ? { lat: order.store.lat, lng: order.store.lng } : null,
+      order.deliveryAddress
+        ? { lat: order.deliveryAddress.lat, lng: order.deliveryAddress.lng }
+        : null,
+      order.driver?.currentLat != null && order.driver?.currentLng != null
+        ? { lat: order.driver.currentLat, lng: order.driver.currentLng }
+        : null,
+    ]);
   } catch (err) {
     console.warn('[order-events] broadcast lookup failed:', err);
   }

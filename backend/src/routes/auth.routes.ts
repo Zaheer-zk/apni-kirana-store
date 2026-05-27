@@ -149,6 +149,36 @@ async function getApprovalGate(
   return {};
 }
 
+/**
+ * Role-specific extras embedded into the login response. The frontends use
+ * these to decide post-login routing without having to make a follow-up call:
+ *   - storeProfile === null  → STORE_OWNER hasn't registered a store yet,
+ *                              route to /register
+ *   - storeProfile.id       → has a store, route to dashboard
+ *   - same shape for driverProfile on the DRIVER side
+ * Returns {} for CUSTOMER and ADMIN.
+ */
+async function getRoleExtras(
+  userId: string,
+  role: UserRole,
+): Promise<{ storeProfile?: { id: string; status: string } | null; driverProfile?: { id: string; status: string } | null }> {
+  if (role === 'STORE_OWNER') {
+    const store = await prisma.store.findUnique({
+      where: { ownerId: userId },
+      select: { id: true, status: true },
+    });
+    return { storeProfile: store };
+  }
+  if (role === 'DRIVER') {
+    const driver = await prisma.driver.findUnique({
+      where: { userId },
+      select: { id: true, status: true },
+    });
+    return { driverProfile: driver };
+  }
+  return {};
+}
+
 // ─── POST /send-otp ───────────────────────────────────────────────────────────
 // Sends an OTP. Used both for registration verification and for phone+OTP login.
 
@@ -307,7 +337,10 @@ router.post('/verify-otp', otpLimiter, validate(verifyOtpSchema), async (req: Re
 
     const { accessToken, refreshToken } = await issueSession(user, activeRole);
     const addressCount = await prisma.address.count({ where: { userId: user.id } });
-    const approvalGate = await getApprovalGate(user.id, activeRole);
+    const [approvalGate, roleExtras] = await Promise.all([
+      getApprovalGate(user.id, activeRole),
+      getRoleExtras(user.id, activeRole),
+    ]);
 
     return sendSuccess(
       res,
@@ -318,6 +351,7 @@ router.post('/verify-otp', otpLimiter, validate(verifyOtpSchema), async (req: Re
         hasAddress: addressCount > 0,
         mustChangePassword: user.mustChangePassword,
         ...approvalGate,
+        ...roleExtras,
       },
       'Login successful',
     );
@@ -403,7 +437,10 @@ router.post('/login', otpLimiter, validate(loginSchema), async (req: Request, re
 
     const { accessToken, refreshToken } = await issueSession(user, activeRole);
     const addressCount = await prisma.address.count({ where: { userId: user.id } });
-    const approvalGate = await getApprovalGate(user.id, activeRole);
+    const [approvalGate, roleExtras] = await Promise.all([
+      getApprovalGate(user.id, activeRole),
+      getRoleExtras(user.id, activeRole),
+    ]);
 
     return sendSuccess(
       res,
@@ -414,6 +451,7 @@ router.post('/login', otpLimiter, validate(loginSchema), async (req: Request, re
         hasAddress: addressCount > 0,
         mustChangePassword: user.mustChangePassword,
         ...approvalGate,
+        ...roleExtras,
       },
       'Login successful',
     );
@@ -696,7 +734,10 @@ router.post(
 
       const { accessToken, refreshToken } = await issueSession(user, role);
       const addressCount = await prisma.address.count({ where: { userId: user.id } });
-      const approvalGate = await getApprovalGate(user.id, role);
+      const [approvalGate, roleExtras] = await Promise.all([
+        getApprovalGate(user.id, role),
+        getRoleExtras(user.id, role),
+      ]);
 
       return sendSuccess(
         res,
@@ -707,6 +748,7 @@ router.post(
           hasAddress: addressCount > 0,
           mustChangePassword: user.mustChangePassword,
           ...approvalGate,
+        ...roleExtras,
         },
         'Login successful',
       );

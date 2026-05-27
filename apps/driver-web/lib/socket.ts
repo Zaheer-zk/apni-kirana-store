@@ -16,9 +16,10 @@ import { getToken } from './auth';
  * Web caveats vs mobile:
  *   - We allow polling fallback because corporate networks sometimes block
  *     raw websockets. Mobile uses websocket-only.
- *   - We never call `location:update` — web GPS is best-effort and the
- *     mobile app owns canonical driver location tracking. See
- *     `docs/driver-web.md`.
+ *   - We DO push `location:update` from the foreground while online —
+ *     without it the backend's matching engine never sees the driver
+ *     (it filters by non-null currentLat/Lng before scoring). Mobile
+ *     still owns background GPS via expo-task-manager.
  */
 function resolveSocketUrl(): string {
   const url = process.env.NEXT_PUBLIC_API_URL;
@@ -126,3 +127,15 @@ export function subscribeToOffers(
     s.off('order:rescinded', rescindedHandler);
   };
 }
+
+/**
+ * Emit a `location:update` over the singleton socket. Backend writes it to
+ * Driver.currentLat/Lng so the matching engine can find this driver.
+ * No-ops if the socket isn't connected yet — caller can retry.
+ */
+export function pushLocationUpdate(lat: number, lng: number): void {
+  const s = getSocket();
+  if (!s) return;
+  s.emit('location:update', { lat, lng });
+}
+

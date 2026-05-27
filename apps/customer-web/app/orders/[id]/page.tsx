@@ -26,6 +26,14 @@ import { Card, CardContent } from '@aks/ui/components/card';
 import { Separator } from '@aks/ui/components/separator';
 import { Badge } from '@aks/ui/components/badge';
 import { toast } from '@aks/ui/components/sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@aks/ui/components/dialog';
 import { OrderStatus, PaymentMethod } from '@aks/shared';
 import { AppHeader } from '@/components/AppHeader';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
@@ -100,6 +108,8 @@ export default function OrderTrackingPage() {
 
   const [liveStatus, setLiveStatus] = useState<OrderStatus | null>(null);
   const [driverLoc, setDriverLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
 
   const orderQuery = useQuery({
     queryKey: ['order', orderId],
@@ -257,9 +267,8 @@ export default function OrderTrackingPage() {
                 variant="outline"
                 className="w-full border-destructive text-destructive hover:bg-red-50 hover:text-destructive"
                 onClick={() => {
-                  if (!confirm('Cancel this order?')) return;
-                  const reason = prompt('Tell us why (optional)') ?? 'Cancelled by customer';
-                  cancelMutation.mutate(reason.trim() || 'Cancelled by customer');
+                  setCancelReason('');
+                  setCancelOpen(true);
                 }}
                 loading={cancelMutation.isPending}
               >
@@ -285,6 +294,53 @@ export default function OrderTrackingPage() {
           </aside>
         </div>
       </main>
+
+      {/* Branded cancel dialog — replaces the old window.confirm + prompt
+          which felt jarring on a polished tracking page. */}
+      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel this order?</DialogTitle>
+            <DialogDescription>
+              We&apos;ll let the store know right away. If you&apos;ve already paid,
+              a refund will land in your wallet automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600">
+            Reason (optional)
+          </label>
+          <textarea
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            rows={3}
+            maxLength={300}
+            placeholder="e.g. Found it cheaper nearby, taking too long…"
+            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCancelOpen(false)}
+              disabled={cancelMutation.isPending}
+            >
+              Keep order
+            </Button>
+            <Button
+              variant="destructive"
+              loading={cancelMutation.isPending}
+              onClick={() => {
+                const reason = cancelReason.trim() || 'Cancelled by customer';
+                cancelMutation.mutate(reason, {
+                  onSuccess: () => setCancelOpen(false),
+                });
+              }}
+            >
+              <XCircle className="h-4 w-4" />
+              Yes, cancel order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

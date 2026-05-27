@@ -3,11 +3,12 @@
 import { use, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Star, Package, ShoppingBag, MapPin, Phone, User, Pencil } from 'lucide-react';
+import { ArrowLeft, Star, Package, ShoppingBag, MapPin, Phone, Plus, User, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import StoreEditModal from '@/components/StoreEditModal';
+import StoreAddItemsModal from '@/components/StoreAddItemsModal';
 import type { StoreProfile, InventoryItem, Order } from '@aks/shared';
 import { OrderStatus } from '@aks/shared';
 
@@ -57,6 +58,7 @@ function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string;
 export default function StoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [editing, setEditing] = useState(false);
+  const [addingItems, setAddingItems] = useState(false);
 
   const { data, isLoading, isError } = useQuery<StoreDetailResponse>({
     queryKey: ['admin-store', id],
@@ -153,8 +155,19 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
 
         {/* Items */}
         <div className="card overflow-hidden lg:col-span-2">
-          <div className="px-4 py-4 border-b border-gray-100 sm:px-6">
-            <h2 className="text-base font-semibold text-gray-900">Inventory ({items.length} items)</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-4 sm:px-6">
+            <h2 className="text-base font-semibold text-gray-900">
+              Inventory ({items.length} items)
+            </h2>
+            <button
+              type="button"
+              onClick={() => setAddingItems(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-primary-700"
+              title="Pre-stock this store with catalog items (admin override)"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add items
+            </button>
           </div>
           {items.length === 0 ? (
             <p className="px-4 py-10 text-sm text-gray-400 text-center sm:px-6">No items listed yet.</p>
@@ -239,6 +252,13 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
             closeTime: store.closeTime,
           }}
           onClose={() => setEditing(false)}
+        />
+      )}
+      {addingItems && (
+        <StoreAddItemsModal
+          storeId={store.id}
+          storeName={store.name}
+          onClose={() => setAddingItems(false)}
         />
       )}
     </div>

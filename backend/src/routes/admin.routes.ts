@@ -1658,6 +1658,118 @@ router.get('/notifications-log', async (req: Request, res: Response) => {
   }
 });
 
+// ─── Admin: bulk-add items to a store's inventory (onboarding helper) ─────
+// New store owners often don't know how to use the store-portal app.
+// This endpoint lets admin pre-stock a store by selecting catalog items
+// + setting per-item prices. Skips items the store already carries
+// (idempotent — safe to re-run).
+
+const adminAddItemSchema = z.object({
+  catalogItemId: z.string().min(1),
+  price: z.number().positive().max(1_000_000),
+  stockQty: z.number().int().min(0).max(1_000_000).default(0),
+  isAvailable: z.boolean().default(true),
+});
+
+const adminBulkAddItemsSchema = z.object({
+  items: z.array(adminAddItemSchema).min(1).max(500),
+});
+
+router.post(
+  '/stores/:id/items/bulk',
+  validate(adminBulkAddItemsSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const storeId = req.params['id']!;
+      const store = await prisma.store.findUnique({
+        where: { id: storeId },
+        select: { id: true, name: true, ownerId: true },
+      });
+      if (!store) return sendError(res, 'Store not found', 404);
+
+      const { items } = req.body as z.infer<typeof adminBulkAddItemsSchema>;
+
+      // Validate every catalog item id exists + dedup against existing
+      // store inventory so we never violate the (storeId, catalogItemId)
+      // unique constraint.
+      const catalogIds = [...new Set(items.map((i) => i.catalogItemId))];
+      const [validCatalog, existing] = await Promise.all([
+        prisma.catalogItem.findMany({
+          where: { id: { in: catalogIds }, isActive: true },
+          select: { id: true },
+        }),
+        prisma.storeItem.findMany({
+          where: { storeId, catalogItemId: { in: catalogIds } },
+          select: { catalogItemId: true },
+        }),
+      ]);
+      const validIds = new Set(validCatalog.map((c) => c.id));
+      const alreadyHas = new Set(existing.map((e) => e.catalogItemId));
+
+      const toCreate = items.filter(
+        (i) => validIds.has(i.catalogItemId) && !alreadyHas.has(i.catalogItemId),
+      );
+      const skippedMissing = items.filter((i) => !validIds.has(i.catalogItemId));
+      const skippedDuplicate = items.filter(
+        (i) => validIds.has(i.catalogItemId) && alreadyHas.has(i.catalogItemId),
+      );
+
+      const created = toCreate.length
+        ? await prisma.storeItem.createMany({
+            data: toCreate.map((i) => ({
+              storeId,
+              catalogItemId: i.catalogItemId,
+              price: i.price,
+              stockQty: i.stockQty ?? 0,
+              isAvailable: i.isAvailable ?? true,
+            })),
+          })
+        : { count: 0 };
+
+      await writeAudit({
+        actorId: req.user!.id,
+        action: 'STORE_ITEMS_BULK_ADD',
+        targetType: 'Store',
+        targetId: storeId,
+        after: {
+          added: created.count,
+          skippedMissing: skippedMissing.length,
+          skippedDuplicate: skippedDuplicate.length,
+        },
+      });
+
+      // Notify the store owner that admin pre-stocked their inventory.
+      if (created.count > 0) {
+        await prisma.notification
+          .create({
+            data: {
+              userId: store.ownerId,
+              title: 'Admin pre-stocked your inventory',
+              body: `Admin added ${created.count} item(s) to your store. Open the store app to review prices.`,
+              event: 'STORE_ITEMS_PRE_STOCKED',
+              channel: 'INAPP',
+              status: 'DELIVERED',
+            },
+          })
+          .catch(() => undefined);
+      }
+
+      return sendSuccess(
+        res,
+        {
+          added: created.count,
+          skippedMissing: skippedMissing.length,
+          skippedDuplicate: skippedDuplicate.length,
+        },
+        `Added ${created.count} item(s) to ${store.name}`,
+      );
+    } catch (err) {
+      console.error('[Admin] bulk-add items error:', err);
+      return sendError(res, 'Failed to add items', 500);
+    }
+  },
+);
+
 // ─── Admin order-status override ───────────────────────────────────────────
 // Lets admin force-transition an order through any non-terminal state when
 // the normal store/driver flow has stalled (e.g., a store accepted but never

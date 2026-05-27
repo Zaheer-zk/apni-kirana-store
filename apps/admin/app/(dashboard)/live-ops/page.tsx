@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Loader2, Radio } from 'lucide-react';
@@ -40,11 +41,31 @@ type LiveDriver = {
   user: { id: string; name: string | null; phone: string | null };
 };
 
+export type LiveOpsZone = {
+  id: string;
+  name: string;
+  centerLat: number;
+  centerLng: number;
+  radiusKm: number;
+} | null;
+
 export type LiveOpsSnapshot = {
   orders: LiveOrder[];
   drivers: LiveDriver[];
+  zone: LiveOpsZone;
   generatedAt: string;
 };
+
+type ZoneOption = {
+  id: string;
+  name: string;
+  city: string;
+  centerLat: number;
+  centerLng: number;
+  radiusKm: number;
+};
+
+const ZONE_PREF_KEY = 'aks-admin-liveops-zone';
 
 const STATUS_TONE: Record<LiveOrder['status'], { bg: string; text: string; label: string }> = {
   PENDING: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Pending' },
@@ -62,12 +83,46 @@ function timeAgo(iso: string): string {
 }
 
 export default function LiveOpsPage() {
+  // Persisted zone filter — ops folks usually monitor the same area shift
+  // after shift, so reload-survival matters more than per-tab fresh state.
+  const [zoneId, setZoneId] = useState<string>('');
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(ZONE_PREF_KEY);
+      if (v) setZoneId(v);
+    } catch {
+      // localStorage blocked (private mode) — ignore
+    }
+  }, []);
+  function selectZone(v: string) {
+    setZoneId(v);
+    try {
+      if (v) window.localStorage.setItem(ZONE_PREF_KEY, v);
+      else window.localStorage.removeItem(ZONE_PREF_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Pull the zone list once for the dropdown. Tolerant of failures —
+  // if /admin/zones is down for some reason, the dropdown is hidden and
+  // the map falls back to the unfiltered view.
+  const zonesList = useQuery({
+    queryKey: ['admin-live-ops-zones'],
+    queryFn: async () => {
+      const res = await api.get<{ success: true; data: ZoneOption[] }>('/api/v1/admin/zones');
+      return res.data.data;
+    },
+    staleTime: 60_000,
+  });
+
   // Refetch every 5s. Cheap on the server (single query with selective
   // includes); good enough granularity for ops monitoring.
   const snap = useQuery({
-    queryKey: ['admin-live-ops'],
+    queryKey: ['admin-live-ops', zoneId],
     queryFn: async () => {
-      const res = await api.get<{ success: true; data: LiveOpsSnapshot }>('/api/v1/admin/live-ops');
+      const url = zoneId ? `/api/v1/admin/live-ops?zoneId=${encodeURIComponent(zoneId)}` : '/api/v1/admin/live-ops';
+      const res = await api.get<{ success: true; data: LiveOpsSnapshot }>(url);
       return res.data.data;
     },
     refetchInterval: 5000,
@@ -90,6 +145,24 @@ export default function LiveOpsPage() {
             Active orders + online drivers across the city. Refreshes every 5 seconds.
           </p>
         </div>
+        {/* Zone scope selector — persisted per browser */}
+        {zonesList.data && zonesList.data.length > 0 ? (
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="font-semibold uppercase tracking-wider text-gray-500">Zone</span>
+            <select
+              value={zoneId}
+              onChange={(e) => selectZone(e.target.value)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="">All zones (city-wide)</option>
+              {zonesList.data.map((z) => (
+                <option key={z.id} value={z.id}>
+                  {z.city} · {z.name} ({z.radiusKm}km)
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <div className="flex gap-6 text-sm">
           <div>
             <p className="text-xs uppercase tracking-wider text-gray-500">Active orders</p>
@@ -120,7 +193,7 @@ export default function LiveOpsPage() {
               Failed to load live snapshot.
             </div>
           ) : (
-            <LiveOpsMap orders={orders} drivers={drivers} />
+            <LiveOpsMap orders={orders} drivers={drivers} zone={snap.data?.zone ?? null} />
           )}
         </section>
 

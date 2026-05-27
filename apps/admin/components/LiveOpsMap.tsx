@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
+import { Circle, MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import Link from 'next/link';
@@ -29,9 +29,19 @@ type LiveDriver = {
   user: { id: string; name: string | null; phone: string | null };
 };
 
+interface ZoneCircle {
+  id: string;
+  name: string;
+  centerLat: number;
+  centerLng: number;
+  radiusKm: number;
+}
+
 interface Props {
   orders: LiveOrder[];
   drivers: LiveDriver[];
+  /** When non-null, draws a translucent radius circle and recenters on it. */
+  zone?: ZoneCircle | null;
 }
 
 const STATUS_COLOR: Record<LiveOrder['status'], string> = {
@@ -80,10 +90,13 @@ function FitToMarkers({ points }: { points: Array<[number, number]> }) {
   return null;
 }
 
-export default function LiveOpsMap({ orders, drivers }: Props) {
+export default function LiveOpsMap({ orders, drivers, zone }: Props) {
   // Collect every coord we know about, so the map can fit them all on first render.
   const allPoints = useMemo<Array<[number, number]>>(() => {
     const pts: Array<[number, number]> = [];
+    // If a zone is scoped, anchor the fit on its center too so even when
+    // no entities are in the zone yet, the map still snaps to the area.
+    if (zone) pts.push([zone.centerLat, zone.centerLng]);
     for (const o of orders) {
       if (Number.isFinite(o.store.lat) && Number.isFinite(o.store.lng)) {
         pts.push([o.store.lat, o.store.lng]);
@@ -99,10 +112,12 @@ export default function LiveOpsMap({ orders, drivers }: Props) {
       pts.push([d.currentLat, d.currentLng]);
     }
     return pts;
-  }, [orders, drivers]);
+  }, [orders, drivers, zone]);
 
-  // Sensible default — central Delhi if there's literally nothing live yet.
-  const center: [number, number] = allPoints[0] ?? [28.6139, 77.209];
+  // If a zone is selected, default the center to it; otherwise central Delhi.
+  const center: [number, number] = zone
+    ? [zone.centerLat, zone.centerLng]
+    : (allPoints[0] ?? [28.6139, 77.209]);
 
   return (
     <MapContainer center={center} zoom={12} className="h-full w-full" scrollWheelZoom>
@@ -111,6 +126,28 @@ export default function LiveOpsMap({ orders, drivers }: Props) {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <FitToMarkers points={allPoints} />
+
+      {/* Zone radius — visual context for what's being filtered */}
+      {zone ? (
+        <Circle
+          center={[zone.centerLat, zone.centerLng]}
+          radius={zone.radiusKm * 1000}
+          pathOptions={{
+            color: '#16A34A',
+            weight: 2,
+            fillColor: '#16A34A',
+            fillOpacity: 0.06,
+            dashArray: '6 6',
+          }}
+        >
+          <Popup>
+            <div className="text-xs">
+              <p className="font-semibold">{zone.name}</p>
+              <p className="text-gray-500">Radius {zone.radiusKm} km</p>
+            </div>
+          </Popup>
+        </Circle>
+      ) : null}
 
       {/* Store pin per active order (deduplicated by store id below in the legend) */}
       {orders.map((o) => (

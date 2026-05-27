@@ -1648,14 +1648,85 @@ router.delete('/zones/:id', async (req: Request, res: Response) => {
 // order + every ONLINE/OFFLINE driver with last-known coords so the page
 // can render initial markers, then subscribe to the existing
 // `driver:location` and `order:status` socket events for real-time deltas.
+//
+// `?zoneId=<id>` scopes the response to entities geographically inside the
+// zone's circular footprint (centerLat/Lng + radiusKm). The query first
+// applies a coarse bounding-box in Prisma (so we don't pull the whole table
+// over the wire), then refines with an exact haversine check in JS. An
+// order is "in the zone" if EITHER its store OR its drop-off falls inside
+// the radius — the goal is "show me everything happening in this zone",
+// not strict containment.
 
-router.get('/live-ops', async (_req: Request, res: Response) => {
+const EARTH_KM_PER_DEG_LAT = 111.32;
+
+router.get('/live-ops', async (req: Request, res: Response) => {
   try {
+    const zoneId = (req.query['zoneId'] as string | undefined)?.trim() || undefined;
+    let zone: { id: string; name: string; centerLat: number; centerLng: number; radiusKm: number } | null = null;
+
+    if (zoneId) {
+      zone = await prisma.zone.findUnique({
+        where: { id: zoneId },
+        select: { id: true, name: true, centerLat: true, centerLng: true, radiusKm: true },
+      });
+      if (!zone) return sendError(res, 'Zone not found', 404);
+    }
+
+    // Coarse bounding-box prefilter — Prisma can index-scan against this
+    // without doing trig per row. We over-fetch slightly (the box contains
+    // the circle); JS haversine below trims to the exact circle.
+    const bboxFilter = zone
+      ? (() => {
+          const latPad = zone!.radiusKm / EARTH_KM_PER_DEG_LAT;
+          const lngPad = zone!.radiusKm / (EARTH_KM_PER_DEG_LAT * Math.cos((zone!.centerLat * Math.PI) / 180));
+          return {
+            latMin: zone!.centerLat - latPad,
+            latMax: zone!.centerLat + latPad,
+            lngMin: zone!.centerLng - lngPad,
+            lngMax: zone!.centerLng + lngPad,
+          };
+        })()
+      : null;
+
+    const orderWhere: Prisma.OrderWhereInput = {
+      status: { in: ['PENDING', 'STORE_ACCEPTED', 'DRIVER_ASSIGNED', 'PICKED_UP'] },
+      ...(bboxFilter
+        ? {
+            // Either the store OR the drop-off is inside the bbox. Both
+            // join sides need the same lat/lng range filter.
+            OR: [
+              {
+                store: {
+                  lat: { gte: bboxFilter.latMin, lte: bboxFilter.latMax },
+                  lng: { gte: bboxFilter.lngMin, lte: bboxFilter.lngMax },
+                },
+              },
+              {
+                deliveryAddress: {
+                  lat: { gte: bboxFilter.latMin, lte: bboxFilter.latMax },
+                  lng: { gte: bboxFilter.lngMin, lte: bboxFilter.lngMax },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const driverWhere: Prisma.DriverWhereInput = {
+      status: { in: ['ONLINE', 'OFFLINE'] },
+      currentLat: { not: null },
+      currentLng: { not: null },
+      ...(bboxFilter
+        ? {
+            currentLat: { gte: bboxFilter.latMin, lte: bboxFilter.latMax },
+            currentLng: { gte: bboxFilter.lngMin, lte: bboxFilter.lngMax },
+          }
+        : {}),
+    };
+
     const [orders, drivers] = await Promise.all([
       prisma.order.findMany({
-        where: {
-          status: { in: ['PENDING', 'STORE_ACCEPTED', 'DRIVER_ASSIGNED', 'PICKED_UP'] },
-        },
+        where: orderWhere,
         select: {
           id: true,
           status: true,
@@ -1677,11 +1748,7 @@ router.get('/live-ops', async (_req: Request, res: Response) => {
         take: 500,
       }),
       prisma.driver.findMany({
-        where: {
-          status: { in: ['ONLINE', 'OFFLINE'] },
-          currentLat: { not: null },
-          currentLng: { not: null },
-        },
+        where: driverWhere,
         select: {
           id: true,
           status: true,
@@ -1692,7 +1759,32 @@ router.get('/live-ops', async (_req: Request, res: Response) => {
         take: 500,
       }),
     ]);
-    return sendSuccess(res, { orders, drivers, generatedAt: new Date().toISOString() });
+
+    // Exact-circle refinement — drop entities that fell in the bbox corners
+    // but are outside the circle's radius.
+    const filteredOrders = zone
+      ? orders.filter((o) => {
+          const dStore = haversineDistance(zone!.centerLat, zone!.centerLng, o.store.lat, o.store.lng);
+          const dDrop = haversineDistance(zone!.centerLat, zone!.centerLng, o.deliveryAddress.lat, o.deliveryAddress.lng);
+          return dStore <= zone!.radiusKm || dDrop <= zone!.radiusKm;
+        })
+      : orders;
+
+    const filteredDrivers = zone
+      ? drivers.filter(
+          (d) =>
+            d.currentLat !== null &&
+            d.currentLng !== null &&
+            haversineDistance(zone!.centerLat, zone!.centerLng, d.currentLat, d.currentLng) <= zone!.radiusKm,
+        )
+      : drivers;
+
+    return sendSuccess(res, {
+      orders: filteredOrders,
+      drivers: filteredDrivers,
+      zone,
+      generatedAt: new Date().toISOString(),
+    });
   } catch (err) {
     console.error('[Admin] live-ops error:', err);
     return sendError(res, 'Failed to fetch live-ops snapshot', 500);

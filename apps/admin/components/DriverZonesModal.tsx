@@ -156,7 +156,7 @@ export default function DriverZonesModal({ driverId, driverName, onClose }: Prop
         <footer className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
           <span className="text-xs text-gray-500">
             {selected.size === 0
-              ? 'Saves as: city-wide (no zone restriction)'
+              ? '⚠ Saves as: no zones (driver stops receiving offers)'
               : `${selected.size} zone(s) selected`}
           </span>
           <div className="flex gap-2">

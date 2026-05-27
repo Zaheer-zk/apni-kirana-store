@@ -94,22 +94,23 @@ async function rankDrivers(
     const distanceKm = haversineDistance(lat, lng, d.currentLat, d.currentLng);
     if (distanceKm > DRIVER_SEARCH_RADIUS_KM) continue;
 
-    // Zone filter: if the driver has selected zones, the order's store OR
-    // drop-off must fall inside at least one of them. Empty zone set is
-    // treated as "serves anywhere" so we don't break old drivers.
-    if (d.zones.length > 0) {
-      const inZone = d.zones.some(({ zone }) => {
-        const dStore = haversineDistance(zone.centerLat, zone.centerLng, lat, lng);
-        const dDrop = haversineDistance(
-          zone.centerLat,
-          zone.centerLng,
-          order.deliveryAddress.lat,
-          order.deliveryAddress.lng,
-        );
-        return dStore <= zone.radiusKm || dDrop <= zone.radiusKm;
-      });
-      if (!inZone) continue;
-    }
+    // Zone filter: drivers MUST opt into at least one zone to receive
+    // offers. The store OR drop-off must fall inside at least one of the
+    // driver's selected zones. Previously empty zones meant 'serve
+    // city-wide' for backward compat — that's gone now per product spec:
+    // every driver has to actively pick the areas they serve.
+    if (d.zones.length === 0) continue;
+    const inZone = d.zones.some(({ zone }) => {
+      const dStore = haversineDistance(zone.centerLat, zone.centerLng, lat, lng);
+      const dDrop = haversineDistance(
+        zone.centerLat,
+        zone.centerLng,
+        order.deliveryAddress.lat,
+        order.deliveryAddress.lng,
+      );
+      return dStore <= zone.radiusKm || dDrop <= zone.radiusKm;
+    });
+    if (!inZone) continue;
 
     const proximityScore = Math.max(0, 1 - distanceKm / DRIVER_SEARCH_RADIUS_KM);
     const ratingScore = (d.rating ?? 0) / 5;

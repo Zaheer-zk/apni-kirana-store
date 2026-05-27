@@ -355,9 +355,10 @@ function ActiveDeliveryCard({
           </div>
           <p className="text-sm font-bold text-gray-900">No active delivery</p>
           <p className="max-w-sm text-xs text-gray-500">
-            New delivery offers pop up automatically when you&apos;re online and
-            within range of a store. Make sure your browser has location access
-            and you&apos;ve picked at least one zone in your profile.
+            New delivery offers pop up automatically when (1) you&apos;re online,
+            (2) your browser is sharing location, and (3) you&apos;ve selected
+            at least one zone in your profile. Orders only flow inside zones
+            you&apos;ve picked.
           </p>
         </CardContent>
       </Card>

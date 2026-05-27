@@ -12,7 +12,9 @@ import { api } from '@/lib/api';
 //   GET  /api/v1/zones            — list of active platform zones (public)
 //   GET  /api/v1/drivers/me/zones — current selection
 //   PUT  /api/v1/drivers/me/zones — replace { zoneIds }
-// Empty selection means "serve city-wide" (backward compat for old drivers).
+//
+// Drivers MUST pick at least one zone or the matching engine won't offer
+// them anything. We surface this prominently when the selection is empty.
 
 type Zone = {
   id: string;
@@ -60,7 +62,7 @@ export function ServingZones() {
       setPending(null);
       toast.success(
         selected.size === 0
-          ? 'Service zones cleared — you can receive orders city-wide.'
+          ? "Zones cleared. You won't receive any offers until you select at least one zone."
           : `Updated — you'll get offers from ${selected.size} zone(s).`,
       );
     },
@@ -98,11 +100,24 @@ export function ServingZones() {
           <div>
             <p className="text-sm font-semibold text-gray-900">Serving zones</p>
             <p className="text-xs text-gray-500">
-              Tap to select the zones you want orders from. Leave empty to receive
-              any nearby order in the city.
+              Pick the zones you want orders from. You must select at least one
+              zone — without any selection you won&apos;t receive offers.
             </p>
           </div>
         </div>
+
+        {/* Loud empty-state warning — strict zone enforcement means a driver
+            with zero saved zones is invisible to the matching engine. */}
+        {!myZones.isLoading && (myZones.data?.length ?? 0) === 0 ? (
+          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <span className="text-base leading-none">⚠️</span>
+            <p>
+              <span className="font-semibold">No zones selected yet.</span> You
+              are online but the matching engine can&apos;t offer you any orders
+              until you pick at least one zone below and save.
+            </p>
+          </div>
+        ) : null}
 
         {allZones.isLoading || myZones.isLoading ? (
           <div className="flex items-center justify-center py-6">
@@ -110,7 +125,7 @@ export function ServingZones() {
           </div>
         ) : byCity.length === 0 ? (
           <p className="rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-500">
-            No zones configured yet. You&apos;ll receive any nearby order until admin sets up zones.
+            No zones configured yet. Ask admin to create zones in the admin dashboard.
           </p>
         ) : (
           <div className="space-y-3">
@@ -151,7 +166,7 @@ export function ServingZones() {
           <div className="flex items-center justify-between border-t border-gray-100 pt-3">
             <span className="text-xs text-gray-500">
               {selected.size === 0
-                ? 'Will save: city-wide (no zone restriction)'
+                ? '⚠ Will save: no zones (you stop receiving offers)'
                 : `Will save: ${selected.size} zone(s)`}
             </span>
             <div className="flex gap-2">

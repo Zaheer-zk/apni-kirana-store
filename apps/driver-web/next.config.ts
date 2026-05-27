@@ -1,4 +1,8 @@
 import type { NextConfig } from 'next';
+import createNextIntlPlugin from 'next-intl/plugin';
+
+// Wires next-intl to ./i18n/request.ts — see customer-web next.config.ts.
+const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 
 // NextConfig in Next.js 16's published .d.ts no longer declares the
 // `typescript` top-level block even though `next build` still honours it.
@@ -35,4 +39,4 @@ const config = {
 };
 
 const nextConfig = config as unknown as NextConfig;
-export default nextConfig;
+export default withNextIntl(nextConfig);

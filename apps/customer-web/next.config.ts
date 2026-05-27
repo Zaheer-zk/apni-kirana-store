@@ -1,4 +1,10 @@
 import type { NextConfig } from 'next';
+import createNextIntlPlugin from 'next-intl/plugin';
+
+// Wires next-intl to ./i18n/request.ts so useTranslations() works inside
+// server components. Without this the SSR layer throws "Couldn't find
+// next-intl config file" and every page returns 500.
+const withNextIntl = createNextIntlPlugin('./i18n/request.ts');
 
 // NextConfig in Next.js 16's published .d.ts no longer declares `typescript`
 // top-level block even though `next build` still honours it. Build the
@@ -23,4 +29,4 @@ const config = {
 };
 
 const nextConfig = config as unknown as NextConfig;
-export default nextConfig;
+export default withNextIntl(nextConfig);

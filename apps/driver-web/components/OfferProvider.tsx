@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from '@aks/ui/components/sonner';
 import { isAuthenticated } from '@/lib/auth';
 import { getSocket, subscribeToOffers } from '@/lib/socket';
+import { playNewDeliveryChime } from '@/lib/sound';
 import { OfferDialog } from './OfferDialog';
 
 interface ActiveOffer {
@@ -52,6 +53,10 @@ export function OfferProvider() {
       ({ orderId, distanceKm }) => {
         setOffer({ orderId, distanceKm });
         setDialogOpen(true);
+        // Audible cue — gets the driver's attention even if they're not
+        // looking at the screen. Silently no-ops if the browser's audio
+        // context hasn't been unlocked yet (driver never tapped anything).
+        playNewDeliveryChime();
       },
       ({ orderId }) => {
         // Another driver beat us to it — silently close the dialog if it's

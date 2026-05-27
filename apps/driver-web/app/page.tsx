@@ -355,8 +355,9 @@ function ActiveDeliveryCard({
           </div>
           <p className="text-sm font-bold text-gray-900">No active delivery</p>
           <p className="max-w-sm text-xs text-gray-500">
-            When you accept a delivery on your mobile app, it will appear here for
-            quick reference.
+            New delivery offers pop up automatically when you&apos;re online and
+            within range of a store. Make sure your browser has location access
+            and you&apos;ve picked at least one zone in your profile.
           </p>
         </CardContent>
       </Card>
@@ -439,8 +440,7 @@ function ActiveDeliveryCard({
         </div>
 
         <p className="text-[11px] leading-relaxed text-gray-500">
-          Accept, pick-up and OTP confirmation are mobile-app actions. Use the mobile app
-          to update this order.
+          Open the delivery to mark pickup, confirm drop-off OTP, and update status.
         </p>
       </CardContent>
     </Card>

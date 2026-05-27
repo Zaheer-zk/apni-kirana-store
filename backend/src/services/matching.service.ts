@@ -38,7 +38,12 @@ import { io } from '../socket';
 import { getSettings } from './settings.service';
 
 const MIN_ITEM_MATCH_PERCENT = 0.6;
-const TOP_N_BROADCAST = 5;
+// Broadcast cap. Per product spec we notify EVERY eligible store (carries
+// items + open + ACTIVE + within radius) so any store with stock can grab
+// the order, not just the highest-scored 5. The number here is a hard
+// safety ceiling for pathological cities with many qualifying stores — in
+// practice the eligible set is usually < 10.
+const TOP_N_BROADCAST = 30;
 // Additive score bump for admin-flagged "preferred" stores — they rank above
 // equivalent stores but a preferred store still has to carry the items.
 const PREFERRED_STORE_BOOST = 0.15;

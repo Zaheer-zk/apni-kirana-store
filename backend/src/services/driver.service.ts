@@ -38,7 +38,12 @@ import { io } from '../socket';
 import { getSettings } from './settings.service';
 
 const DRIVER_SEARCH_RADIUS_KM = 5;
-const TOP_N_BROADCAST = 3;
+// Broadcast cap. Per product spec we notify EVERY driver whose selected
+// zones contain the order's store OR drop-off, not just the top 3 scored.
+// First to accept wins. The number here is a hard safety ceiling for
+// dense cities — in practice the eligible set is usually under 10
+// (zone filter + 5km radius + ONLINE status all narrow it heavily).
+const TOP_N_BROADCAST = 30;
 // Driver accept timeout, retry delay, and matching mode are now read from
 // PlatformSetting via getSettings() — see settings.service.ts. Cached
 // in-process for ~5s so admin tweaks propagate without a backend restart.

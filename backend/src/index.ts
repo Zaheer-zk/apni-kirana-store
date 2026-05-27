@@ -29,6 +29,7 @@ import promosRouter from './routes/promos.routes';
 import chatsRouter from './routes/chats.routes';
 import supportRouter from './routes/support.routes';
 import systemRouter from './routes/system.routes';
+import zonesRouter from './routes/zones.routes';
 import { recordError } from './utils/error-log';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ app.use('/api/v1/promos', promosRouter);
 app.use('/api/v1/chats', chatsRouter);
 app.use('/api/v1/support', supportRouter);
 app.use('/api/v1/system', systemRouter);
+app.use('/api/v1/zones', zonesRouter);
 
 // ─── 404 Handler ──────────────────────────────────────────────────────────────
 

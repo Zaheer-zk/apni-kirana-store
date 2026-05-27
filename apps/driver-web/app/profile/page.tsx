@@ -40,6 +40,7 @@ import {
 } from '@aks/ui/components/dialog';
 import { AppHeader } from '@/components/AppHeader';
 import { RequireAuth } from '@/components/RequireAuth';
+import { ServingZones } from '@/components/ServingZones';
 import { api } from '@/lib/api';
 import { clearSession, getStoredUser, setStoredUser, type StoredUser } from '@/lib/auth';
 import { rupeesPrecise } from '@/lib/format';
@@ -382,6 +383,14 @@ function ProfileBody() {
             </p>
           </CardContent>
         </Card>
+      </section>
+
+      {/* Serving zones — multi-select chip picker */}
+      <section>
+        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
+          Serving zones
+        </h3>
+        <ServingZones />
       </section>
 
       {/* Service area / home base */}

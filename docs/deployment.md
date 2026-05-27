@@ -236,6 +236,15 @@ dc ps
 Every service should show `running`, and `healthy` where it has a healthcheck
 (`postgres`, `redis`, `backend`).
 
+> ⚠️  **After any `dc up -d --force-recreate <webservice>`, also `dc restart nginx`.**
+> Docker reassigns container IPs on recreate, but nginx caches static
+> `proxy_pass http://svc:3000` lookups at startup. Without a restart, nginx
+> sends requests for one domain to whichever container now owns the cached
+> IP — i.e. all your subdomains start serving the wrong app. `nginx.conf`
+> declares Docker's resolver (127.0.0.11) for the variable-form
+> `proxy_pass`, but the per-vhost configs use the static form for simplicity,
+> so a restart is still required.
+
 ### Step 7 — Create the first admin user
 
 Production ships with **no seed data** (by design — the seed creates fake test

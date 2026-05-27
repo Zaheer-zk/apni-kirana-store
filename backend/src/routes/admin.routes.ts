@@ -712,7 +712,28 @@ router.put('/stores/:id', validate(adminUpdateStoreSchema), async (req: Request,
     const store = await prisma.store.findUnique({ where: { id } });
     if (!store) return sendError(res, 'Store not found', 404);
 
+    const changedFields = Object.keys(req.body as Record<string, unknown>).filter((k) => {
+      const before = (store as Record<string, unknown>)[k];
+      const after = (req.body as Record<string, unknown>)[k];
+      return before !== after;
+    });
+
     const updated = await prisma.store.update({ where: { id }, data: req.body });
+
+    if (changedFields.length > 0) {
+      await prisma.notification
+        .create({
+          data: {
+            userId: store.ownerId,
+            title: 'Your store details were updated by admin',
+            body: `An admin updated: ${changedFields.join(', ')}. Open the store app to review.`,
+            event: 'ADMIN_PROFILE_UPDATED',
+            channel: 'INAPP',
+            status: 'DELIVERED',
+          },
+        })
+        .catch(() => undefined);
+    }
 
     await prisma.auditLog
       .create({

@@ -60,6 +60,7 @@ async function rankDrivers(
     include: {
       store: { select: { lat: true, lng: true } },
       customer: { select: { id: true } },
+      deliveryAddress: { select: { lat: true, lng: true } },
     },
   });
   if (!order || !['STORE_ACCEPTED', 'DRIVER_ASSIGNED'].includes(order.status)) return null;
@@ -67,6 +68,9 @@ async function rankDrivers(
   const { lat, lng } = order.store;
   const box = getBoundingBox(lat, lng, DRIVER_SEARCH_RADIUS_KM);
 
+  // Pull each candidate's zone set so we can apply the zone filter below.
+  // Drivers with zero zones serve the whole city (backward compat for
+  // drivers registered before zone selection existed).
   const candidates = await prisma.driver.findMany({
     where: {
       status: 'ONLINE',
@@ -74,7 +78,14 @@ async function rankDrivers(
       currentLat: { gte: box.minLat, lte: box.maxLat },
       currentLng: { gte: box.minLng, lte: box.maxLng },
     },
-    include: { user: { select: { id: true } } },
+    include: {
+      user: { select: { id: true } },
+      zones: {
+        include: {
+          zone: { select: { centerLat: true, centerLng: true, radiusKm: true } },
+        },
+      },
+    },
   });
 
   const scored: ScoredDriver[] = [];
@@ -82,6 +93,23 @@ async function rankDrivers(
     if (d.currentLat == null || d.currentLng == null) continue;
     const distanceKm = haversineDistance(lat, lng, d.currentLat, d.currentLng);
     if (distanceKm > DRIVER_SEARCH_RADIUS_KM) continue;
+
+    // Zone filter: if the driver has selected zones, the order's store OR
+    // drop-off must fall inside at least one of them. Empty zone set is
+    // treated as "serves anywhere" so we don't break old drivers.
+    if (d.zones.length > 0) {
+      const inZone = d.zones.some(({ zone }) => {
+        const dStore = haversineDistance(zone.centerLat, zone.centerLng, lat, lng);
+        const dDrop = haversineDistance(
+          zone.centerLat,
+          zone.centerLng,
+          order.deliveryAddress.lat,
+          order.deliveryAddress.lng,
+        );
+        return dStore <= zone.radiusKm || dDrop <= zone.radiusKm;
+      });
+      if (!inZone) continue;
+    }
 
     const proximityScore = Math.max(0, 1 - distanceKm / DRIVER_SEARCH_RADIUS_KM);
     const ratingScore = (d.rating ?? 0) / 5;

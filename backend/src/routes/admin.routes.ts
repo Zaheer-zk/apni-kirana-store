@@ -308,6 +308,28 @@ router.put('/users/:id', validate(updateUserSchema), async (req: Request, res: R
       })
       .catch(() => undefined);
 
+    // Notify the user that admin updated their profile. List the fields
+    // that actually changed so they can verify.
+    const changedFields = Object.keys(data as Record<string, unknown>).filter((k) => {
+      const before = (user as Record<string, unknown>)[k];
+      const after = (data as Record<string, unknown>)[k];
+      return before !== after;
+    });
+    if (changedFields.length > 0) {
+      await prisma.notification
+        .create({
+          data: {
+            userId: id,
+            title: 'Your account was updated by admin',
+            body: `An admin updated: ${changedFields.join(', ')}. Sign in to review.`,
+            event: 'ADMIN_PROFILE_UPDATED',
+            channel: 'INAPP',
+            status: 'DELIVERED',
+          },
+        })
+        .catch(() => undefined);
+    }
+
     return sendSuccess(res, updated, 'User updated successfully');
   } catch (err) {
     console.error('[Admin] update user error:', err);
@@ -842,7 +864,28 @@ router.put('/drivers/:id', validate(adminUpdateDriverSchema), async (req: Reques
     const driver = await prisma.driver.findUnique({ where: { id } });
     if (!driver) return sendError(res, 'Driver not found', 404);
 
+    const changedFields = Object.keys(req.body as Record<string, unknown>).filter((k) => {
+      const before = (driver as Record<string, unknown>)[k];
+      const after = (req.body as Record<string, unknown>)[k];
+      return before !== after;
+    });
+
     const updated = await prisma.driver.update({ where: { id }, data: req.body });
+
+    if (changedFields.length > 0) {
+      await prisma.notification
+        .create({
+          data: {
+            userId: driver.userId,
+            title: 'Your driver profile was updated by admin',
+            body: `An admin updated: ${changedFields.join(', ')}. Open the app to review.`,
+            event: 'ADMIN_PROFILE_UPDATED',
+            channel: 'INAPP',
+            status: 'DELIVERED',
+          },
+        })
+        .catch(() => undefined);
+    }
 
     await prisma.auditLog
       .create({
@@ -860,6 +903,134 @@ router.put('/drivers/:id', validate(adminUpdateDriverSchema), async (req: Reques
   } catch (err) {
     console.error('[Admin] update driver error:', err);
     return sendError(res, 'Failed to update driver', 500);
+  }
+});
+
+// ─── Driver ↔ Zone (admin override) ────────────────────────────────────────
+
+// GET /drivers/:id/zones — what zones is this driver serving
+router.get('/drivers/:id/zones', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const driver = await prisma.driver.findUnique({ where: { id }, select: { id: true } });
+    if (!driver) return sendError(res, 'Driver not found', 404);
+
+    const rows = await prisma.driverZone.findMany({
+      where: { driverId: id },
+      include: { zone: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return sendSuccess(res, rows.map((r) => r.zone));
+  } catch (err) {
+    console.error('[Admin] get driver zones error:', err);
+    return sendError(res, 'Failed to fetch zones', 500);
+  }
+});
+
+const adminSetDriverZonesSchema = z.object({
+  zoneIds: z.array(z.string().min(1)).max(50),
+});
+
+// PUT /drivers/:id/zones — admin override of a driver's zone set
+router.put(
+  '/drivers/:id/zones',
+  validate(adminSetDriverZonesSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const id = req.params['id'] as string;
+      const driver = await prisma.driver.findUnique({
+        where: { id },
+        select: { id: true, userId: true, user: { select: { name: true } } },
+      });
+      if (!driver) return sendError(res, 'Driver not found', 404);
+
+      const { zoneIds } = req.body as z.infer<typeof adminSetDriverZonesSchema>;
+      const unique = [...new Set(zoneIds)];
+
+      if (unique.length > 0) {
+        const found = await prisma.zone.findMany({
+          where: { id: { in: unique }, isActive: true },
+          select: { id: true },
+        });
+        if (found.length !== unique.length) {
+          return sendError(res, 'One or more zones are invalid or inactive', 400);
+        }
+      }
+
+      await prisma.$transaction([
+        prisma.driverZone.deleteMany({ where: { driverId: id } }),
+        ...(unique.length > 0
+          ? [
+              prisma.driverZone.createMany({
+                data: unique.map((zoneId) => ({ driverId: id, zoneId })),
+              }),
+            ]
+          : []),
+      ]);
+
+      await writeAudit({
+        actorId: req.user!.id,
+        action: 'DRIVER_ZONES_SET',
+        targetType: 'Driver',
+        targetId: id,
+        after: { zoneIds: unique },
+      });
+
+      // Notify the driver their service zones were updated by admin.
+      await prisma.notification
+        .create({
+          data: {
+            userId: driver.userId,
+            title: 'Your service zones were updated',
+            body:
+              unique.length === 0
+                ? 'An admin removed all zone restrictions. You can receive orders city-wide.'
+                : `An admin updated your service zones. You'll now receive offers from ${unique.length} zone(s).`,
+            event: 'DRIVER_PROFILE_UPDATED',
+            channel: 'INAPP',
+            status: 'DELIVERED',
+          },
+        })
+        .catch(() => undefined);
+
+      const updated = await prisma.driverZone.findMany({
+        where: { driverId: id },
+        include: { zone: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      return sendSuccess(res, updated.map((r) => r.zone), 'Zones updated');
+    } catch (err) {
+      console.error('[Admin] set driver zones error:', err);
+      return sendError(res, 'Failed to update zones', 500);
+    }
+  },
+);
+
+// GET /zones/:id/drivers — admin visibility: who's serving this zone
+router.get('/zones/:id/drivers', async (req: Request, res: Response) => {
+  try {
+    const zoneId = req.params['id'] as string;
+    const zone = await prisma.zone.findUnique({ where: { id: zoneId } });
+    if (!zone) return sendError(res, 'Zone not found', 404);
+
+    const rows = await prisma.driverZone.findMany({
+      where: { zoneId },
+      include: {
+        driver: {
+          select: {
+            id: true,
+            status: true,
+            rating: true,
+            user: { select: { id: true, name: true, phone: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return sendSuccess(res, { zone, drivers: rows.map((r) => r.driver) });
+  } catch (err) {
+    console.error('[Admin] zone drivers error:', err);
+    return sendError(res, 'Failed to fetch zone drivers', 500);
   }
 });
 

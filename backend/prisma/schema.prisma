@@ -325,11 +325,29 @@ model Driver {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   orders  Order[]
   payouts Payout[]
+  zones   DriverZone[]
 
   @@index([currentLat, currentLng])
+}
+
+// Many-to-many: drivers self-select which delivery zones they want to
+// serve, admin can override. Matching engine filters offerable drivers by
+// whether the order's store/dropoff falls inside any of the driver's zones.
+// If a driver has zero rows here, they're treated as serving the whole
+// city — backward-compat for existing drivers who registered before zones.
+model DriverZone {
+  driverId  String
+  zoneId    String
+  createdAt DateTime @default(now())
+
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  zone   Zone   @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@id([driverId, zoneId])
+  @@index([zoneId])
 }
 
 // Weekly aggregated driver payouts. Aggregator cron walks every driver
@@ -644,6 +662,8 @@ model Zone {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  drivers DriverZone[]
 
   @@index([city])
   @@index([isActive])

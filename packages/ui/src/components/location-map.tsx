@@ -198,6 +198,49 @@ export function LocationMap({
     );
   };
 
+  // Geocode a "City, State" (or any free-text) query via Nominatim — the
+  // OpenStreetMap public geocoder, no API key needed. Scoped to India by
+  // default. Picks the best match and flies the map there. The picker pin
+  // stays in the centre of the map, so after fly-to the lat/lng auto-updates
+  // through moveend → onChange.
+  const [cityQuery, setCityQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  async function searchCityState() {
+    const q = cityQuery.trim();
+    if (!q) return;
+    setSearching(true);
+    setError(null);
+    try {
+      const url = new URL('https://nominatim.openstreetmap.org/search');
+      url.searchParams.set('q', q);
+      url.searchParams.set('format', 'json');
+      url.searchParams.set('limit', '1');
+      url.searchParams.set('countrycodes', 'in');
+      const res = await fetch(url.toString(), {
+        headers: {
+          // Nominatim asks for a UA identifying the app per their fair-use policy.
+          Accept: 'application/json',
+        },
+      });
+      if (!res.ok) throw new Error(`Geocode failed (${res.status})`);
+      const data = (await res.json()) as Array<{ lat: string; lon: string; display_name: string }>;
+      if (data.length === 0) {
+        setError(`No match for "${q}". Try "<city>, <state>" or pan the map.`);
+        return;
+      }
+      const hit = data[0]!;
+      const next = { lat: Number(hit.lat), lng: Number(hit.lon) };
+      setCenter(next);
+      onChange?.(next);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (mapInstanceRef.current as any)?.flyTo?.([next.lat, next.lng], zoom, { duration: 0.4 });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not search city');
+    } finally {
+      setSearching(false);
+    }
+  }
+
   // Loading placeholder — shown until both refs and centre are resolved.
   if (!refs || !center) {
     return (
@@ -272,6 +315,35 @@ export function LocationMap({
         <div className="-mt-5 text-3xl drop-shadow-md" role="img" aria-label="Map pin">
           📍
         </div>
+      </div>
+
+      {/* Top overlay: city/state quick-pick — much faster than panning across
+          the country to find the right city. Search uses OSM Nominatim
+          (no key needed), India-scoped. */}
+      <div className="absolute left-2 right-14 top-2 z-[400] flex gap-1">
+        <input
+          type="search"
+          value={cityQuery}
+          onChange={(e) => setCityQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              searchCityState();
+            }
+          }}
+          placeholder="Search city, state (e.g. Jaipur, Rajasthan)"
+          className="flex-1 rounded-md border border-gray-300 bg-white/95 px-3 py-1.5 text-xs shadow-sm placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={searchCityState}
+          disabled={searching || !cityQuery.trim()}
+          className="h-8 bg-white shadow-sm"
+        >
+          {searching ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Go'}
+        </Button>
       </div>
 
       {/* "Use my current location" floating button */}

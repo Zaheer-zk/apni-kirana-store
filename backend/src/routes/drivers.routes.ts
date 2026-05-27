@@ -459,4 +459,85 @@ router.put(
   },
 );
 
+// ─── GET /me/zones — driver lists their serving zones ──────────────────────
+// Returns the zones the driver has opted into. Empty array = no zone
+// filter (matching engine treats them as serving the whole city).
+router.get('/me/zones', authenticate, authorize('DRIVER'), async (req: Request, res: Response) => {
+  try {
+    const driver = await prisma.driver.findUnique({
+      where: { userId: req.user!.id },
+      select: { id: true },
+    });
+    if (!driver) return sendError(res, 'Driver profile not found', 404);
+
+    const rows = await prisma.driverZone.findMany({
+      where: { driverId: driver.id },
+      include: { zone: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return sendSuccess(res, rows.map((r) => r.zone));
+  } catch (err) {
+    console.error('[Drivers] list zones error:', err);
+    return sendError(res, 'Failed to fetch zones', 500);
+  }
+});
+
+const updateMyZonesSchema = z.object({
+  zoneIds: z.array(z.string().min(1)).max(50),
+});
+
+// ─── PUT /me/zones — driver replaces their full zone list ──────────────────
+// Atomic: delete all existing rows for this driver, then insert the new set.
+// Validates that every zoneId exists + isActive so a driver can't pin to a
+// disabled or invented zone.
+router.put(
+  '/me/zones',
+  authenticate,
+  authorize('DRIVER'),
+  validate(updateMyZonesSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const driver = await prisma.driver.findUnique({
+        where: { userId: req.user!.id },
+        select: { id: true },
+      });
+      if (!driver) return sendError(res, 'Driver profile not found', 404);
+
+      const { zoneIds } = req.body as z.infer<typeof updateMyZonesSchema>;
+      const unique = [...new Set(zoneIds)];
+
+      if (unique.length > 0) {
+        const found = await prisma.zone.findMany({
+          where: { id: { in: unique }, isActive: true },
+          select: { id: true },
+        });
+        if (found.length !== unique.length) {
+          return sendError(res, 'One or more zones are invalid or inactive', 400);
+        }
+      }
+
+      await prisma.$transaction([
+        prisma.driverZone.deleteMany({ where: { driverId: driver.id } }),
+        ...(unique.length > 0
+          ? [
+              prisma.driverZone.createMany({
+                data: unique.map((zoneId) => ({ driverId: driver.id, zoneId })),
+              }),
+            ]
+          : []),
+      ]);
+
+      const updated = await prisma.driverZone.findMany({
+        where: { driverId: driver.id },
+        include: { zone: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      return sendSuccess(res, updated.map((r) => r.zone), 'Zones updated');
+    } catch (err) {
+      console.error('[Drivers] update zones error:', err);
+      return sendError(res, 'Failed to update zones', 500);
+    }
+  },
+);
+
 export default router;

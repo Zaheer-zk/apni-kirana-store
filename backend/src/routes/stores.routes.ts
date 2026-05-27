@@ -274,25 +274,11 @@ router.get(
   },
 );
 
-// ─── GET /:id ─────────────────────────────────────────────────────────────────
-
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
-    const store = await prisma.store.findUnique({
-      where: { id: req.params['id'] },
-      include: { _count: { select: { items: true } } },
-    });
-
-    if (!store) return sendError(res, 'Store not found', 404);
-
-    return sendSuccess(res, store);
-  } catch (err) {
-    console.error('[Stores] get store error:', err);
-    return sendError(res, 'Failed to fetch store', 500);
-  }
-});
-
-// ─── GET /:id/items ───────────────────────────────────────────────────────────
+// IMPORTANT: specific-path routes ('/orders', '/orders/active') MUST be
+// declared BEFORE the parameterized '/:id' route — otherwise Express
+// matches the path segment as :id and returns 404. (This bit us in prod:
+// `/stores/orders?statuses=PENDING` was being matched as
+// store-with-id="orders" → 404 instead of the orders list.)
 
 // ─── GET /orders/active — store owner's active orders (used by dashboard) ───
 router.get(
@@ -347,6 +333,26 @@ router.get(
     }
   },
 );
+
+// ─── GET /:id ─────────────────────────────────────────────────────────────────
+// Must come AFTER /orders, /orders/active, /me, /stats/today, /nearby etc.
+// — Express matches in declaration order and `:id` is greedy.
+
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const store = await prisma.store.findUnique({
+      where: { id: req.params['id'] },
+      include: { _count: { select: { items: true } } },
+    });
+    if (!store) return sendError(res, 'Store not found', 404);
+    return sendSuccess(res, store);
+  } catch (err) {
+    console.error('[Stores] get store error:', err);
+    return sendError(res, 'Failed to fetch store', 500);
+  }
+});
+
+// ─── GET /:id/items ───────────────────────────────────────────────────────────
 
 router.get('/:id/items', async (req: Request, res: Response) => {
   try {

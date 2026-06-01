@@ -4,6 +4,31 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-06-01 (evening) — Full web↔mobile parity ship (13 new surfaces)
+
+Closed every web↔mobile gap the parity audit flagged. After this batch the customer / store / driver surfaces all expose the same features whether opened on web or mobile.
+
+- [x] **Driver-web** — gained 5 surfaces matching the mobile app:
+  - `/notifications` — inbox with mark-read + mark-all-read, polls every 30s. AppHeader bell badge (was a no-op placeholder before).
+  - `/help` — same 8 FAQ entries as the mobile app + call / WhatsApp / email contact rows + CTA to /support.
+  - `/support` — per-user thread with admin. Uses /api/v1/support/me/messages + support:join/leave/message socket events so the conversation syncs across surfaces.
+  - `/ratings` — aggregate stars + 5-bar distribution + recent reviews. Same derivation (filter /orders by rating.driverRating) as mobile.
+  - `/chat/[orderId]` — per-order chat with customer or store. Same /api/v1/chats endpoints + chat:join/leave/message socket events. Active delivery page gained a "Chat with customer/store" CTA between the location cards and items.
+  - Dropdown menu adds My ratings + Help & FAQs so the new screens are discoverable.
+
+- [x] **Store-web** — gained 5 surfaces matching the mobile app:
+  - `/notifications` — same shape as driver-web. AppShell bell now links to it with an unread badge (was placeholder).
+  - `/orders/[id]/chat` — per-order chat with customer (or driver after pickup). Order detail page gained a "Chat with customer/driver" CTA gated on active statuses.
+  - `/restock` — browse master catalog + add to cart. Zustand store persisted to localStorage (`aks-store-restock-cart`).
+  - `/restock/cart` — quantity stepper + payment method picker (COD / Online) + Place restock order via /api/v1/orders/restock.
+  - `/restock/orders` — restock history with status pills (Awaiting wholesaler / Accepted / On the way / Delivered / Cancelled).
+  - Sidebar gained a "Restock" nav entry between Inventory and Earnings; en + hi i18n keys added.
+
+- [x] **Customer-mobile** — gained 3 surfaces matching customer-web:
+  - `/account/wallet` — balance card + paginated transaction list. Same /api/v1/users/me/wallet endpoint as web. Refunds, promo credits, goodwill, order payments, and adjustments each get their own icon + tint. Reachable from the profile tab.
+  - `/reset-password` — deep-link handler for password-reset emails. Validates token via /auth/reset-password/validate then collects + confirms a new password. 4-stage UX (checking → form → done | invalid) matching the web. Triggered by the existing `apni-kirana://reset-password?token=…` scheme + universal links.
+  - Delivered order detail gained a "Download GST invoice" button. Fetches as arraybuffer, base64-encodes, writes to a temp PDF via expo-file-system/legacy, hands it to expo-sharing's OS share sheet (save / print / email). Added expo-file-system + expo-sharing deps.
+
 ### 2026-06-01 (afternoon) — 3-app parity audit + P0 bugs + P1 UI alignment
 
 Ran three parallel parity audits (one per app pair: customer / store / driver) comparing web ↔ mobile feature-by-feature, route-by-route, with specific file:line citations.

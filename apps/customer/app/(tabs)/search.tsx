@@ -37,6 +37,7 @@ const CATEGORY_ICONS: Record<ItemCategory, keyof typeof Ionicons.glyphMap> = {
   HOUSEHOLD: 'home-outline',
   SNACKS: 'fast-food-outline',
   BEVERAGES: 'cafe-outline',
+  ELECTRONICS: 'flash-outline',
   OTHER: 'pricetag-outline',
 };
 
@@ -46,6 +47,7 @@ const CATEGORY_EMOJI: Record<ItemCategory, string> = {
   HOUSEHOLD: '🧹',
   SNACKS: '🍿',
   BEVERAGES: '🥤',
+  ELECTRONICS: '🔌',
   OTHER: '📦',
 };
 

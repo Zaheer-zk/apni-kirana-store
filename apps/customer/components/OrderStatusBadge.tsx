@@ -27,6 +27,15 @@ const STATUS_CONFIG: Record<OrderStatus, StatusConfig> = {
     fg: '#1E40AF',
     dot: colors.info,
   },
+  [OrderStatus.COOKING]: {
+    // Restaurant orders briefly transition STORE_ACCEPTED → COOKING → ready.
+    // Use the warning palette (amber) so it reads as "actively in progress"
+    // rather than the cooler info blue of the generic Accepted state.
+    label: 'Cooking',
+    bg: colors.warningLight,
+    fg: '#92400E',
+    dot: colors.warning,
+  },
   [OrderStatus.DRIVER_ASSIGNED]: {
     label: 'Driver assigned',
     bg: colors.purpleLight,

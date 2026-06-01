@@ -16,6 +16,7 @@ const CATEGORIES: CategoryDef[] = [
   { category: ItemCategory.HOUSEHOLD, label: 'Household', emoji: '🧹', bg: '#DBEAFE' },
   { category: ItemCategory.SNACKS, label: 'Snacks', emoji: '🍿', bg: '#FEF3C7' },
   { category: ItemCategory.BEVERAGES, label: 'Beverages', emoji: '🥤', bg: '#E0E7FF' },
+  { category: ItemCategory.ELECTRONICS, label: 'Electronics', emoji: '🔌', bg: '#EDE9FE' },
   { category: ItemCategory.OTHER, label: 'Other', emoji: '📦', bg: '#F3F4F6' },
 ];
 

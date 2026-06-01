@@ -38,6 +38,7 @@ const CATEGORY_EMOJI: Record<ItemCategory, string> = {
   HOUSEHOLD: '🧹',
   SNACKS: '🍿',
   BEVERAGES: '🥤',
+  ELECTRONICS: '🔌',
   OTHER: '📦',
 } as const;
 

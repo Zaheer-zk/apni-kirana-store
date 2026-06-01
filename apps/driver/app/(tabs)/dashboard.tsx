@@ -445,8 +445,8 @@ export default function DashboardScreen() {
                 </Text>
               </View>
               <Badge
-                variant={activeOrder.paymentMethod === 'COD' ? 'warning' : 'success'}
-                text={activeOrder.paymentMethod === 'COD' ? 'Collect cash' : 'Already paid'}
+                variant={activeOrder.paymentMethod === 'CASH_ON_DELIVERY' ? 'warning' : 'success'}
+                text={activeOrder.paymentMethod === 'CASH_ON_DELIVERY' ? 'Collect cash' : 'Already paid'}
               />
             </View>
 

@@ -12,6 +12,7 @@ import {
   PackageCheck,
   Phone,
   Truck,
+  User,
   XCircle,
 } from 'lucide-react';
 import { Button } from '@aks/ui/components/button';
@@ -74,6 +75,11 @@ type RejectReasonValue = (typeof REJECT_REASONS)[number]['value'];
  */
 interface OrderDetailExtra extends OrderDetail {
   commission?: number;
+  // When the customer placed the order for someone else (gift, parent,
+  // colleague), the recipient's name + phone are stored here. The store
+  // surfaces these so the kitchen / counter staff know who to address.
+  recipientName?: string | null;
+  recipientPhone?: string | null;
   // Set when the store marks the order ready/packed — drives the packed-state
   // UI (button hidden, "Packed & ready" pill shown) and the server-side
   // idempotency check.
@@ -437,6 +443,17 @@ function OrderDetailInner() {
               <p className="text-sm font-medium text-gray-900">{order.deliveryPincode || '—'}</p>
             </div>
           </div>
+          {order.recipientName || order.recipientPhone ? (
+            <div className="flex items-start gap-3">
+              <User className="mt-0.5 h-5 w-5 text-primary" />
+              <div>
+                <p className="text-xs text-gray-500">Recipient (order for someone else)</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {[order.recipientName, order.recipientPhone].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+            </div>
+          ) : null}
           <div className="flex items-start gap-2 rounded-md bg-gray-50 p-3 text-xs text-gray-600">
             <Lock className="mt-0.5 h-3.5 w-3.5" />
             <span>

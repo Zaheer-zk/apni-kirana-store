@@ -106,7 +106,7 @@ async function notifyAdminsOfRequest(requestId: string): Promise<void> {
       sendWebPushToUser(a.id, {
         title: 'New catalog item request',
         body: `${req.store.name} requested "${req.name}".`,
-        data: { url: '/catalog-requests' },
+        url: '/catalog-requests',
       }),
     ),
   );
@@ -160,7 +160,7 @@ adminRouter.put(
   validate(reviewSchema),
   async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
+      const id = req.params['id'] as string;
       const adminId = req.user!.id;
       const reqRow = await prisma.catalogItemRequest.findUnique({ where: { id } });
       if (!reqRow) return sendError(res, 'Request not found', 404);
@@ -184,7 +184,7 @@ adminRouter.put(
         sendWebPushToUser(reqRow.requestedBy, {
           title: 'Catalog request rejected',
           body: `Your request for "${reqRow.name}" was not approved.`,
-          data: { url: '/help' },
+          url: '/help',
         }).catch(() => undefined);
         return sendSuccess(res, updated, 'Request rejected');
       }
@@ -246,7 +246,7 @@ adminRouter.put(
       sendWebPushToUser(reqRow.requestedBy, {
         title: 'Catalog request approved',
         body: `"${name}" is now in the catalog. Set price + stock in your inventory.`,
-        data: { url: '/inventory' },
+        url: '/inventory',
       }).catch(() => undefined);
 
       return sendSuccess(res, updated, 'Request approved');

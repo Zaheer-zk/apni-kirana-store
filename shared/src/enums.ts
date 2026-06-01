@@ -8,6 +8,10 @@ export enum UserRole {
 export enum OrderStatus {
   PENDING = 'PENDING',
   STORE_ACCEPTED = 'STORE_ACCEPTED',
+  // Only emitted for restaurant/cloud-kitchen orders — the store transitions
+  // from STORE_ACCEPTED → COOKING when prep starts, then back to
+  // STORE_ACCEPTED (or directly to DRIVER_ASSIGNED) when the food is ready.
+  COOKING = 'COOKING',
   DRIVER_ASSIGNED = 'DRIVER_ASSIGNED',
   PICKED_UP = 'PICKED_UP',
   DELIVERED = 'DELIVERED',

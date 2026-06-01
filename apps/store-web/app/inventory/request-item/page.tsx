@@ -133,7 +133,7 @@ function RequestItemInner() {
                 <Label htmlFor="category">Category *</Label>
                 <Select
                   value={form.category}
-                  onValueChange={(v) => setForm({ ...form, category: v })}
+                  onValueChange={(v) => setForm({ ...form, category: v as ItemCategory })}
                 >
                   <SelectTrigger id="category">
                     <SelectValue />

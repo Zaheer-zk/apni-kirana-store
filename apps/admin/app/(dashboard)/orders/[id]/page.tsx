@@ -111,6 +111,7 @@ interface ToastState {
 const STATUS_LABELS: Record<OrderStatus, string> = {
   [OrderStatus.PENDING]: 'Order placed',
   [OrderStatus.STORE_ACCEPTED]: 'Accepted by store',
+  [OrderStatus.COOKING]: 'Cooking',
   [OrderStatus.DRIVER_ASSIGNED]: 'Driver assigned',
   [OrderStatus.PICKED_UP]: 'Picked up',
   [OrderStatus.DELIVERED]: 'Delivered',

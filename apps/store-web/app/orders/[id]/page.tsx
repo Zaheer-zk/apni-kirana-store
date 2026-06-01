@@ -74,6 +74,16 @@ type RejectReasonValue = (typeof REJECT_REASONS)[number]['value'];
  */
 interface OrderDetailExtra extends OrderDetail {
   commission?: number;
+  // Set when the store marks the order ready/packed — drives the packed-state
+  // UI (button hidden, "Packed & ready" pill shown) and the server-side
+  // idempotency check.
+  packedAt?: string | null;
+  // Set when a restaurant transitions from STORE_ACCEPTED → COOKING; surfaces
+  // the cooking-state badge on the order detail screen.
+  cookingStartedAt?: string | null;
+  // The order's store is included in the join with category so we can branch
+  // the UI for hotels/restaurants (cooking step, different copy).
+  store?: { id: string; name: string; lat: number; lng: number; category?: string };
   customer?: { id: string; name: string; phone: string } | null;
   driver?: {
     id: string;

@@ -552,7 +552,7 @@ export default function StoreRegisterScreen() {
             <Text style={styles.coords}>
               {region.latitude.toFixed(5)}, {region.longitude.toFixed(5)}
             </Text>
-            {resolving ? <ActivityIndicator size="small" color="#2563EB" /> : null}
+            {resolving ? <ActivityIndicator size="small" color="#16A34A" /> : null}
           </View>
 
           {/* Address — auto-filled from the pin, still editable */}
@@ -642,7 +642,7 @@ const styles = StyleSheet.create({
   contentContainer: { padding: 24, paddingBottom: 48 },
   title: { fontSize: 26, fontWeight: '700', color: '#111827', marginBottom: 6 },
   subtitle: { fontSize: 14, color: '#6B7280', marginBottom: 24 },
-  sectionHeader: { fontSize: 15, fontWeight: '700', color: '#2563EB', marginTop: 20, marginBottom: 12 },
+  sectionHeader: { fontSize: 15, fontWeight: '700', color: '#16A34A', marginTop: 20, marginBottom: 12 },
   hint: { fontSize: 13, color: '#6B7280', marginBottom: 12, lineHeight: 18 },
   label: { fontSize: 14, color: '#374151', fontWeight: '500', marginBottom: 6 },
   input: {
@@ -666,9 +666,9 @@ const styles = StyleSheet.create({
     marginRight: 8,
     backgroundColor: '#F9FAFB',
   },
-  categoryChipSelected: { borderColor: '#2563EB', backgroundColor: '#EFF6FF' },
+  categoryChipSelected: { borderColor: '#16A34A', backgroundColor: '#F0FDF4' },
   categoryChipText: { fontSize: 13, color: '#6B7280', fontWeight: '600' },
-  categoryChipTextSelected: { color: '#2563EB' },
+  categoryChipTextSelected: { color: '#16A34A' },
   row: { flexDirection: 'row', gap: 12 },
   rowField: { flex: 1 },
   mapWrap: {
@@ -707,7 +707,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#D1D5DB',
   },
-  recenterText: { fontSize: 22, color: '#2563EB', fontWeight: '700' },
+  recenterText: { fontSize: 22, color: '#16A34A', fontWeight: '700' },
   coordsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -716,7 +716,7 @@ const styles = StyleSheet.create({
   },
   coords: { fontSize: 12, color: '#6B7280' },
   submitButton: {
-    backgroundColor: '#2563EB',
+    backgroundColor: '#16A34A',
     borderRadius: 12,
     height: 54,
     justifyContent: 'center',
@@ -735,6 +735,6 @@ const styles = StyleSheet.create({
   pendingIcon: { fontSize: 64, marginBottom: 16 },
   pendingTitle: { fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 12 },
   pendingDesc: { fontSize: 15, color: '#6B7280', textAlign: 'center', lineHeight: 22, marginBottom: 32 },
-  backButton: { backgroundColor: '#2563EB', borderRadius: 10, paddingHorizontal: 32, paddingVertical: 14 },
+  backButton: { backgroundColor: '#16A34A', borderRadius: 10, paddingHorizontal: 32, paddingVertical: 14 },
   backButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

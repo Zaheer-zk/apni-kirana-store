@@ -95,7 +95,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
       name: 'driver-default',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#DC2626',
+      lightColor: '#16A34A',
     });
   }
 

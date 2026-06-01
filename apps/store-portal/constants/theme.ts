@@ -2,15 +2,19 @@ import { Platform, ViewStyle } from 'react-native';
 
 /**
  * Apni Kirana — Store Portal Design System
- * Mirrors the customer-app shape but uses the store-owner blue palette so the
- * two products feel like siblings instead of clones.
+ *
+ * Brand is unified green (#16A34A) across customer / store / driver / admin
+ * surfaces. The earlier blue palette made store-owner mobile look like a
+ * different product than the store-web (green) — fixed during the 2026-06-01
+ * cross-app parity audit. accent stays amber so it pairs against green for
+ * "needs attention" badges and CTAs.
  */
 
 export const colors = {
   // Brand
-  primary: '#2563EB',
-  primaryDark: '#1D4ED8',
-  primaryLight: '#DBEAFE',
+  primary: '#16A34A',
+  primaryDark: '#15803D',
+  primaryLight: '#DCFCE7',
   accent: '#F59E0B',
   accentLight: '#FEF3C7',
 

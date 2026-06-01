@@ -137,8 +137,8 @@ export function InventoryItem({ item, onToggleAvailability, onEdit, onDelete }: 
           <Switch
             value={item.available}
             onValueChange={onToggleAvailability}
-            trackColor={{ false: '#D1D5DB', true: '#93C5FD' }}
-            thumbColor={item.available ? '#2563EB' : '#9CA3AF'}
+            trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
+            thumbColor={item.available ? '#16A34A' : '#9CA3AF'}
           />
           <Text style={[styles.availabilityText, item.available ? styles.availableText : styles.unavailableText]}>
             {item.available ? 'On' : 'Off'}
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   },
   editAction: {
     flex: 1,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#16A34A',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 4,
@@ -210,6 +210,6 @@ const styles = StyleSheet.create({
   outOfStock: { color: '#DC2626' },
   toggleContainer: { alignItems: 'center', gap: 4 },
   availabilityText: { fontSize: 10, fontWeight: '700' },
-  availableText: { color: '#2563EB' },
+  availableText: { color: '#16A34A' },
   unavailableText: { color: '#9CA3AF' },
 });

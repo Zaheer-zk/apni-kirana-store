@@ -29,11 +29,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   iconBox: {
-    width: 96, height: 96, borderRadius: 24, backgroundColor: '#DBEAFE',
+    width: 96, height: 96, borderRadius: 24, backgroundColor: '#DCFCE7',
     alignItems: 'center', justifyContent: 'center', marginBottom: 24,
   },
-  label: { fontSize: 14, fontWeight: '600', color: '#2563EB', letterSpacing: 1 },
+  label: { fontSize: 14, fontWeight: '600', color: '#16A34A', letterSpacing: 1 },
   title: { marginTop: 8, fontSize: 24, fontWeight: '700', color: '#111827', textAlign: 'center' },
   subtitle: { marginTop: 12, fontSize: 16, color: '#6B7280', textAlign: 'center' },
-  cta: { marginTop: 32, fontSize: 16, fontWeight: '600', color: '#2563EB' },
+  cta: { marginTop: 32, fontSize: 16, fontWeight: '600', color: '#16A34A' },
 });

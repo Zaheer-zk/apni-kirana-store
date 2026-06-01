@@ -7,7 +7,7 @@
     "orientation": "portrait",
     "icon": "./assets/apni-icon.png",
     "userInterfaceStyle": "light",
-    "primaryColor": "#DC2626",
+    "primaryColor": "#16A34A",
     "splash": {
       "image": "./assets/apni-splash.png",
       "resizeMode": "contain",

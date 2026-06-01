@@ -101,7 +101,7 @@ export async function startLocationTracking(orderId: string, token: string): Pro
     foregroundService: {
       notificationTitle: 'AKS Driver — Delivery in Progress',
       notificationBody: 'Location is being tracked for your active delivery.',
-      notificationColor: '#DC2626',
+      notificationColor: '#16A34A',
     },
   });
 }

@@ -2,17 +2,23 @@ import { Platform, ViewStyle } from 'react-native';
 
 /**
  * Apni Kirana Store — Driver Design System
- * Mirrors the customer app's structure but with the red-branded driver palette.
+ *
+ * Brand is unified green (#16A34A) across customer / store / driver / admin
+ * surfaces. The earlier red palette made driver mobile look like a different
+ * product than driver-web (green) — fixed during the 2026-06-01 cross-app
+ * parity audit. Accent stays green too because the driver app uses it for
+ * "active/healthy" semantics (online indicator, earnings, delivery dot)
+ * which read wrong in amber.
  */
 
 export const colors = {
-  // Brand (driver = red)
-  primary: '#DC2626',
-  primaryDark: '#991B1B',
-  primaryLight: '#FEE2E2',
-  primaryTint: '#FEF2F2',
+  // Brand (unified green across all apps)
+  primary: '#16A34A',
+  primaryDark: '#15803D',
+  primaryLight: '#DCFCE7',
+  primaryTint: '#F0FDF4',
 
-  // Accent (driver = green for "online" / earnings)
+  // Accent (kept green — used for online / earnings / success semantics)
   accent: '#16A34A',
   accentDark: '#15803D',
   accentLight: '#DCFCE7',

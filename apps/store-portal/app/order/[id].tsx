@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Modal,
+  TextInput,
   TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -20,6 +22,18 @@ import { Button } from '@/components/Button';
 import { Skeleton } from '@/components/Skeleton';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
 import type { OrderDetail, OrderStatusEvent } from '@aks/shared';
+
+// Canonical reject reasons — mirrors the web (store-web/app/orders/[id]/page.tsx
+// REJECT_REASONS). Keeping the same labels means admin analytics can cluster
+// rejection patterns across surfaces without normalising strings.
+const REJECT_REASONS = [
+  { value: 'OUT_OF_STOCK', label: 'Out of stock' },
+  { value: 'CLOSING_SOON', label: "Closing soon — can't prepare in time" },
+  { value: 'TOO_BUSY', label: 'Too busy right now' },
+  { value: 'CANT_FULFILL', label: "Can't fulfill this order" },
+  { value: 'OTHER', label: 'Other (describe below)' },
+] as const;
+type RejectReasonValue = (typeof REJECT_REASONS)[number]['value'];
 
 const STATUS_TIMELINE_LABELS: Record<string, string> = {
   PENDING: 'Order Placed',
@@ -77,6 +91,14 @@ export default function OrderDetailScreen() {
   // Use real header height instead of hardcoded 100 — Android's bar height differs from iOS
   const headerHeight = useHeaderHeight();
 
+  // Reject-dialog state. Lives at the screen level so the modal can survive
+  // re-renders triggered by the mutation. `reason` is the canonical value
+  // posted to the backend; `note` is appended when reason === 'OTHER' or the
+  // owner wants to add extra context.
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState<RejectReasonValue>('OUT_OF_STOCK');
+  const [rejectNote, setRejectNote] = useState('');
+
   const { data: order, isLoading } = useQuery<OrderDetail>({
     queryKey: ['orderDetail', id],
     // Backend wraps responses as { success, data } — unwrap to the inner payload
@@ -99,22 +121,31 @@ export default function OrderDetailScreen() {
   });
 
   const rejectMutation = useMutation({
-    // Backend route is /reject (not /store-reject) and requires a `reason`.
-    // We pass a sensible default so the simple "Reject Order" button works
-    // without an extra dialog. The store owner can use chat for nuance.
-    mutationFn: (reason?: string) =>
-      api
-        .put(`/api/v1/orders/${id}/reject`, {
-          reason: reason ?? 'Store cannot fulfill this order',
-        })
-        .then((r) => r.data),
+    // Backend route is /reject and requires a `reason` (1..500 chars).
+    // We submit the structured value label + optional free-text note so admin
+    // analytics can cluster patterns across surfaces (mirrors store-web).
+    mutationFn: (reason: string) =>
+      api.put(`/api/v1/orders/${id}/reject`, { reason }).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orderDetail', id] });
       queryClient.invalidateQueries({ queryKey: ['storeOrders'] });
+      setRejectOpen(false);
       router.back();
     },
     onError: (err: Error) => Alert.alert('Error', err.message),
   });
+
+  function submitReject() {
+    const selected = REJECT_REASONS.find((r) => r.value === rejectReason);
+    const label = selected?.label ?? 'Store cannot fulfill this order';
+    const trimmed = rejectNote.trim();
+    if (rejectReason === 'OTHER' && trimmed.length < 3) {
+      Alert.alert('Add a reason', 'Tell the customer why so they can adjust the order.');
+      return;
+    }
+    const reason = trimmed ? `${label} — ${trimmed}` : label;
+    rejectMutation.mutate(reason);
+  }
 
   const markReadyMutation = useMutation({
     mutationFn: () => api.put(`/api/v1/orders/${id}/ready`).then((r) => r.data),
@@ -387,22 +418,19 @@ export default function OrderDetailScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             disabled={isBusy}
-            onPress={() =>
-              Alert.alert('Reject order', 'Are you sure you want to reject this order?', [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Reject',
-                  style: 'destructive',
-                  onPress: () => rejectMutation.mutate(undefined),
-                },
-              ])
-            }
+            onPress={() => {
+              // Reset modal state each open so a previous rejection-attempt
+              // doesn't pre-fill the next one.
+              setRejectReason('OUT_OF_STOCK');
+              setRejectNote('');
+              setRejectOpen(true);
+            }}
             style={[styles.rejectBtn, isBusy && { opacity: 0.55 }]}
           >
             {rejectMutation.isPending ? (
               <ActivityIndicator color={colors.error} size="small" />
             ) : (
-              <Text style={styles.rejectBtnText}>Reject Order</Text>
+              <Text style={styles.rejectBtnText}>Reject order</Text>
             )}
           </TouchableOpacity>
           <Button
@@ -470,6 +498,88 @@ export default function OrderDetailScreen() {
           onPress={() => router.push(`/chat/${order.id}`)}
         />
       )}
+
+      {/* Reject reasons sheet — bottom sheet via Modal. Mirrors the web's
+          RejectDialog so admins can analyse rejection patterns by reason. */}
+      <Modal
+        transparent
+        visible={rejectOpen}
+        animationType="fade"
+        onRequestClose={() => setRejectOpen(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.rejectBackdrop}
+          onPress={() => !rejectMutation.isPending && setRejectOpen(false)}
+        />
+        <View style={styles.rejectSheet}>
+          <View style={styles.rejectHandle} />
+          <Text style={styles.rejectTitle}>Reject this order?</Text>
+          <Text style={styles.rejectSubtitle}>
+            Tell the customer why so they can adjust their order.
+          </Text>
+          <View style={styles.rejectOptions}>
+            {REJECT_REASONS.map((r) => {
+              const selected = r.value === rejectReason;
+              return (
+                <TouchableOpacity
+                  key={r.value}
+                  activeOpacity={0.7}
+                  onPress={() => setRejectReason(r.value)}
+                  style={[styles.rejectOption, selected && styles.rejectOptionOn]}
+                >
+                  <View style={[styles.rejectRadio, selected && styles.rejectRadioOn]}>
+                    {selected ? <View style={styles.rejectRadioDot} /> : null}
+                  </View>
+                  <Text style={[styles.rejectOptionLabel, selected && styles.rejectOptionLabelOn]}>
+                    {r.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.rejectNoteLabel}>
+            {rejectReason === 'OTHER' ? 'Details *' : 'Add a note (optional)'}
+          </Text>
+          <TextInput
+            style={styles.rejectNoteInput}
+            placeholder={
+              rejectReason === 'OTHER'
+                ? 'Tell the customer what happened'
+                : 'Anything else the customer should know?'
+            }
+            placeholderTextColor={colors.textMuted}
+            value={rejectNote}
+            onChangeText={setRejectNote}
+            multiline
+            numberOfLines={3}
+            maxLength={500}
+            editable={!rejectMutation.isPending}
+          />
+          <View style={styles.rejectActions}>
+            <TouchableOpacity
+              style={[styles.rejectCancel, rejectMutation.isPending && { opacity: 0.5 }]}
+              onPress={() => setRejectOpen(false)}
+              disabled={rejectMutation.isPending}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.rejectCancelText}>Keep order</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.rejectConfirm, rejectMutation.isPending && { opacity: 0.6 }]}
+              onPress={submitReject}
+              disabled={rejectMutation.isPending}
+              activeOpacity={0.7}
+            >
+              {rejectMutation.isPending ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : (
+                <Text style={styles.rejectConfirmText}>Reject order</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -659,4 +769,103 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   callBtnText: { color: colors.white, fontWeight: '700', fontSize: fontSize.xs },
+  // Reject reasons sheet
+  rejectBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(17, 24, 39, 0.45)',
+  },
+  rejectSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.card,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxl,
+    gap: spacing.md,
+  },
+  rejectHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  rejectTitle: { fontSize: fontSize.lg, fontWeight: '800', color: colors.textPrimary },
+  rejectSubtitle: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: -spacing.xs },
+  rejectOptions: { gap: spacing.sm },
+  rejectOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  rejectOptionOn: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  rejectRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rejectRadioOn: { borderColor: colors.primary },
+  rejectRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+  },
+  rejectOptionLabel: { flex: 1, fontSize: fontSize.sm, color: colors.textPrimary },
+  rejectOptionLabelOn: { fontWeight: '700' },
+  rejectNoteLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+  },
+  rejectNoteInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
+    backgroundColor: colors.white,
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
+  rejectActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
+  rejectCancel: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+  },
+  rejectCancelText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.textPrimary },
+  rejectConfirm: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.error,
+    alignItems: 'center',
+  },
+  rejectConfirmText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.white },
 });

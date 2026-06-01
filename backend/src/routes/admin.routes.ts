@@ -930,6 +930,61 @@ router.put('/drivers/:id', validate(adminUpdateDriverSchema), async (req: Reques
 
 // ─── Driver ↔ Zone (admin override) ────────────────────────────────────────
 
+// GET /drivers/:id — full driver detail for the admin detail page.
+// Includes user (name/phone/email), vehicle, status, GPS, rating, earnings,
+// zone count, payouts count, and last 10 deliveries. One round-trip so the
+// detail page renders fast without N+1 calls.
+router.get('/drivers/:id', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const [driver, recentDeliveries, zoneCount, payoutCount] = await Promise.all([
+      prisma.driver.findUnique({
+        where: { id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              email: true,
+              username: true,
+              isActive: true,
+              role: true,
+              createdAt: true,
+            },
+          },
+          zones: { include: { zone: true } },
+        },
+      }),
+      prisma.order.findMany({
+        where: { driverId: id, status: { in: ['DRIVER_ASSIGNED', 'PICKED_UP', 'DELIVERED'] } },
+        select: {
+          id: true,
+          status: true,
+          total: true,
+          deliveryFee: true,
+          createdAt: true,
+          deliveredAt: true,
+          store: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      prisma.driverZone.count({ where: { driverId: id } }),
+      prisma.payout.count({ where: { driverId: id } }),
+    ]);
+    if (!driver) return sendError(res, 'Driver not found', 404);
+    return sendSuccess(res, {
+      driver,
+      recentDeliveries,
+      counts: { zones: zoneCount, payouts: payoutCount },
+    });
+  } catch (err) {
+    console.error('[Admin] driver detail error:', err);
+    return sendError(res, 'Failed to fetch driver', 500);
+  }
+});
+
 // GET /drivers/:id/zones — what zones is this driver serving
 router.get('/drivers/:id/zones', async (req: Request, res: Response) => {
   try {

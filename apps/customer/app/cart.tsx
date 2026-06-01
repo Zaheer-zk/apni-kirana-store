@@ -41,6 +41,8 @@ async function placeOrderRequest(payload: {
   deliveryAddressId: string;
   paymentMethod: PaymentMethod;
   promoCode?: string;
+  recipientName?: string;
+  recipientPhone?: string;
 }): Promise<Order> {
   const res = await apiClient.post<{ data: Order } | Order>('/api/v1/orders', payload);
   const data = res.data as unknown;
@@ -132,6 +134,10 @@ export default function CartScreen() {
   const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [promoError, setPromoError] = useState<string | null>(null);
+  // 'Order for someone else' — optional recipient name + 10-digit phone.
+  const [orderForSomeoneElse, setOrderForSomeoneElse] = useState(false);
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
 
   const subtotal = useMemo(() => total(), [items, total]);
   const deliveryFee = items.length === 0 ? 0 : BASE_DELIVERY_FEE;
@@ -198,12 +204,31 @@ export default function CartScreen() {
       Alert.alert('Address required', 'Please add a delivery address before placing an order.');
       return;
     }
+    // Recipient validation — only when the user has explicitly opted in.
+    let recipNameTrimmed: string | undefined;
+    let recipPhoneTrimmed: string | undefined;
+    if (orderForSomeoneElse) {
+      const n = recipientName.trim();
+      const p = recipientPhone.trim();
+      if (n.length < 2) {
+        Alert.alert('Recipient name required', 'Tell us who is receiving this order.');
+        return;
+      }
+      if (!/^\d{10}$/.test(p)) {
+        Alert.alert('Recipient phone invalid', 'Enter a 10-digit phone number.');
+        return;
+      }
+      recipNameTrimmed = n;
+      recipPhoneTrimmed = p;
+    }
     orderMutation.mutate({
       // Cart's `itemId` is the StoreItem id (the customer added it from a specific store).
       items: items.map((i) => ({ storeItemId: i.itemId, qty: i.qty })),
       deliveryAddressId: defaultAddress.id,
       paymentMethod,
       promoCode: appliedPromo ?? undefined,
+      recipientName: recipNameTrimmed,
+      recipientPhone: recipPhoneTrimmed,
     });
   }
 
@@ -300,6 +325,54 @@ export default function CartScreen() {
               />
             </View>
           </TouchableOpacity>
+        </View>
+
+        {/* Recipient — 'order for someone else' */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={styles.recipientToggleRow}
+            onPress={() => setOrderForSomeoneElse((v) => !v)}
+          >
+            <View
+              style={[
+                styles.checkbox,
+                orderForSomeoneElse ? styles.checkboxOn : null,
+              ]}
+            >
+              {orderForSomeoneElse ? (
+                <Ionicons name="checkmark" size={14} color={colors.white} />
+              ) : null}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.recipientToggleLabel}>Order for someone else?</Text>
+              <Text style={styles.recipientToggleHint}>
+                The driver will call this person — useful for gifts, parents, colleagues.
+              </Text>
+            </View>
+          </TouchableOpacity>
+          {orderForSomeoneElse ? (
+            <View style={[styles.cardGroup, { padding: 12, gap: 10 }]}>
+              <TextInput
+                style={styles.recipientInput}
+                placeholder="Recipient name"
+                placeholderTextColor={colors.textMuted}
+                value={recipientName}
+                onChangeText={setRecipientName}
+                autoCapitalize="words"
+                maxLength={60}
+              />
+              <TextInput
+                style={styles.recipientInput}
+                placeholder="10-digit phone (e.g. 9876543210)"
+                placeholderTextColor={colors.textMuted}
+                value={recipientPhone}
+                onChangeText={(t) => setRecipientPhone(t.replace(/\D/g, '').slice(0, 10))}
+                keyboardType="number-pad"
+                maxLength={10}
+              />
+            </View>
+          ) : null}
         </View>
 
         {/* Payment */}
@@ -637,6 +710,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.md,
     gap: spacing.sm,
+  },
+  // Recipient toggle / form
+  recipientToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  recipientToggleLabel: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  recipientToggleHint: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  recipientInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
+    backgroundColor: colors.white,
   },
   promoInput: {
     flex: 1,

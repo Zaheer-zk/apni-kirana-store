@@ -38,21 +38,28 @@ interface OrderDetailResponse {
   storeLocation?: LatLng;
 }
 
-const ORDER_STEPS: Array<{ status: OrderStatus; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-  { status: OrderStatus.PENDING, label: 'Placed', icon: 'receipt-outline' },
-  { status: OrderStatus.STORE_ACCEPTED, label: 'Accepted', icon: 'storefront-outline' },
-  { status: OrderStatus.DRIVER_ASSIGNED, label: 'Assigned', icon: 'person-outline' },
-  { status: OrderStatus.PICKED_UP, label: 'Picked up', icon: 'cube-outline' },
-  { status: OrderStatus.DELIVERED, label: 'Delivered', icon: 'checkmark-done-outline' },
-];
-
-const STATUS_ORDER: OrderStatus[] = [
-  OrderStatus.PENDING,
-  OrderStatus.STORE_ACCEPTED,
-  OrderStatus.DRIVER_ASSIGNED,
-  OrderStatus.PICKED_UP,
-  OrderStatus.DELIVERED,
-];
+// Step list is computed per-order so we can splice a 'Cooking' step in
+// between Accepted and Assigned for RESTAURANT orders only. Same lists drive
+// both the visual indicator and the current-step lookup.
+function buildSteps(
+  restaurant: boolean,
+): Array<{ status: OrderStatus; label: string; icon: keyof typeof Ionicons.glyphMap }> {
+  const base: Array<{ status: OrderStatus; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+    { status: OrderStatus.PENDING, label: 'Placed', icon: 'receipt-outline' },
+    { status: OrderStatus.STORE_ACCEPTED, label: 'Accepted', icon: 'storefront-outline' },
+    { status: OrderStatus.DRIVER_ASSIGNED, label: 'Assigned', icon: 'person-outline' },
+    { status: OrderStatus.PICKED_UP, label: 'Picked up', icon: 'cube-outline' },
+    { status: OrderStatus.DELIVERED, label: 'Delivered', icon: 'checkmark-done-outline' },
+  ];
+  if (restaurant) {
+    base.splice(2, 0, {
+      status: OrderStatus.COOKING,
+      label: 'Cooking',
+      icon: 'flame-outline',
+    });
+  }
+  return base;
+}
 
 async function fetchOrder(id: string): Promise<OrderDetailResponse> {
   const res = await apiClient.get<{ data: unknown } | unknown>(`/api/v1/orders/${id}`);
@@ -90,15 +97,22 @@ async function cancelOrderRequest(args: { id: string; reason?: string }): Promis
   });
 }
 
-function StepIndicator({ currentStatus }: { currentStatus: OrderStatus }) {
+function StepIndicator({
+  currentStatus,
+  restaurant,
+}: {
+  currentStatus: OrderStatus;
+  restaurant: boolean;
+}) {
   const cancelled =
     currentStatus === OrderStatus.CANCELLED || currentStatus === OrderStatus.REJECTED;
-  const currentIdx = STATUS_ORDER.indexOf(currentStatus);
+  const steps = buildSteps(restaurant);
+  const currentIdx = steps.findIndex((s) => s.status === currentStatus);
 
   return (
     <View style={styles.stepWrap}>
       <View style={styles.stepRow}>
-        {ORDER_STEPS.map((step, idx) => {
+        {steps.map((step, idx) => {
           const isCompleted = !cancelled && idx < currentIdx;
           const isCurrent = !cancelled && idx === currentIdx;
           const isFuture = cancelled || idx > currentIdx;
@@ -185,6 +199,8 @@ function statusHeadline(status: OrderStatus): string {
       return 'Waiting for store to confirm';
     case OrderStatus.STORE_ACCEPTED:
       return 'Order accepted by store';
+    case OrderStatus.COOKING:
+      return 'Your food is being prepared';
     case OrderStatus.DRIVER_ASSIGNED:
       return 'Driver is on the way to store';
     case OrderStatus.PICKED_UP:
@@ -349,7 +365,13 @@ export default function OrderDetailScreen() {
               We'll notify you the moment your order moves to the next step.
             </Text>
           ) : null}
-          <StepIndicator currentStatus={status} />
+          <StepIndicator
+            currentStatus={status}
+            restaurant={
+              (order as unknown as { store?: { category?: string } }).store?.category ===
+              'RESTAURANT'
+            }
+          />
           {eta ? (
             <View style={styles.etaCard}>
               <Ionicons name="time-outline" size={18} color={colors.success} />

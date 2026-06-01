@@ -19,7 +19,13 @@ export const config = {
   jwt: {
     accessSecret: requireEnv('JWT_ACCESS_SECRET'),
     refreshSecret: requireEnv('JWT_REFRESH_SECRET'),
-    accessExpiresIn: '15m',
+    // 15m was way too aggressive — none of the web/mobile apps refresh
+    // on 401 yet, so users were getting kicked out mid-session in
+    // minutes. 12h is a reasonable middle ground until a proper refresh
+    // interceptor lands: long enough that no one is interrupted while
+    // actually working, short enough that a stolen token has limited
+    // useful life.
+    accessExpiresIn: '12h',
     refreshExpiresIn: '30d',
   },
 

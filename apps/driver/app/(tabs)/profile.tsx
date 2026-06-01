@@ -103,8 +103,10 @@ const VEHICLE_LABEL: Record<string, string> = {
 };
 
 const VEHICLE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  // Ionicons has no dedicated scooter glyph; bike-outline visually
+  // distinguishes a scooter from a bike (solid).
   BIKE: 'bicycle',
-  SCOOTER: 'bicycle',
+  SCOOTER: 'bicycle-outline',
   CAR: 'car',
 };
 

@@ -470,11 +470,12 @@ export default function DashboardScreen() {
             </View>
             <Text style={styles.idleTitle}>Waiting for orders</Text>
             <Text style={styles.idleSubtitle}>
-              You&apos;re online. We&apos;ll alert you the moment a nearby delivery is available.
+              New delivery offers pop up automatically when:
+              {'\n'}• You&apos;re online (you are right now)
+              {'\n'}• You&apos;ve granted location permission (we ping it while online)
+              {'\n'}• You&apos;ve selected at least one zone in Profile → Serving zones
               {'\n\n'}
-              For offers to reach you, make sure you have:
-              {'\n'}• Allowed location access (we ping it while you&apos;re online)
-              {'\n'}• Selected at least one serving zone in Profile → Serving zones
+              Orders only flow inside zones you&apos;ve picked.
             </Text>
           </Card>
         )}

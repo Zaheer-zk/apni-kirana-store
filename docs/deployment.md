@@ -186,15 +186,48 @@ source ~/.bashrc
 
 From here on, **`dc`** means `docker compose --env-file .env.prod -f docker-compose.prod.yml`.
 
-**Replace the placeholder domain in the Nginx configs.** The committed files in
-`nginx/conf.d/` ship with `api.yourdomain.com` / `admin.yourdomain.com` as
-placeholders:
+**Or symlink `.env` → `.env.prod` instead.** Plain `docker compose` reads `.env`
+by default; if you'd rather not depend on the alias, do this once:
 
 ```bash
-sed -i 's/api\.yourdomain\.com/api.YOURDOMAIN.com/g'     nginx/conf.d/*.conf
-sed -i 's/admin\.yourdomain\.com/admin.YOURDOMAIN.com/g' nginx/conf.d/*.conf
-grep -h server_name nginx/conf.d/*.conf      # verify it now shows YOUR domain
+ln -s .env.prod .env
 ```
+
+After the symlink, every `docker compose -f docker-compose.prod.yml …` command
+works without the `--env-file` flag. Forgetting the flag is the most common
+deploy failure — Redis sees a blank `requirepass` and crash-loops, taking the
+whole stack down with it.
+
+**Replace the placeholder domain in the Nginx configs.** The committed files in
+`nginx/conf.d/` ship with `yourdomain.com` placeholders across every
+`server_name` and `ssl_certificate` path. One sed covers all confs at once:
+
+```bash
+sed -i 's/yourdomain\.com/YOURDOMAIN.com/g' nginx/conf.d/*.conf
+grep -nE "server_name|ssl_certificate" nginx/conf.d/*.conf    # verify
+grep -n "yourdomain" nginx/conf.d/*.conf                      # expect NO output
+```
+
+**Commit the substituted confs to a server-local branch** so they survive
+future `git pull`s. The default workflow of "leave them as uncommitted local
+modifications" turns every `git pull` into a stash/pop dance — and if pop fails
+silently, nginx crashes on the next restart with the literal `yourdomain.com`
+path in its config. One-time setup on the server:
+
+```bash
+git config user.email "ops@YOURDOMAIN.com"
+git config user.name  "YOURDOMAIN Deploy"
+git checkout -b server-config
+git add nginx/conf.d/*.conf
+git commit -m "ops(nginx): substitute production domain"
+git checkout main
+git merge server-config --no-ff -m "merge server-config into main (production-only)"
+```
+
+After this, `git pull --ff-only origin main` either fast-forwards cleanly (no
+conflict because nothing else touched these files) or fails loudly if upstream
+does change the nginx confs — at which point you reconcile manually instead of
+losing your edits to a forgotten stash.
 
 ### Step 5 — Issue SSL certificates
 

@@ -4,6 +4,18 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-06-01 — Catalog item requests + Expo apps parity + deploy hardening
+
+- [x] **Catalog item requests (B2A)** — store owners can ask admin to add new items to the master catalog. Schema: new `CatalogItemRequest` model + `CatalogRequestStatus` enum (`PENDING`/`APPROVED`/`REJECTED`); migration `20260601_catalog_item_request` (idempotent). Backend: `POST /api/v1/catalog/requests`, `GET /api/v1/catalog/requests/mine`, `GET /api/v1/admin/catalog-requests?status=`, `PUT /api/v1/admin/catalog-requests/:id`. Approving a request auto-creates the CatalogItem (reusing if name already exists) and links it into the requester's StoreItem inventory at the suggested price (or zero) — owner just sets stock. Rejections carry an optional admin note shown back to the owner.
+- [x] **Web UIs** — store-web `/help` (FAQ section + recent-requests list) and `/inventory/request-item` form. Admin `/catalog-requests` triage queue with approve/reject + reason note. New `Help & FAQs` nav entry in store-web sidebar; new `Catalog requests` entry in admin sidebar.
+- [x] **Expo mobile parity** — brought all three React Native apps up to par with this session's web features:
+  - **driver mobile**: `/profile/zones` multi-select with empty-state warning; foreground location ping while ONLINE (was previously silent until an order was accepted — drivers were invisible to the matching engine before pickup); Android vibration pulse on the incoming-offer modal; dashboard idle copy now lists the 3 prerequisites (online + location permission + at least one zone).
+  - **store-portal mobile**: COOKING workflow ("Start cooking" → "Mark food ready" for restaurants); `packedAt`-aware Mark-Ready button hides after first success and is replaced with a "Packed & ready" card (fixes the multi-click bug the web had); recipient block ("order for someone else") in the delivery-info section; new `/inventory/request-item` form + secondary FAB.
+  - **customer mobile**: "Order for someone else?" toggle + name/10-digit-phone validation at checkout; step indicator inserts a "Cooking" milestone between Accepted and Assigned for `store.category === 'RESTAURANT'` only; new status headline "Your food is being prepared".
+- [x] **Shared enum** — `OrderStatus.COOKING` added to `@aks/shared`; admin's `Record<OrderStatus, string>` STATUS_LABELS map gains the label.
+- [x] **Deployment** — successfully shipped to `quickeasymart.com` (admin/store/driver/customer/api). Live: catalog-request flow works end-to-end against prod.
+- [x] **Docs** — `docs/deployment.md` gains: (a) `.env → .env.prod` symlink as an alternative to the `dc` alias, (b) generalised one-line sed for the nginx domain substitution covering all 6 confs (not just api+admin), (c) a "commit nginx confs to a server-local branch" step so they survive future `git pull`s (uncommitted local edits + `git stash pop` was the root cause of today's nginx crash loop).
+
 ### 2026-05-24 — Auth overhaul (backend) — per-role email/username + unified login + approval gate
 
 - [x] **Schema** — `User.email` and `User.username` are now unique PER ROLE (`@@unique([email, role])`, `@@unique([username, role])`) instead of globally. One human can hold separate CUSTOMER + STORE_OWNER + DRIVER accounts with the same email/username — each is its own row. Migration `20260524_user_email_username` drops the old global indexes, adds partial composite uniques (`WHERE X IS NOT NULL`), and relaxes `User.phone` to nullable (data-preserving — no rows touched). Verified via `prisma migrate deploy` on a fresh DB.

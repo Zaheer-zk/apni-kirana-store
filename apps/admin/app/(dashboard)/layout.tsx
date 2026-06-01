@@ -26,7 +26,7 @@ export default function DashboardLayout({
       {/* Main content — offset by sidebar width on lg+. */}
       <main className="flex w-full min-w-0 flex-1 flex-col overflow-x-hidden lg:ml-60">
         {/* Mobile top bar */}
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-gray-200 bg-white px-3 lg:hidden">
+        <header className="sticky top-0 z-[999] flex h-14 items-center gap-2 border-b border-gray-200 bg-white px-3 lg:hidden">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -48,7 +48,7 @@ export default function DashboardLayout({
         </header>
 
         {/* Desktop top bar — visible only at lg+ to host the bell + profile on the right. */}
-        <header className="sticky top-0 z-20 hidden h-14 items-center justify-end gap-3 border-b border-gray-200 bg-white px-6 lg:flex">
+        <header className="sticky top-0 z-[999] hidden h-14 items-center justify-end gap-3 border-b border-gray-200 bg-white px-6 lg:flex">
           <NotificationBell />
           <AdminProfileMenu />
         </header>

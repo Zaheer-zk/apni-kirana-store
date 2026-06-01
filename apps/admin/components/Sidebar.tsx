@@ -117,17 +117,18 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
 
   return (
     <>
-      {/* Backdrop — visible only on mobile when drawer is open */}
+      {/* Backdrop — visible only on mobile when drawer is open.
+          z-[1000] so it overlays Leaflet (default z-400) on /live-ops. */}
       <div
         aria-hidden="true"
         onClick={onClose}
-        className={`fixed inset-0 z-30 bg-gray-900/40 transition-opacity lg:hidden ${
+        className={`fixed inset-0 z-[1000] bg-gray-900/40 transition-opacity lg:hidden ${
           mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
       />
 
       <aside
-        className={`fixed left-0 top-0 z-40 flex h-full w-[260px] max-w-[85vw] flex-col border-r border-gray-200 bg-white transition-transform duration-200 ease-out lg:w-60 lg:max-w-none lg:translate-x-0 ${
+        className={`fixed left-0 top-0 z-[1001] flex h-full w-[260px] max-w-[85vw] flex-col border-r border-gray-200 bg-white transition-transform duration-200 ease-out lg:w-60 lg:max-w-none lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
         aria-label="Primary navigation"

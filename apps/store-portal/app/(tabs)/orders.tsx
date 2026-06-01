@@ -16,14 +16,15 @@ import { Badge, BadgeVariant } from '@/components/Badge';
 import { Skeleton } from '@/components/Skeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
-import type { StoreOrder, OrderStatus } from '@aks/shared';
+import { OrderStatus } from '@aks/shared';
+import type { StoreOrder } from '@aks/shared';
 
 type Tab = 'INCOMING' | 'ACTIVE' | 'COMPLETED';
 
 const TAB_STATUSES: Record<Tab, OrderStatus[]> = {
-  INCOMING: ['PENDING'],
-  ACTIVE: ['STORE_ACCEPTED', 'DRIVER_ASSIGNED', 'IN_TRANSIT'],
-  COMPLETED: ['DELIVERED', 'CANCELLED', 'REJECTED'],
+  INCOMING: [OrderStatus.PENDING],
+  ACTIVE: [OrderStatus.STORE_ACCEPTED, OrderStatus.COOKING, OrderStatus.DRIVER_ASSIGNED, OrderStatus.PICKED_UP],
+  COMPLETED: [OrderStatus.DELIVERED, OrderStatus.CANCELLED, OrderStatus.REJECTED],
 };
 
 const STATUS_BADGE: Record<string, { variant: BadgeVariant; label: string }> = {

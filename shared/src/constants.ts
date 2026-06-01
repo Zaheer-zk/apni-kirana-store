@@ -1,4 +1,4 @@
-import { ItemCategory } from './enums';
+import { ItemCategory, StoreCategory } from './enums';
 
 // Store discovery
 export const DEFAULT_STORE_RADIUS_KM = 3;
@@ -30,7 +30,7 @@ export const COMMISSION_PERCENT = 0.10; // 10%
 export const BASE_DELIVERY_FEE = 30;    // in rupees
 export const PER_KM_DELIVERY_FEE = 5;  // in rupees per km
 
-// Display labels for item categories
+// Display labels for item categories (per-item taxonomy on individual products).
 export const ItemCategoryLabels: Record<ItemCategory, string> = {
   [ItemCategory.GROCERY]: 'Grocery',
   [ItemCategory.MEDICINE]: 'Medicine',
@@ -39,4 +39,13 @@ export const ItemCategoryLabels: Record<ItemCategory, string> = {
   [ItemCategory.BEVERAGES]: 'Beverages',
   [ItemCategory.ELECTRONICS]: 'Electronics',
   [ItemCategory.OTHER]: 'Other',
+};
+
+// Display labels for the store-level classification. Distinct from
+// ItemCategory — a "Pharmacy" store still sells items under MEDICINE.
+export const StoreCategoryLabels: Record<StoreCategory, string> = {
+  [StoreCategory.GROCERY]: 'Grocery',
+  [StoreCategory.PHARMACY]: 'Pharmacy',
+  [StoreCategory.GENERAL]: 'General Store',
+  [StoreCategory.RESTAURANT]: 'Restaurant',
 };

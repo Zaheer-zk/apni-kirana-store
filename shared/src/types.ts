@@ -5,6 +5,7 @@ import {
   OrderType,
   PaymentMethod,
   PaymentStatus,
+  StoreCategory,
   StoreStatus,
   UserRole,
 } from './enums';
@@ -47,9 +48,15 @@ export interface StoreProfile {
   address: string;
   lat: number;
   lng: number;
-  category: ItemCategory;
+  // Schema stores the store classification (GROCERY / PHARMACY / GENERAL /
+  // RESTAURANT) as StoreCategory, distinct from the per-item ItemCategory.
+  // Older builds typed this as ItemCategory by mistake — corrected here.
+  category: StoreCategory;
   status: StoreStatus;
   isWholesaler?: boolean;
+  // Open / Closed toggle from the top bar / store-portal dashboard. Optional
+  // because older /stores/me responses don't include it; new builds always do.
+  isOpen?: boolean;
   operatingHours: OperatingHours;
   rating: number;
 }
@@ -108,8 +115,15 @@ export interface DriverProfile {
   phone: string;
   vehicleType: string;
   vehicleNumber: string;
+  // Set at registration time; surfaced on the driver profile screen and used
+  // for admin verification. Optional because legacy seeded drivers don't have
+  // one set.
+  licenseNumber?: string | null;
   status: DriverStatus;
   rating: number;
+  // Number of ratings the driver has received. Backend sends it on the
+  // profile + the driver-app dashboard query.
+  totalRatings?: number;
   currentLocation: LatLng | null;
 }
 
@@ -206,6 +220,69 @@ export interface DriverEarningsSummary {
 export interface DriverEarningsEntry {
   orderId: string;
   driverEarnings: number;
+  /** ISO timestamp when the order was DELIVERED. */
+  completedAt: string;
+}
+
+/**
+ * Privacy-safe order preview shown to a driver when an offer arrives but
+ * before they've accepted. Returned by `GET /api/v1/orders/:id/preview`.
+ *
+ * Distinct from `OrderDetail`: omits customer name/phone and full address
+ * (a driver who declines should not see PII). Backend implementation is
+ * pending — until then mobile falls back to the generic order detail
+ * endpoint in the IncomingOrderModal.
+ */
+export interface IncomingOrderPreview {
+  id: string;
+  status: OrderStatus;
+  /** Total price — display context, not used to decide acceptance. */
+  total: number;
+  /** Number of line items, no per-item detail. */
+  itemsCount: number;
+  /** Driver-facing pickup address string ("Sharma Kirana, Sector 18"). */
+  pickupAddress: string;
+  /** Distance from the driver's current position to the pickup store. */
+  pickupDistanceKm: number;
+  /** Delivery area only — no street, no customer name. */
+  deliveryArea: string;
+  /** Pickup-to-drop distance in km (total trip length). */
+  deliveryDistanceKm: number;
+  /** Payout for the driver if they accept (delivery fee). */
+  driverEarnings: number;
+}
+
+/**
+ * Aggregated earnings summary for the store-owner earnings screen
+ * (`GET /api/v1/stores/earnings/summary`). Mirrors {@link DriverEarningsSummary}
+ * but reflects store-side numbers: revenue minus platform commission.
+ */
+export interface StoreEarningsSummary {
+  today: number;
+  week: number;
+  month: number;
+  /** Number of orders delivered today — drives the "N orders today" hero
+   *  subtext on the store-portal earnings screen. */
+  todayOrders?: number;
+  /** Cumulative lifetime payout in rupees. */
+  total?: number;
+  /** Amount currently pending payout. */
+  pendingPayout?: number;
+  /** PENDING | PROCESSING | PAID. */
+  payoutStatus?: string;
+}
+
+/**
+ * One row in the per-order store earnings breakdown
+ * (`GET /api/v1/stores/earnings/breakdown?period=`).
+ */
+export interface StoreEarningsEntry {
+  orderId: string;
+  /** Net revenue credited to the store after commission. Mobile aliases this
+   *  as `storeRevenue` for the row display. */
+  storeRevenue: number;
+  /** Number of line items in the order — surfaced on the row. */
+  itemsCount?: number;
   /** ISO timestamp when the order was DELIVERED. */
   completedAt: string;
 }

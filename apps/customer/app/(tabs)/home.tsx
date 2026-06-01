@@ -22,7 +22,13 @@ import { apiClient } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useCartStore } from '@/store/cart.store';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
-import { ItemCategory, ItemCategoryLabels, type Address, type InventoryItem, type StoreProfile } from '@aks/shared';
+import {
+  ItemCategory,
+  StoreCategoryLabels,
+  type Address,
+  type InventoryItem,
+  type StoreProfile,
+} from '@aks/shared';
 
 interface CatalogItem {
   id: string;
@@ -150,7 +156,7 @@ function StoreCard({ store }: { store: StoreProfile }) {
           <Badge variant="success" text="Open" />
         </View>
         <View style={styles.storeMeta}>
-          <Badge variant="primary" text={ItemCategoryLabels[store.category]} />
+          <Badge variant="primary" text={StoreCategoryLabels[store.category]} />
           <View style={styles.metaItem}>
             <Ionicons name="star" size={12} color={colors.accent} />
             <Text style={styles.metaText}>{store.rating.toFixed(1)}</Text>

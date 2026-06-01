@@ -9,7 +9,8 @@ import { OtpInput } from '@/components/OtpInput';
 import { api } from '@/lib/api';
 import { persistSession } from '@/lib/session';
 import { colors, fontSize, radius, spacing } from '@/constants/theme';
-import type { UserProfile, VehicleType } from '@aks/shared';
+import { VehicleType } from '@aks/shared';
+import type { UserProfile } from '@aks/shared';
 
 interface AuthResponse {
   user: UserProfile;
@@ -25,9 +26,9 @@ interface VehicleOption {
 }
 
 const VEHICLE_OPTIONS: VehicleOption[] = [
-  { label: 'Bike', value: 'BIKE', icon: 'bicycle' },
-  { label: 'Scooter', value: 'SCOOTER', icon: 'bicycle-outline' },
-  { label: 'Car', value: 'CAR', icon: 'car' },
+  { label: 'Bike', value: VehicleType.BIKE, icon: 'bicycle' },
+  { label: 'Scooter', value: VehicleType.SCOOTER, icon: 'bicycle-outline' },
+  { label: 'Car', value: VehicleType.CAR, icon: 'car' },
 ];
 
 type Step = 'form' | 'otp' | 'vehicle' | 'submitted';
@@ -44,7 +45,7 @@ export default function RegisterScreen() {
   const [otp, setOtp] = useState('');
 
   // Driver / vehicle details
-  const [vehicleType, setVehicleType] = useState<VehicleType>('BIKE');
+  const [vehicleType, setVehicleType] = useState<VehicleType>(VehicleType.BIKE);
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [licenseNumber, setLicenseNumber] = useState('');
   const [vehicleErrors, setVehicleErrors] = useState<{ vehicle?: string; license?: string }>({});

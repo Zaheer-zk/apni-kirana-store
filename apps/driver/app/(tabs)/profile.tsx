@@ -179,7 +179,12 @@ export default function ProfileScreen() {
             <View style={styles.heroStatDivider} />
             <View style={styles.heroStatBlock}>
               <Text style={[styles.heroStatValue, { fontSize: fontSize.md }]}>
-                {driverProfile?.status === 'APPROVED' ? 'Active' : driverProfile?.status ?? '—'}
+                {/* Driver.status is OFFLINE | ONLINE | PENDING_APPROVAL | SUSPENDED.
+                    Either of the first two means the account is approved and
+                    operational, so we render "Active" the same way admin does. */}
+                {driverProfile?.status === 'OFFLINE' || driverProfile?.status === 'ONLINE'
+                  ? 'Active'
+                  : driverProfile?.status ?? '—'}
               </Text>
               <Text style={styles.heroStatLabel}>Status</Text>
             </View>

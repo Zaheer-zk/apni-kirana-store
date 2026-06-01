@@ -10,7 +10,7 @@ import {
   Image,
   Dimensions,
 } from 'react-native';
-import type { InventoryItemType } from '@aks/shared';
+import type { InventoryItem as InventoryItemType } from '@aks/shared';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SWIPE_THRESHOLD = 80;
@@ -135,13 +135,13 @@ export function InventoryItem({ item, onToggleAvailability, onEdit, onDelete }: 
         {/* Availability Toggle */}
         <View style={styles.toggleContainer}>
           <Switch
-            value={item.available}
+            value={item.isAvailable}
             onValueChange={onToggleAvailability}
             trackColor={{ false: '#D1D5DB', true: '#86EFAC' }}
-            thumbColor={item.available ? '#16A34A' : '#9CA3AF'}
+            thumbColor={item.isAvailable ? '#16A34A' : '#9CA3AF'}
           />
-          <Text style={[styles.availabilityText, item.available ? styles.availableText : styles.unavailableText]}>
-            {item.available ? 'On' : 'Off'}
+          <Text style={[styles.availabilityText, item.isAvailable ? styles.availableText : styles.unavailableText]}>
+            {item.isAvailable ? 'On' : 'Off'}
           </Text>
         </View>
       </Animated.View>

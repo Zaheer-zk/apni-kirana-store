@@ -25,13 +25,14 @@ import { api } from '@/lib/api';
 import { persistSession } from '@/lib/session';
 import { useStorePortalStore } from '@/store/store.store';
 import { colors, spacing } from '@/constants/theme';
-import type { StoreCategory, StoreProfile, UserProfile } from '@aks/shared';
+import { StoreCategory } from '@aks/shared';
+import type { StoreProfile, UserProfile } from '@aks/shared';
 
 const CATEGORIES: { label: string; value: StoreCategory }[] = [
-  { label: 'Grocery', value: 'GROCERY' },
-  { label: 'Pharmacy', value: 'PHARMACY' },
-  { label: 'General Store', value: 'GENERAL' },
-  { label: 'Restaurant', value: 'RESTAURANT' },
+  { label: 'Grocery', value: StoreCategory.GROCERY },
+  { label: 'Pharmacy', value: StoreCategory.PHARMACY },
+  { label: 'General Store', value: StoreCategory.GENERAL },
+  { label: 'Restaurant', value: StoreCategory.RESTAURANT },
 ];
 
 // Delhi fallback — matching engine expects stores near seeded data
@@ -115,7 +116,7 @@ export default function StoreRegisterScreen() {
   // Step 3 — store details form
   const [storeName, setStoreName] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<StoreCategory>('GROCERY');
+  const [category, setCategory] = useState<StoreCategory>(StoreCategory.GROCERY);
   const [street, setStreet] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');

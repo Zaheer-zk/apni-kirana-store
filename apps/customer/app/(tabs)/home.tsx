@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CategoryGrid } from '@/components/CategoryGrid';
+import { CoverageBanner } from '@/components/CoverageBanner';
 import { ItemCard } from '@/components/ItemCard';
 import { Skeleton } from '@/components/Skeleton';
 import { Badge } from '@/components/Badge';
@@ -294,6 +295,11 @@ export default function HomeScreen() {
           <Ionicons name="search" size={20} color={colors.textSecondary} />
           <Text style={styles.searchPlaceholder}>Search for items, stores...</Text>
         </TouchableOpacity>
+
+        {/* Coverage banner — surfaces "we're not here yet" with the nearest
+            zone when the customer's default address is outside every active
+            platform zone. Mirrors apps/customer-web/app/page.tsx CoverageBanner. */}
+        <CoverageBanner lat={defaultAddress?.lat ?? null} lng={defaultAddress?.lng ?? null} />
 
         {/* Hero banner */}
         <View style={styles.heroBanner}>

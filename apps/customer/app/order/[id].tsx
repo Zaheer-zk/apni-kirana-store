@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Linking,
   ScrollView,
   StyleSheet,
@@ -101,30 +102,69 @@ function StepIndicator({
   currentStatus,
   restaurant,
 }: {
-  currentStatus: OrderStatus;
-  restaurant: boolean;
+  readonly currentStatus: OrderStatus;
+  readonly restaurant: boolean;
 }) {
+  // 3-state semantics matching the web (apps/customer-web/app/orders/[id]/page.tsx:382-419):
+  //   completed  — reached or past this step (idx <= currentIdx) → green filled
+  //   inProgress — the very next step (idx === currentIdx + 1)   → amber pulse
+  //   pending    — somewhere down the line                        → gray
+  // The current step IS done — that's the user's mental model
+  // ("My order is accepted" reads as a completed milestone, not an in-progress one).
   const cancelled =
     currentStatus === OrderStatus.CANCELLED || currentStatus === OrderStatus.REJECTED;
   const steps = buildSteps(restaurant);
   const currentIdx = steps.findIndex((s) => s.status === currentStatus);
 
+  // Soft pulse on the in-progress dot — Animated.loop on opacity.
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (cancelled || currentIdx < 0) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [cancelled, currentIdx, pulse]);
+
+  const pulseOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] });
+
   return (
     <View style={styles.stepWrap}>
       <View style={styles.stepRow}>
         {steps.map((step, idx) => {
-          const isCompleted = !cancelled && idx < currentIdx;
-          const isCurrent = !cancelled && idx === currentIdx;
-          const isFuture = cancelled || idx > currentIdx;
+          const completed = !cancelled && idx <= currentIdx;
+          const inProgress = !cancelled && idx === currentIdx + 1;
+          const pending = !completed && !inProgress;
 
-          let dotStyle = styles.stepDotFuture;
-          let lineStyle = styles.stepLineFuture;
-          if (isCompleted) {
-            dotStyle = styles.stepDotDone;
-            lineStyle = styles.stepLineDone;
-          } else if (isCurrent) {
-            dotStyle = styles.stepDotCurrent;
+          // TS narrows StyleSheet.create entries to their literal types, which
+          // makes a mutable `let` reject sibling entries even when they're all
+          // ViewStyle. Cast through the shared style type to keep the assignment.
+          type DotStyle = typeof styles.stepDotPending;
+          type LineStyle = typeof styles.stepLinePending;
+          let dotStyle: DotStyle = styles.stepDotPending;
+          let lineStyle: LineStyle = styles.stepLinePending;
+          if (completed) {
+            dotStyle = styles.stepDotDone as unknown as DotStyle;
+            lineStyle = styles.stepLineDone as unknown as LineStyle;
+          } else if (inProgress) {
+            dotStyle = styles.stepDotInProgress as unknown as DotStyle;
           }
+
+          const Dot = (
+            <View style={[styles.stepDot, dotStyle]}>
+              {completed ? (
+                <Ionicons name="checkmark" size={14} color={colors.white} />
+              ) : inProgress ? (
+                <Ionicons name={step.icon} size={14} color="#92400E" />
+              ) : (
+                <Ionicons name={step.icon} size={14} color={colors.textMuted} />
+              )}
+            </View>
+          );
 
           return (
             <View key={step.status} style={styles.stepCol}>
@@ -138,19 +178,18 @@ function StepIndicator({
                     ]}
                   />
                 ) : null}
-                <View style={[styles.stepDot, dotStyle]}>
-                  {isCompleted ? (
-                    <Ionicons name="checkmark" size={14} color={colors.white} />
-                  ) : isCurrent ? (
-                    <View style={styles.stepDotInner} />
-                  ) : null}
-                </View>
+                {inProgress ? (
+                  <Animated.View style={{ opacity: pulseOpacity }}>{Dot}</Animated.View>
+                ) : (
+                  Dot
+                )}
               </View>
               <Text
                 style={[
                   styles.stepLabel,
-                  isCurrent && styles.stepLabelCurrent,
-                  isFuture && styles.stepLabelFuture,
+                  completed && styles.stepLabelDone,
+                  inProgress && styles.stepLabelInProgress,
+                  pending && styles.stepLabelPending,
                 ]}
                 numberOfLines={2}
               >
@@ -160,6 +199,11 @@ function StepIndicator({
           );
         })}
       </View>
+      {cancelled ? (
+        <Text style={styles.stepCancelledNote}>
+          This order didn&apos;t go through. You can try placing a new one.
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -695,7 +739,7 @@ const styles = StyleSheet.create({
   stepLineDone: {
     backgroundColor: colors.primary,
   },
-  stepLineFuture: {
+  stepLinePending: {
     backgroundColor: colors.border,
   },
   stepDot: {
@@ -705,39 +749,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1,
+    borderWidth: 2,
   },
+  // Completed milestones (including the *current* one — the user thinks of
+  // "order accepted" as a finished step, not an in-progress one).
   stepDotDone: {
     backgroundColor: colors.primary,
-  },
-  stepDotCurrent: {
-    backgroundColor: colors.white,
-    borderWidth: 3,
     borderColor: colors.primary,
   },
-  stepDotInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.primary,
+  // The very next milestone — amber pulse via Animated.View opacity.
+  stepDotInProgress: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FBBF24',
   },
-  stepDotFuture: {
+  stepDotPending: {
     backgroundColor: colors.gray100,
-    borderWidth: 2,
     borderColor: colors.border,
   },
   stepLabel: {
     marginTop: spacing.sm,
     fontSize: 11,
     fontWeight: '700',
-    color: colors.textPrimary,
     textAlign: 'center',
   },
-  stepLabelCurrent: {
-    color: colors.primary,
-  },
-  stepLabelFuture: {
-    color: colors.textMuted,
+  stepLabelDone: { color: colors.textPrimary },
+  stepLabelInProgress: { color: '#92400E' },
+  stepLabelPending: { color: colors.textMuted, fontWeight: '600' },
+  stepCancelledNote: {
+    marginTop: spacing.lg,
+    fontSize: fontSize.sm,
     fontWeight: '600',
+    color: colors.error,
+    backgroundColor: colors.errorLight,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    textAlign: 'center',
   },
   section: {
     paddingHorizontal: spacing.lg,

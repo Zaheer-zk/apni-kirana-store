@@ -12,6 +12,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useDriverStore } from '@/store/driver.store';
+import {
+  startOnlineLocationPing,
+  stopOnlineLocationPing,
+} from '@/lib/location';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 
 interface ToggleStatusResponse {
@@ -56,6 +60,10 @@ export function OnlineToggle() {
         useNativeDriver: false,
         friction: 6,
       }).start();
+      // Push GPS while the driver is ONLINE so the matching engine has a
+      // current position to score against. Mirrors driver-web behaviour.
+      if (online) startOnlineLocationPing().catch(() => undefined);
+      else stopOnlineLocationPing().catch(() => undefined);
     },
     onError: (err, online) => {
       setOnline(!online);
@@ -64,6 +72,8 @@ export function OnlineToggle() {
         useNativeDriver: false,
         friction: 6,
       }).start();
+      // Roll back the location watcher on failure too — keep state consistent.
+      if (online) stopOnlineLocationPing().catch(() => undefined);
       Alert.alert('Error', err.message || 'Could not update status');
     },
   });

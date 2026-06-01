@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   Animated,
   Alert,
+  Vibration,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -82,13 +84,25 @@ export function IncomingOrderModal({ orderId }: Props) {
     return unsubscribe;
   }, [orderId, setIncomingOrder]);
 
-  // Fade in modal
+  // Fade in modal + vibrate to alert the driver. Mirrors driver-web's
+  // 3-note chime (we use OS-level vibration here because the mobile app
+  // doesn't bundle an audio library; the OS push notification already
+  // delivers a sound on receipt).
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 250,
       useNativeDriver: true,
     }).start();
+
+    // Pattern: pulse-pause-pulse-pause-long-pulse. Android takes a number[];
+    // iOS ignores the pattern and just vibrates once.
+    if (Platform.OS === 'android') {
+      Vibration.vibrate([0, 250, 200, 250, 200, 500]);
+    } else {
+      Vibration.vibrate();
+    }
+    return () => Vibration.cancel();
   }, [fadeAnim]);
 
   // Shake animation to draw attention

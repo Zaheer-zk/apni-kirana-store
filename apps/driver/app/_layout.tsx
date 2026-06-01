@@ -134,6 +134,7 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       {/* Detail / modal style routes use the native header */}
       <Stack.Screen name="profile/ratings" options={{ title: 'My Ratings' }} />
+      <Stack.Screen name="profile/zones" options={{ title: 'Serving Zones' }} />
       <Stack.Screen name="profile/help" options={{ title: 'Help & Support' }} />
       <Stack.Screen name="profile/support" options={{ title: 'Help & Support' }} />
       <Stack.Screen name="notifications/index" options={{ title: 'Notifications' }} />

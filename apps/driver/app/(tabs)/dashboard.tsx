@@ -61,6 +61,7 @@ interface DriverOrder {
   status:
     | 'PENDING'
     | 'STORE_ACCEPTED'
+    | 'COOKING'
     | 'DRIVER_ASSIGNED'
     | 'PICKED_UP'
     | 'DELIVERED'
@@ -469,7 +470,11 @@ export default function DashboardScreen() {
             </View>
             <Text style={styles.idleTitle}>Waiting for orders</Text>
             <Text style={styles.idleSubtitle}>
-              You're online. We'll alert you the moment a nearby delivery is available.
+              You&apos;re online. We&apos;ll alert you the moment a nearby delivery is available.
+              {'\n\n'}
+              For offers to reach you, make sure you have:
+              {'\n'}• Allowed location access (we ping it while you&apos;re online)
+              {'\n'}• Selected at least one serving zone in Profile → Serving zones
             </Text>
           </Card>
         )}

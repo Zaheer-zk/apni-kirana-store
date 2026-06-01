@@ -14,7 +14,7 @@ import { router } from 'expo-router';
 import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { unregisterPushNotifications } from '@/lib/notifications';
 import { useDriverStore } from '@/store/driver.store';
-import { stopLocationTracking } from '@/lib/location';
+import { stopLocationTracking, stopOnlineLocationPing } from '@/lib/location';
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
@@ -122,6 +122,7 @@ export default function ProfileScreen() {
           // stops getting notifications here. Other devices stay subscribed.
           await unregisterPushNotifications();
           await stopLocationTracking();
+          await stopOnlineLocationPing();
           await Promise.all([
             SecureStore.deleteItemAsync(STORAGE_KEYS.accessToken),
             SecureStore.deleteItemAsync(STORAGE_KEYS.user),
@@ -222,6 +223,14 @@ export default function ProfileScreen() {
         {/* Menu */}
         <Text style={styles.sectionTitle}>More</Text>
         <Card padding={0}>
+          <MenuRow
+            icon="location-outline"
+            iconColor={colors.primary}
+            iconBg={colors.primaryLight}
+            label="Serving zones"
+            subtitle="Pick which zones send you orders"
+            onPress={() => router.push('/profile/zones')}
+          />
           <MenuRow
             icon="star"
             iconColor={colors.warning}

@@ -120,3 +120,57 @@ export async function stopLocationTracking(): Promise<void> {
     await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
   }
 }
+
+// ─── Online-state foreground location push ────────────────────────────────────
+// While a driver is ONLINE (with no active delivery yet) the matching engine
+// still needs their position to score them against incoming orders. The
+// background task above only fires after a delivery is accepted, so we add a
+// foreground watcher that pings /api/v1/drivers/location whenever the driver
+// is online and the app is in the foreground. Throttled to once per 15s.
+//
+// This is the mobile twin of driver-web's HeaderOnlineToggle.watchPosition.
+
+let onlineWatch: Location.LocationSubscription | null = null;
+let lastSentAt = 0;
+
+export async function startOnlineLocationPing(): Promise<void> {
+  if (onlineWatch) return; // already watching
+
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') {
+    console.warn('[OnlineLocation] foreground permission denied');
+    return;
+  }
+
+  onlineWatch = await Location.watchPositionAsync(
+    {
+      accuracy: Location.Accuracy.Balanced,
+      timeInterval: 15_000,
+      distanceInterval: 30,
+    },
+    async (loc) => {
+      // Throttle additionally — watchPositionAsync's timeInterval is "no faster
+      // than", but distanceInterval can still fire more often when the driver
+      // is moving. The matching engine only reads the last known coord per
+      // ranking pass; 15s cadence is plenty.
+      const now = Date.now();
+      if (now - lastSentAt < 15_000) return;
+      lastSentAt = now;
+      try {
+        await api.put('/api/v1/drivers/location', {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
+      } catch (err) {
+        console.warn('[OnlineLocation] push failed:', err);
+      }
+    },
+  );
+}
+
+export async function stopOnlineLocationPing(): Promise<void> {
+  if (onlineWatch) {
+    onlineWatch.remove();
+    onlineWatch = null;
+  }
+}

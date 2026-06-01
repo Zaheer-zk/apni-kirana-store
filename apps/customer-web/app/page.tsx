@@ -23,12 +23,111 @@ export default function HomePage() {
       <AppHeader showSearch />
       <main className="page-shell py-6 sm:py-10">
         <Hero />
+        <CoverageBanner />
         <SearchEntry />
         <FeaturedSection />
         <PromiseGrid />
       </main>
       <Footer />
     </>
+  );
+}
+
+// Shows a friendly "we don't serve your area yet" banner when the customer's
+// location falls outside every active platform zone. The matching engine
+// would silently fail to find a store/driver in that case; surfacing it
+// here lets the customer fix their address (or wait for us to expand).
+function CoverageBanner() {
+  const { coords, status } = useLocation();
+  const coverage = useQuery({
+    queryKey: ['coverage', coords.lat, coords.lng],
+    queryFn: async () => {
+      const res = await api.get('/api/v1/zones/coverage', {
+        params: { lat: coords.lat, lng: coords.lng },
+      });
+      return unwrap<{
+        inZone: boolean;
+        zone: { name: string; city: string } | null;
+        nearestZone?: { name: string; city: string; centerLat: number; centerLng: number } | null;
+        distanceKm: number | null;
+      }>(res.data);
+    },
+    // Don't hammer the endpoint — coverage is stable per location.
+    staleTime: 5 * 60_000,
+    enabled: status !== 'requesting',
+  });
+
+  if (coverage.isLoading || coverage.isError) return null;
+  const data = coverage.data;
+  if (!data) return null;
+
+  // In-zone OR no zones configured yet — show a quiet confirmation chip
+  // so the user knows we picked up their location. Optional polish.
+  if (data.inZone && data.zone) {
+    return (
+      <div className="mb-6 flex flex-wrap items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-medium text-emerald-800">
+        <MapPin className="h-3.5 w-3.5" />
+        Delivering to <span className="font-semibold">{data.zone.name}</span>, {data.zone.city}
+      </div>
+    );
+  }
+
+  // Out of every zone — loud amber banner with a CTA to update location +
+  // a hint about the nearest area we serve.
+  return (
+    <div className="mb-6 overflow-hidden rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
+          <MapPin className="h-5 w-5 text-amber-700" />
+        </div>
+        <div className="flex-1">
+          <p className="text-base font-bold text-amber-900">
+            We&apos;re not here yet
+          </p>
+          <p className="mt-1 text-sm text-amber-800">
+            Your current location is outside our delivery area.
+            {data.nearestZone ? (
+              <>
+                {' '}
+                The closest area we serve is{' '}
+                <span className="font-semibold">
+                  {data.nearestZone.name}, {data.nearestZone.city}
+                </span>
+                {data.distanceKm != null ? (
+                  <> (~{data.distanceKm.toFixed(1)} km away)</>
+                ) : null}
+                .
+              </>
+            ) : null}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => {
+                if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+                  navigator.geolocation.getCurrentPosition(
+                    () => globalThis.location.reload(),
+                    () => undefined,
+                    { timeout: 8000 },
+                  );
+                }
+              }}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              <MapPin className="h-3.5 w-3.5" />
+              Use my current location
+            </Button>
+            <Link
+              href="/addresses"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-amber-300 bg-white px-3 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              Manage saved addresses
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

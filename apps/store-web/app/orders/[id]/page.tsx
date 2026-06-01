@@ -9,12 +9,14 @@ import {
   IndianRupee,
   Lock,
   MapPin,
+  MessageCircle,
   PackageCheck,
   Phone,
   Truck,
   User,
   XCircle,
 } from 'lucide-react';
+import Link from 'next/link';
 import { Button } from '@aks/ui/components/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@aks/ui/components/card';
 import { Skeleton } from '@aks/ui/components/skeleton';
@@ -462,6 +464,21 @@ function OrderDetailInner() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Chat — per-order thread with customer (or driver after pickup).
+          Mirrors the store-portal mobile chat surface. Active only while
+          there's something useful to say; cancelled/delivered orders fall
+          through. */}
+      {['PENDING', 'STORE_ACCEPTED', 'COOKING', 'DRIVER_ASSIGNED', 'PICKED_UP'].includes(
+        order.status,
+      ) ? (
+        <Button asChild variant="outline" className="w-full justify-start gap-2">
+          <Link href={`/orders/${order.id}/chat` as never}>
+            <MessageCircle className="h-4 w-4" />
+            {order.status === 'PICKED_UP' ? 'Chat with driver' : 'Chat with customer'}
+          </Link>
+        </Button>
+      ) : null}
 
       {/* Timeline */}
       {order.statusTimeline && order.statusTimeline.length > 0 ? (

@@ -15,6 +15,7 @@ import {
   Package,
   Settings,
   Store as StoreIcon,
+  Truck,
   User,
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -42,6 +43,7 @@ import {
   type StoredUser,
 } from '@/lib/auth';
 import { disconnectSocket } from '@/lib/socket';
+import { useUnreadNotificationsCount } from '@/lib/notifications';
 
 /**
  * Responsive app shell shared by every authenticated page (dashboard,
@@ -69,6 +71,7 @@ function buildNavItems(t: (k: string) => string): NavItem[] {
     { href: '/', label: t('dashboard'), icon: <Home className="h-5 w-5" />, match: 'eq' },
     { href: '/orders', label: t('orders'), icon: <ClipboardList className="h-5 w-5" />, match: 'startsWith' },
     { href: '/inventory', label: t('inventory'), icon: <Package className="h-5 w-5" />, match: 'startsWith' },
+    { href: '/restock', label: t('restock'), icon: <Truck className="h-5 w-5" />, match: 'startsWith' },
     { href: '/earnings', label: t('earnings'), icon: <IndianRupee className="h-5 w-5" />, match: 'startsWith' },
     { href: '/profile', label: t('profile'), icon: <StoreIcon className="h-5 w-5" />, match: 'startsWith' },
     { href: '/settings', label: t('settings'), icon: <Settings className="h-5 w-5" />, match: 'startsWith' },
@@ -219,10 +222,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <LocaleSwitcher />
 
-          {/* Notifications bell — placeholder badge until /notifications ships */}
-          <Button variant="ghost" size="icon" aria-label={tNav('notifications')} className="hidden sm:inline-flex">
-            <Bell className="h-5 w-5" />
-          </Button>
+          {/* Notifications bell — links to /notifications with unread count badge. */}
+          <NotificationBell label={tNav('notifications')} />
 
           {user ? (
             <DropdownMenu>
@@ -344,4 +345,22 @@ function initials(name: string): string {
   if (parts.length === 0) return 'S';
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
   return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+}
+
+function NotificationBell({ label }: { label: string }) {
+  const unread = useUnreadNotificationsCount();
+  return (
+    <Link
+      href="/notifications"
+      aria-label={unread > 0 ? `${unread} unread notifications` : label}
+      className="relative hidden h-9 w-9 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 sm:inline-flex"
+    >
+      <Bell className="h-5 w-5" />
+      {unread > 0 ? (
+        <span className="absolute right-1 top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
+          {unread > 99 ? '99+' : unread}
+        </span>
+      ) : null}
+    </Link>
+  );
 }

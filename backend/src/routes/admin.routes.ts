@@ -2351,6 +2351,152 @@ router.post(
   },
 );
 
+// ─── Finance reconciliation ────────────────────────────────────────────────
+// Three top-line numbers for the admin finance dashboard:
+//   1. COLLECT FROM STORES — commission owed on COD-paid orders the store
+//      already collected cash for (platform's cut, sitting with the store).
+//   2. PAY STORES — net the platform owes stores for online-paid orders
+//      (customer paid us, store delivered, we owe them subtotal-commission).
+//   3. PAY DRIVERS — total unpaid Payout balance across all drivers.
+// All three are filterable by a from/to date range; defaults to the current
+// calendar month.
+//
+// Per-entity breakdowns sit under /admin/finance/by-store and
+// /admin/finance/by-driver so admin can drill into "who owes me what /
+// who I owe what".
+
+router.get('/finance/summary', async (req: Request, res: Response) => {
+  try {
+    const fromParam = req.query['from'] as string | undefined;
+    const toParam = req.query['to'] as string | undefined;
+    // Default window: first day of current month → now.
+    const now = new Date();
+    const defaultFrom = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const from = fromParam ? new Date(fromParam) : defaultFrom;
+    const to = toParam ? new Date(toParam) : now;
+
+    const deliveredInWindow: Prisma.OrderWhereInput = {
+      status: 'DELIVERED',
+      deliveredAt: { gte: from, lte: to },
+    };
+
+    const [codAgg, onlineAgg, pendingPayouts] = await Promise.all([
+      // COD orders: store collected the full amount; platform's commission
+      // is sitting in their till.
+      prisma.order.aggregate({
+        where: { ...deliveredInWindow, paymentMethod: 'CASH_ON_DELIVERY', paymentStatus: 'PAID' },
+        _sum: { commission: true, total: true },
+        _count: { _all: true },
+      }),
+      // Online-paid orders: customer paid platform up front; we owe store
+      // (subtotal - commission). Delivery fee always goes to driver, captured
+      // separately in Payout aggregation.
+      prisma.order.aggregate({
+        where: { ...deliveredInWindow, paymentMethod: { not: 'CASH_ON_DELIVERY' }, paymentStatus: 'PAID' },
+        _sum: { subtotal: true, commission: true },
+        _count: { _all: true },
+      }),
+      // Driver payouts not yet marked PAID.
+      prisma.payout.aggregate({
+        where: { status: 'PENDING', periodStart: { gte: from, lte: to } },
+        _sum: { net: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const collectFromStores = codAgg._sum.commission ?? 0;
+    const payStores = (onlineAgg._sum.subtotal ?? 0) - (onlineAgg._sum.commission ?? 0);
+    const payDrivers = pendingPayouts._sum.net ?? 0;
+
+    return sendSuccess(res, {
+      window: { from: from.toISOString(), to: to.toISOString() },
+      collectFromStores: {
+        amount: collectFromStores,
+        orderCount: codAgg._count._all,
+      },
+      payStores: {
+        amount: Math.max(0, payStores),
+        orderCount: onlineAgg._count._all,
+      },
+      payDrivers: {
+        amount: payDrivers,
+        payoutCount: pendingPayouts._count._all,
+      },
+      totals: {
+        codGross: codAgg._sum.total ?? 0,
+        onlineGross: (onlineAgg._sum.subtotal ?? 0) + (onlineAgg._sum.commission ?? 0),
+      },
+    });
+  } catch (err) {
+    console.error('[Admin] finance summary error:', err);
+    return sendError(res, 'Failed to fetch finance summary', 500);
+  }
+});
+
+// GET /admin/finance/by-store — per-store breakdown of "we owe / they owe us"
+router.get('/finance/by-store', async (req: Request, res: Response) => {
+  try {
+    const fromParam = req.query['from'] as string | undefined;
+    const toParam = req.query['to'] as string | undefined;
+    const now = new Date();
+    const defaultFrom = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const from = fromParam ? new Date(fromParam) : defaultFrom;
+    const to = toParam ? new Date(toParam) : now;
+
+    const rows = await prisma.order.groupBy({
+      by: ['storeId', 'paymentMethod'],
+      where: { status: 'DELIVERED', deliveredAt: { gte: from, lte: to }, paymentStatus: 'PAID' },
+      _sum: { subtotal: true, commission: true, total: true },
+      _count: { _all: true },
+    });
+
+    // Reshape: { [storeId]: { storeName, codCommission, onlineNet, orderCount } }
+    const byStore = new Map<
+      string,
+      { codCommission: number; onlineNet: number; orderCount: number }
+    >();
+    for (const r of rows) {
+      const slot = byStore.get(r.storeId) ?? { codCommission: 0, onlineNet: 0, orderCount: 0 };
+      slot.orderCount += r._count._all;
+      if (r.paymentMethod === 'CASH_ON_DELIVERY') {
+        slot.codCommission += r._sum.commission ?? 0;
+      } else {
+        slot.onlineNet += (r._sum.subtotal ?? 0) - (r._sum.commission ?? 0);
+      }
+      byStore.set(r.storeId, slot);
+    }
+
+    // Lookup store names.
+    const ids = [...byStore.keys()];
+    const stores = await prisma.store.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true, city: true, owner: { select: { name: true, phone: true } } },
+    });
+    const items = stores
+      .map((s) => {
+        const slot = byStore.get(s.id)!;
+        return {
+          storeId: s.id,
+          storeName: s.name,
+          city: s.city,
+          ownerName: s.owner.name,
+          ownerPhone: s.owner.phone,
+          ...slot,
+          netDue: slot.onlineNet - slot.codCommission, // + means we owe them, - means they owe us
+        };
+      })
+      .sort((a, b) => Math.abs(b.netDue) - Math.abs(a.netDue));
+
+    return sendSuccess(res, {
+      window: { from: from.toISOString(), to: to.toISOString() },
+      items,
+    });
+  } catch (err) {
+    console.error('[Admin] finance by-store error:', err);
+    return sendError(res, 'Failed to fetch by-store finance', 500);
+  }
+});
+
 // GET /admin/refunds — filterable log of every wallet transaction (refunds,
 // goodwill, etc.). Default scope is "money-out-the-door" events (REFUND +
 // GOODWILL + ADJUSTMENT) — pass ?kind=ALL to include ORDER_PAYMENT debits.

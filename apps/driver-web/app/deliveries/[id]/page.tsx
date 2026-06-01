@@ -14,6 +14,7 @@ import {
   Loader2,
   Locate,
   MapPin,
+  MessageCircle,
   Navigation,
   PackageCheck,
   Phone,
@@ -343,6 +344,20 @@ function ActiveDelivery({ orderId }: { orderId: string }) {
           mapUrl={mapsDirectionsUrl(order.deliveryAddress?.lat, order.deliveryAddress?.lng)}
         />
       </div>
+
+      {/* Chat with the other party (customer during PICKED_UP, store before
+          pickup). Mirrors the mobile flow — opens a per-order /chat/[id]
+          thread that syncs via the same backend chats endpoints. */}
+      {(order.status === 'DRIVER_ASSIGNED' || order.status === 'PICKED_UP') ? (
+        <section>
+          <Button asChild variant="outline" className="w-full justify-start gap-2">
+            <Link href={`/chat/${order.id}` as never}>
+              <MessageCircle className="h-4 w-4" />
+              {order.status === 'PICKED_UP' ? 'Chat with customer' : 'Chat with store'}
+            </Link>
+          </Button>
+        </section>
+      ) : null}
 
       {/* Items */}
       <section>

@@ -3,13 +3,15 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { useTranslations } from 'next-intl';
 import {
+  Bell,
   IndianRupee,
   LayoutDashboard,
+  LifeBuoy,
   ListChecks,
   LogOut,
   Menu,
+  Star,
   User,
 } from 'lucide-react';
 import { Button } from '@aks/ui/components/button';
@@ -33,6 +35,7 @@ import { cn } from '@aks/ui/lib/utils';
 import { BrandMark } from './BrandMark';
 import { HeaderOnlineToggle } from './HeaderOnlineToggle';
 import { clearSession, getStoredUser, type StoredUser } from '@/lib/auth';
+import { useUnreadNotificationsCount } from '@/lib/notifications';
 
 const NAV = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -129,6 +132,10 @@ export function AppHeader() {
 
         <div className="ml-auto" />
 
+        {/* Notifications bell — links to /notifications with unread count badge.
+            Auth-gated so the anonymous header on /login doesn't show it. */}
+        {user ? <NotificationBell /> : null}
+
         {/* Status pill — hidden when there's no auth user (rare here since
             AppHeader is only rendered behind RequireAuth, but the parent
             avatar block below has the same guard). */}
@@ -160,6 +167,18 @@ export function AppHeader() {
                 <Link href="/profile" className="flex items-center gap-2">
                   <User className="h-4 w-4" />
                   Profile
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/ratings" className="flex items-center gap-2">
+                  <Star className="h-4 w-4" />
+                  My ratings
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/help" className="flex items-center gap-2">
+                  <LifeBuoy className="h-4 w-4" />
+                  Help &amp; FAQs
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
@@ -199,4 +218,22 @@ function initials(name: string): string {
   if (parts.length === 0) return 'D';
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
   return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+}
+
+function NotificationBell() {
+  const unread = useUnreadNotificationsCount();
+  return (
+    <Link
+      href="/notifications"
+      aria-label={unread > 0 ? `${unread} unread notifications` : 'Notifications'}
+      className="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+    >
+      <Bell className="h-5 w-5" />
+      {unread > 0 ? (
+        <span className="absolute right-1 top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
+          {unread > 99 ? '99+' : unread}
+        </span>
+      ) : null}
+    </Link>
+  );
 }

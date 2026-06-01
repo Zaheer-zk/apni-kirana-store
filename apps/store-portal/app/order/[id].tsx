@@ -23,6 +23,7 @@ import type { OrderDetail, OrderStatusEvent } from '@aks/shared';
 const STATUS_TIMELINE_LABELS: Record<string, string> = {
   PENDING: 'Order Placed',
   STORE_ACCEPTED: 'Store Accepted',
+  COOKING: 'Cooking',
   STORE_REJECTED: 'Store Rejected',
   DRIVER_ASSIGNED: 'Driver Assigned',
   IN_TRANSIT: 'Out for Delivery',
@@ -34,6 +35,7 @@ const STATUS_TIMELINE_LABELS: Record<string, string> = {
 const STATUS_BADGE: Record<string, { variant: BadgeVariant; label: string }> = {
   PENDING: { variant: 'warning', label: 'Pending' },
   STORE_ACCEPTED: { variant: 'info', label: 'Preparing' },
+  COOKING: { variant: 'warning', label: 'Cooking' },
   DRIVER_ASSIGNED: { variant: 'purple', label: 'Driver assigned' },
   IN_TRANSIT: { variant: 'success', label: 'In transit' },
   DELIVERED: { variant: 'success', label: 'Delivered' },
@@ -122,6 +124,17 @@ export default function OrderDetailScreen() {
     onError: (err: Error) => Alert.alert('Error', err.message),
   });
 
+  // Restaurant-only: STORE_ACCEPTED → COOKING. The customer sees a "Cooking"
+  // milestone; the order is still routable to a driver afterwards via /ready.
+  const markCookingMutation = useMutation({
+    mutationFn: () => api.put(`/api/v1/orders/${id}/cooking`).then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orderDetail', id] });
+      queryClient.invalidateQueries({ queryKey: ['storeActiveOrders'] });
+    },
+    onError: (err: Error) => Alert.alert('Error', err.message),
+  });
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -146,8 +159,15 @@ export default function OrderDetailScreen() {
 
   const isPending = order.status === 'PENDING';
   const isAccepted = order.status === 'STORE_ACCEPTED';
+  const isCooking = order.status === 'COOKING';
+  const orderStore = (order as unknown as { store?: { category?: string } }).store;
+  const isRestaurant = orderStore?.category === 'RESTAURANT';
+  const alreadyPacked = !!(order as unknown as { packedAt?: string | null }).packedAt;
   const isBusy =
-    acceptMutation.isPending || rejectMutation.isPending || markReadyMutation.isPending;
+    acceptMutation.isPending ||
+    rejectMutation.isPending ||
+    markReadyMutation.isPending ||
+    markCookingMutation.isPending;
   const badge = STATUS_BADGE[order.status] ?? { variant: 'default' as const, label: order.status };
 
   return (
@@ -223,6 +243,32 @@ export default function OrderDetailScreen() {
             <Text style={styles.infoValue}>{order.deliveryPincode}</Text>
           </View>
         </View>
+        {(() => {
+          // Recipient block — surfaced when the customer placed the order for
+          // someone else (e.g. gift / parent / colleague). Hidden otherwise.
+          const recipientName = (order as unknown as { recipientName?: string | null })
+            .recipientName;
+          const recipientPhone = (order as unknown as { recipientPhone?: string | null })
+            .recipientPhone;
+          if (!recipientName && !recipientPhone) return null;
+          return (
+            <>
+              <View style={styles.infoDivider} />
+              <View style={styles.infoRow}>
+                <View style={styles.infoIconWrap}>
+                  <Ionicons name="person-outline" size={18} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.infoLabel}>Recipient (order for someone else)</Text>
+                  <Text style={styles.infoValue}>
+                    {[recipientName, recipientPhone].filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+              </View>
+            </>
+          );
+        })()}
+
         <View style={styles.privacyBox}>
           <Ionicons name="lock-closed-outline" size={14} color={colors.textMuted} />
           <Text style={styles.privacyText}>
@@ -281,17 +327,43 @@ export default function OrderDetailScreen() {
         </View>
       )}
 
-      {isAccepted && (
+      {isAccepted && isRestaurant && !alreadyPacked && (
         <Button
           variant="primary"
-          title="Mark ready for pickup"
+          title="Start cooking"
+          icon="flame-outline"
+          fullWidth
+          size="lg"
+          onPress={() => markCookingMutation.mutate()}
+          loading={markCookingMutation.isPending}
+          disabled={isBusy}
+        />
+      )}
+
+      {(isAccepted || isCooking) && !alreadyPacked && (
+        <Button
+          variant="primary"
+          title={isCooking ? 'Mark food ready' : 'Mark ready for pickup'}
           icon="checkmark-done-outline"
           fullWidth
           size="lg"
+          style={isAccepted && isRestaurant ? { marginTop: 12 } : undefined}
           onPress={() => markReadyMutation.mutate()}
           loading={markReadyMutation.isPending}
           disabled={isBusy}
         />
+      )}
+
+      {alreadyPacked && order.status === 'STORE_ACCEPTED' && (
+        <Card style={{ alignItems: 'center', backgroundColor: colors.successLight }}>
+          <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+          <Text style={{ marginTop: 6, fontWeight: '700', color: colors.success }}>
+            Packed &amp; ready
+          </Text>
+          <Text style={{ fontSize: fontSize.xs, color: colors.textSecondary }}>
+            Waiting for a driver to pick this up.
+          </Text>
+        </Card>
       )}
 
       {['STORE_ACCEPTED', 'DRIVER_ASSIGNED', 'PICKED_UP'].includes(order.status) && (

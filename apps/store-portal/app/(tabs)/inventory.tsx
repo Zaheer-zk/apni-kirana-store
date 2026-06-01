@@ -304,8 +304,16 @@ export default function InventoryScreen() {
         />
       )}
 
-      {/* Floating Action Button */}
+      {/* Floating Action Buttons — catalog browse + request-new */}
       <View style={styles.fabWrap} pointerEvents="box-none">
+        <Button
+          title="Request new"
+          icon="list-outline"
+          variant="outline"
+          onPress={() => router.push('/inventory/request-item')}
+          style={styles.fabSecondary}
+          size="md"
+        />
         <Button
           title="Add from catalog"
           icon="add"
@@ -394,10 +402,20 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: spacing.xl,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   fab: {
     paddingHorizontal: spacing.xl,
     height: 52,
     ...shadow.large,
+  },
+  fabSecondary: {
+    paddingHorizontal: spacing.lg,
+    height: 52,
+    backgroundColor: colors.white,
+    ...shadow.medium,
   },
 });

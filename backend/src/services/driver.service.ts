@@ -79,7 +79,19 @@ async function rankDrivers(
   if (!order || !['STORE_ACCEPTED', 'DRIVER_ASSIGNED'].includes(order.status)) return null;
 
   const { lat, lng } = order.store;
-  const box = getBoundingBox(lat, lng, DRIVER_SEARCH_RADIUS_KM);
+
+  // Bounding-box prefilter radius derived from the LARGEST active zone
+  // radius (with a small buffer). This way, however big any admin makes a
+  // zone — 20km, 50km, whatever — the engine widens the candidate scan
+  // automatically. Zones are the source of truth; no hardcoded km values
+  // drive matching anymore. Falls back to a sensible default only if there
+  // are zero zones in the DB.
+  const maxZoneRow = await prisma.zone.aggregate({
+    where: { isActive: true },
+    _max: { radiusKm: true },
+  });
+  const bboxRadiusKm = Math.max(DRIVER_SEARCH_RADIUS_KM, maxZoneRow._max.radiusKm ?? 0);
+  const box = getBoundingBox(lat, lng, bboxRadiusKm);
 
   // Pull each candidate's zone set so we can apply the zone filter below.
   // Drivers with zero zones serve the whole city (backward compat for
@@ -160,6 +172,12 @@ async function rankDrivers(
 async function broadcastToDrivers(orderId: string, scored: ScoredDriver[]): Promise<void> {
   const settings = await getSettings();
   const DRIVER_ACCEPT_TIMEOUT_MS = settings.driverAcceptTimeoutSeconds * 1000;
+  // Notify EVERY zone-matched driver (no top-N slice). Zones already
+  // narrow the eligible set; capping at N here would silently drop
+  // qualifying drivers in dense zones. The 30 ceiling is kept only as a
+  // safety net against truly pathological cases (e.g. an admin creates
+  // a 100km zone with 200 online drivers); under normal operation the
+  // eligible set is well below 30.
   const top = scored.slice(0, TOP_N_BROADCAST);
   console.log(
     `[Driver] Broadcasting order ${orderId} to ${top.length} drivers: ` +

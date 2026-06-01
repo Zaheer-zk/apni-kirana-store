@@ -86,9 +86,22 @@ async function rankStores(
   const isRestock = order.orderType === 'RESTOCK';
 
   const settings = await getSettings();
-  const SEARCH_RADIUS_KM = settings.deliveryRadiusKm;
-
   const { lat, lng } = order.deliveryAddress;
+
+  // Derive the search radius from the largest ACTIVE zone in the system,
+  // not the hardcoded PlatformSetting fallback. Zones are the source of
+  // truth — if admin sets up a 20km zone, the matching engine must scan
+  // 20km around the customer (otherwise stores inside the zone get
+  // silently excluded by a smaller setting). Falls back to the platform
+  // default if no zones are configured yet.
+  const maxZoneRow = await prisma.zone.aggregate({
+    where: { isActive: true },
+    _max: { radiusKm: true },
+  });
+  const SEARCH_RADIUS_KM = Math.max(
+    settings.deliveryRadiusKm,
+    maxZoneRow._max.radiusKm ?? 0,
+  );
 
   // Order items reference StoreItem.id which references catalogItemId.
   // To compare across stores, we need the catalogItemIds for each order item.

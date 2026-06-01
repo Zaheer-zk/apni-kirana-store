@@ -46,6 +46,8 @@ export interface StoreEmbed {
   name: string;
   lat?: number | null;
   lng?: number | null;
+  /** RESTAURANT triggers the extra 'Cooking' milestone on the tracking timeline. */
+  category?: 'GROCERY' | 'PHARMACY' | 'GENERAL' | 'RESTAURANT' | null;
 }
 
 export interface CustomerOrder {

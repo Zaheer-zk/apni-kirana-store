@@ -171,6 +171,18 @@ function OrderDetailInner() {
     onError: (err: Error) => toast.error(err.message || 'Could not update order'),
   });
 
+  // Restaurant-only: transition STORE_ACCEPTED → COOKING so the customer
+  // sees an in-progress 'Cooking' step on their tracking timeline.
+  const markCooking = useMutation({
+    mutationFn: () => api.put(`/api/v1/orders/${id}/cooking`).then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orderDetail', id] });
+      queryClient.invalidateQueries({ queryKey: ['storeActiveOrders'] });
+      toast.success('Cooking started — the customer will see it on their tracker.');
+    },
+    onError: (err: Error) => toast.error(err.message || 'Could not start cooking'),
+  });
+
   const driverPoint = useMemo(() => {
     // Prefer the live socket location; fall back to whatever the driver
     // record had when we last fetched.
@@ -211,7 +223,11 @@ function OrderDetailInner() {
 
   const isPending = order.status === 'PENDING';
   const isAccepted = order.status === 'STORE_ACCEPTED';
-  const isBusy = accept.isPending || reject.isPending || markReady.isPending;
+  const isCooking = order.status === 'COOKING';
+  const isRestaurant = order.store?.category === 'RESTAURANT';
+  const alreadyPacked = !!order.packedAt;
+  const isBusy =
+    accept.isPending || reject.isPending || markReady.isPending || markCooking.isPending;
 
   // Commission / payout maths. `commission` is stored on the order row at
   // creation time using the snapshot rate so the operator sees the exact
@@ -490,17 +506,47 @@ function OrderDetailInner() {
             <CheckCircle2 className="h-4 w-4" /> Accept order
           </Button>
         </div>
-      ) : isAccepted ? (
-        <Button
-          type="button"
-          size="lg"
-          className="w-full"
-          loading={markReady.isPending}
-          disabled={isBusy}
-          onClick={() => markReady.mutate()}
-        >
-          <PackageCheck className="h-4 w-4" /> Mark as packed (ready for pickup)
-        </Button>
+      ) : isAccepted || isCooking ? (
+        <div className="flex flex-col gap-2">
+          {/* Restaurant-only: 'Start cooking' button visible only while
+              the order is still STORE_ACCEPTED and we haven't packed yet.
+              Once tapped, status moves to COOKING and the customer sees
+              the in-progress milestone. */}
+          {isRestaurant && isAccepted && !alreadyPacked ? (
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
+              loading={markCooking.isPending}
+              disabled={isBusy || markCooking.isPending}
+              onClick={() => markCooking.mutate()}
+            >
+              🍳 Start cooking
+            </Button>
+          ) : null}
+
+          {/* Mark-as-packed: hidden once packedAt is set so the operator
+              can't fire it twice. Server also rejects duplicates as
+              defence-in-depth. */}
+          {!alreadyPacked ? (
+            <Button
+              type="button"
+              size="lg"
+              className="w-full"
+              loading={markReady.isPending}
+              disabled={isBusy || markReady.isPending}
+              onClick={() => markReady.mutate()}
+            >
+              <PackageCheck className="h-4 w-4" />{' '}
+              {isRestaurant ? 'Ready for pickup' : 'Mark as packed (ready for pickup)'}
+            </Button>
+          ) : (
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+              <PackageCheck className="h-4 w-4" /> Packed & ready — waiting for the driver to arrive.
+            </div>
+          )}
+        </div>
       ) : null}
 
       <RejectDialog

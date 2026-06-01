@@ -57,13 +57,29 @@ const TrackingMap = dynamic(
   },
 );
 
-const STEPS: Array<{ status: OrderStatus; label: string; icon: typeof Receipt }> = [
+type Step = { status: OrderStatus; label: string; icon: typeof Receipt };
+
+const BASE_STEPS: Step[] = [
   { status: OrderStatus.PENDING, label: 'Placed', icon: Receipt },
   { status: OrderStatus.STORE_ACCEPTED, label: 'Accepted', icon: StoreIcon },
   { status: OrderStatus.DRIVER_ASSIGNED, label: 'Driver assigned', icon: Bike },
   { status: OrderStatus.PICKED_UP, label: 'Picked up', icon: Truck },
   { status: OrderStatus.DELIVERED, label: 'Delivered', icon: Check },
 ];
+
+// Restaurants get an extra 'Cooking' milestone between Accepted and
+// Driver assigned. Everyone else uses BASE_STEPS unchanged.
+function stepsFor(category: string | null | undefined): Step[] {
+  if (category !== 'RESTAURANT') return BASE_STEPS;
+  return [
+    BASE_STEPS[0],
+    BASE_STEPS[1],
+    { status: 'COOKING' as OrderStatus, label: 'Cooking', icon: Package },
+    BASE_STEPS[2],
+    BASE_STEPS[3],
+    BASE_STEPS[4],
+  ];
+}
 
 function statusHeadline(status: OrderStatus | string): string {
   switch (status) {
@@ -249,7 +265,7 @@ export default function OrderTrackingPage() {
 
         <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
           <section className="space-y-5">
-            <StatusTimeline status={status} />
+            <StatusTimeline status={status} storeCategory={order.store?.category ?? null} />
             <MapSection order={order} driverLoc={driverLoc} />
             {order.driver ? <DriverCard driver={order.driver} /> : null}
             <ItemsCard order={order} />
@@ -345,14 +361,24 @@ export default function OrderTrackingPage() {
   );
 }
 
-function StatusTimeline({ status }: { status: OrderStatus }) {
+function StatusTimeline({
+  status,
+  storeCategory,
+}: {
+  status: OrderStatus;
+  storeCategory: string | null;
+}) {
   const cancelled = status === OrderStatus.CANCELLED || status === OrderStatus.REJECTED;
+  const STEPS = stepsFor(storeCategory);
   const currentIdx = STEPS.findIndex((s) => s.status === status);
 
   return (
     <Card>
       <CardContent className="p-5">
-        <ol className="grid grid-cols-5 gap-2 sm:gap-3">
+        <ol
+          className="grid gap-2 sm:gap-3"
+          style={{ gridTemplateColumns: `repeat(${STEPS.length}, minmax(0, 1fr))` }}
+        >
           {STEPS.map((step, idx) => {
             // Three visual states (per UX feedback: "current step IS done,
             // next step is what's in progress"):

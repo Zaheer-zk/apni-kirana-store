@@ -37,7 +37,15 @@ import { driverQueue } from '../queues/queues';
 import { io } from '../socket';
 import { getSettings } from './settings.service';
 
-const DRIVER_SEARCH_RADIUS_KM = 5;
+// 25km is the OUTER bounding-box prefilter — keeps the candidate scan
+// cheap by ignoring drivers nowhere near the order. It is intentionally
+// large because zone filtering downstream is the authoritative test for
+// "can this driver serve this order". Used to be 5km which silently
+// killed any driver further than 5km from the store, even if their
+// selected zone covered the store (e.g. driver finishing a previous
+// drop on the far edge of the zone). The prefilter no longer rejects
+// anyone — `inZone` below is the only relevance check.
+const DRIVER_SEARCH_RADIUS_KM = 25;
 // Broadcast cap. Per product spec we notify EVERY driver whose selected
 // zones contain the order's store OR drop-off, not just the top 3 scored.
 // First to accept wins. The number here is a hard safety ceiling for
@@ -94,17 +102,26 @@ async function rankDrivers(
   });
 
   const scored: ScoredDriver[] = [];
+  const dropReasons: Record<string, number> = {};
+  const drop = (r: string) => {
+    dropReasons[r] = (dropReasons[r] ?? 0) + 1;
+  };
   for (const d of candidates) {
-    if (d.currentLat == null || d.currentLng == null) continue;
+    if (d.currentLat == null || d.currentLng == null) {
+      drop('no_gps');
+      continue;
+    }
     const distanceKm = haversineDistance(lat, lng, d.currentLat, d.currentLng);
-    if (distanceKm > DRIVER_SEARCH_RADIUS_KM) continue;
 
     // Zone filter: drivers MUST opt into at least one zone to receive
-    // offers. The store OR drop-off must fall inside at least one of the
-    // driver's selected zones. Previously empty zones meant 'serve
-    // city-wide' for backward compat — that's gone now per product spec:
-    // every driver has to actively pick the areas they serve.
-    if (d.zones.length === 0) continue;
+    // offers, and the order's store OR drop-off must fall inside one
+    // of those zones. This is the AUTHORITATIVE relevance test —
+    // physical distance from the store is captured by the zone's own
+    // radiusKm, so we don't second-guess it with an extra haversine cap.
+    if (d.zones.length === 0) {
+      drop('no_zones');
+      continue;
+    }
     const inZone = d.zones.some(({ zone }) => {
       const dStore = haversineDistance(zone.centerLat, zone.centerLng, lat, lng);
       const dDrop = haversineDistance(
@@ -115,7 +132,10 @@ async function rankDrivers(
       );
       return dStore <= zone.radiusKm || dDrop <= zone.radiusKm;
     });
-    if (!inZone) continue;
+    if (!inZone) {
+      drop('zone_mismatch');
+      continue;
+    }
 
     const proximityScore = Math.max(0, 1 - distanceKm / DRIVER_SEARCH_RADIUS_KM);
     const ratingScore = (d.rating ?? 0) / 5;
@@ -126,6 +146,14 @@ async function rankDrivers(
     scored.push({ driverId: d.id, userId: d.user.id, score, distanceKm, rating: d.rating ?? 0 });
   }
   scored.sort((a, b) => b.score - a.score);
+  console.log(
+    `[Driver] rankDrivers order=${orderId.slice(-6)}: ${candidates.length} candidates in bbox, ` +
+      `${scored.length} matched. Drops: ${
+        Object.entries(dropReasons)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(', ') || 'none'
+      }`,
+  );
   return { scored, lat, lng, customerId: order.customer.id };
 }
 

@@ -7,6 +7,7 @@ import { Skeleton } from '@aks/ui/components/skeleton';
 import { toast } from '@aks/ui/components/sonner';
 import { cn } from '@aks/ui/lib/utils';
 import { api } from '@/lib/api';
+import { useOnlineLocation } from '@/lib/use-online-location';
 
 interface DriverStatusResp {
   status?: string;
@@ -14,12 +15,14 @@ interface DriverStatusResp {
 
 /**
  * Online/offline toggle for the driver dashboard. Calls the same backend
- * endpoint as the Expo app (`PUT /drivers/status`) but skips GPS payload —
- * the web app explicitly doesn't track location (see `docs/driver-web.md`).
+ * endpoint as the Expo app (`PUT /drivers/status`).
  *
- * Showing the toggle on the web is intentional: a driver checking the
- * dashboard between shifts can flip themselves offline so the matching
- * engine stops considering them.
+ * Background GPS (continuous, even when app is closed) remains a mobile-only
+ * feature, but while the driver IS using this web app, we push the browser's
+ * geolocation via the shared `useOnlineLocation` hook so the matching engine
+ * can score them. Earlier this watcher lived only on `HeaderOnlineToggle` —
+ * drivers on small screens (header pill hidden) went online here and were
+ * invisible to the engine.
  */
 export function OnlineToggle() {
   const queryClient = useQueryClient();
@@ -36,6 +39,9 @@ export function OnlineToggle() {
   });
 
   const isOnline = statusQuery.data?.status === 'ONLINE';
+
+  // Push GPS while ONLINE so the matching engine has fresh coordinates.
+  useOnlineLocation(isOnline);
 
   const toggleMutation = useMutation({
     mutationFn: async (next: boolean) => {
@@ -81,7 +87,7 @@ export function OnlineToggle() {
           </p>
           <p className="text-xs text-gray-500">
             {isOnline
-              ? 'You can receive incoming delivery requests on your mobile app.'
+              ? 'Incoming delivery requests will appear here and on your mobile app.'
               : 'Go online to start receiving delivery requests.'}
           </p>
         </div>

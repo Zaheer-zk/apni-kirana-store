@@ -1,13 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { Skeleton } from '@aks/ui/components/skeleton';
 import { toast } from '@aks/ui/components/sonner';
 import { cn } from '@aks/ui/lib/utils';
 import { api } from '@/lib/api';
-import { pushLocationUpdate } from '@/lib/socket';
+import { useOnlineLocation } from '@/lib/use-online-location';
 
 interface DriverStatusResp {
   status?: string;
@@ -52,38 +51,8 @@ export function HeaderOnlineToggle() {
   const isOnline = status === 'ONLINE';
   const isLocked = status === 'PENDING_APPROVAL' || status === 'SUSPENDED';
 
-  // While ONLINE, share browser geolocation with the backend so the
-  // matching engine can actually find this driver. Without this push,
-  // Driver.currentLat/Lng stays null and the candidate scan skips them
-  // (no orders ever offered). Uses watchPosition so updates flow as the
-  // driver moves; cleans up the watcher when going offline / unmounting.
-  useEffect(() => {
-    if (!isOnline) return;
-    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return;
-
-    let lastPush = 0;
-    const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        // Throttle to ~once every 15s — fast enough for the matching
-        // engine, slow enough to not flood the socket.
-        const now = Date.now();
-        if (now - lastPush < 15_000) return;
-        lastPush = now;
-        pushLocationUpdate(pos.coords.latitude, pos.coords.longitude);
-      },
-      (err) => {
-        console.warn('[HeaderOnlineToggle] geolocation error', err);
-        if (err.code === err.PERMISSION_DENIED) {
-          toast.error(
-            'Location access is required so customers near you can place orders. Enable it in your browser settings.',
-          );
-        }
-      },
-      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000 },
-    );
-
-    return () => navigator.geolocation.clearWatch(id);
-  }, [isOnline]);
+  // Push GPS while online so the matching engine can find this driver.
+  useOnlineLocation(isOnline);
 
   const toggleMutation = useMutation({
     mutationFn: async (next: boolean) => {

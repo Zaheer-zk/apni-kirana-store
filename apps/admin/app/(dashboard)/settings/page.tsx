@@ -336,7 +336,7 @@ export default function SettingsPage() {
             <NumberField
               id="commissionPercent"
               label="Platform commission"
-              hint="Percentage of the order subtotal retained by the platform."
+              hint="Percent of the order subtotal we keep — paid by the STORE out of their share, NOT added to the customer's bill. Example: customer order ₹100, commission 3% → store gets ₹97, platform keeps ₹3."
               value={form.commissionPercent}
               onChange={(v) => setField('commissionPercent', v)}
               min={0}

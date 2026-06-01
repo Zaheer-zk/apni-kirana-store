@@ -354,27 +354,36 @@ function StatusTimeline({ status }: { status: OrderStatus }) {
       <CardContent className="p-5">
         <ol className="grid grid-cols-5 gap-2 sm:gap-3">
           {STEPS.map((step, idx) => {
-            const done = !cancelled && idx < currentIdx;
-            const current = !cancelled && idx === currentIdx;
+            // Three visual states (per UX feedback: "current step IS done,
+            // next step is what's in progress"):
+            //   completed   = reached or past this step (idx <= currentIdx)
+            //   inProgress  = the very next step waiting to happen
+            //   pending     = somewhere down the line
+            const completed = !cancelled && idx <= currentIdx;
+            const inProgress = !cancelled && idx === currentIdx + 1;
             const Icon = step.icon;
             return (
               <li key={step.status} className="flex flex-col items-center text-center">
                 <div
                   className={[
                     'flex h-9 w-9 items-center justify-center rounded-full border-2',
-                    done
+                    completed
                       ? 'border-primary bg-primary text-primary-foreground'
-                      : current
-                        ? 'border-primary bg-white text-primary'
+                      : inProgress
+                        ? 'animate-pulse border-amber-400 bg-amber-100 text-amber-700'
                         : 'border-gray-200 bg-gray-50 text-gray-400',
                   ].join(' ')}
                 >
-                  {done ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                  {completed ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
                 </div>
                 <p
                   className={[
                     'mt-1.5 text-[11px] font-semibold leading-tight sm:text-xs',
-                    current ? 'text-primary' : done ? 'text-gray-900' : 'text-gray-400',
+                    completed
+                      ? 'text-gray-900'
+                      : inProgress
+                        ? 'text-amber-700'
+                        : 'text-gray-400',
                   ].join(' ')}
                 >
                   {step.label}
@@ -385,7 +394,7 @@ function StatusTimeline({ status }: { status: OrderStatus }) {
         </ol>
         {cancelled ? (
           <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-center text-sm font-medium text-red-700">
-            This order didn't go through. You can try placing a new one.
+            This order didn&apos;t go through. You can try placing a new one.
           </p>
         ) : null}
       </CardContent>

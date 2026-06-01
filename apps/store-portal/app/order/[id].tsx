@@ -6,6 +6,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Linking,
   TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -278,6 +279,96 @@ export default function OrderDetailScreen() {
         </View>
       </Card>
 
+      {/* Payout breakdown — what the operator actually takes home. The
+          backend stores `commission` on the order row at creation time, so
+          this is exact (not a recomputed estimate). Delivery fee always
+          goes to the driver, not the store. */}
+      {(() => {
+        const o = order as unknown as {
+          subtotal?: number;
+          commission?: number;
+          deliveryFee?: number;
+          paymentMethod?: string;
+        };
+        const subtotal = o.subtotal ?? 0;
+        const commission = o.commission ?? 0;
+        const storeNet = Math.max(0, subtotal - commission);
+        const deliveryFee = o.deliveryFee ?? 0;
+        return (
+          <>
+            <Text style={styles.sectionTitle}>Payout breakdown</Text>
+            <Card padding={spacing.lg} style={{ marginBottom: spacing.lg }}>
+              <View style={styles.payoutRow}>
+                <Text style={styles.payoutLabel}>Items subtotal</Text>
+                <Text style={styles.payoutValue}>₹{subtotal.toFixed(2)}</Text>
+              </View>
+              <View style={styles.payoutRow}>
+                <Text style={styles.payoutLabel}>Platform commission</Text>
+                <Text style={styles.payoutValueMuted}>− ₹{commission.toFixed(2)}</Text>
+              </View>
+              <View style={styles.payoutDivider} />
+              <View style={styles.payoutRow}>
+                <Text style={styles.payoutLabelBold}>Your payout</Text>
+                <Text style={styles.payoutValueBold}>₹{storeNet.toFixed(2)}</Text>
+              </View>
+              <Text style={styles.payoutNote}>
+                Delivery fee of ₹{deliveryFee.toFixed(2)} goes to the driver. Customer paid{' '}
+                <Text style={{ fontWeight: '700', color: colors.textPrimary }}>
+                  ₹{order.total.toFixed(2)}
+                </Text>{' '}
+                total{o.paymentMethod ? ` via ${o.paymentMethod}` : ''}.
+              </Text>
+            </Card>
+          </>
+        );
+      })()}
+
+      {/* Driver card — only once a driver is assigned. Matches store-web
+          (apps/store-web/app/orders/[id]/page.tsx:362-401) feature set
+          minus the live map (mobile keeps it lightweight; the customer
+          app already has the live route view). */}
+      {(() => {
+        const driver = (order as unknown as {
+          driver?: {
+            vehicleType?: string | null;
+            vehicleNumber?: string | null;
+            user?: { name: string; phone: string } | null;
+          } | null;
+        }).driver;
+        if (!driver) return null;
+        return (
+          <>
+            <Text style={styles.sectionTitle}>Driver</Text>
+            <Card padding={spacing.lg} style={{ marginBottom: spacing.lg }}>
+              <View style={styles.driverRow}>
+                <View style={styles.driverIconWrap}>
+                  <Ionicons name="bicycle-outline" size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.driverName}>{driver.user?.name ?? '—'}</Text>
+                  {driver.vehicleNumber ? (
+                    <Text style={styles.driverMeta}>
+                      {driver.vehicleType ? `${driver.vehicleType} · ` : ''}
+                      {driver.vehicleNumber}
+                    </Text>
+                  ) : null}
+                </View>
+                {driver.user?.phone ? (
+                  <TouchableOpacity
+                    style={styles.callBtn}
+                    activeOpacity={0.7}
+                    onPress={() => Linking.openURL(`tel:+91${driver.user!.phone}`)}
+                  >
+                    <Ionicons name="call-outline" size={16} color={colors.white} />
+                    <Text style={styles.callBtnText}>Call</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </Card>
+          </>
+        );
+      })()}
+
       {/* Timeline */}
       <Text style={styles.sectionTitle}>Order timeline</Text>
       <Card padding={spacing.lg} style={{ marginBottom: spacing.lg }}>
@@ -519,4 +610,53 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.error,
   },
+  // Payout breakdown
+  payoutRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  payoutLabel: { fontSize: fontSize.sm, color: colors.textSecondary },
+  payoutLabelBold: { fontSize: fontSize.md, fontWeight: '800', color: colors.textPrimary },
+  payoutValue: { fontSize: fontSize.sm, fontWeight: '600', color: colors.textPrimary },
+  payoutValueMuted: { fontSize: fontSize.sm, color: colors.textMuted },
+  payoutValueBold: { fontSize: fontSize.lg, fontWeight: '800', color: colors.primary },
+  payoutDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
+  },
+  payoutNote: {
+    marginTop: spacing.md,
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    lineHeight: 16,
+  },
+  // Driver card
+  driverRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  driverIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverName: { fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary },
+  driverMeta: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2 },
+  callBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+  },
+  callBtnText: { color: colors.white, fontWeight: '700', fontSize: fontSize.xs },
 });

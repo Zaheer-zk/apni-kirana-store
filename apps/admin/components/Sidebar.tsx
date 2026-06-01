@@ -43,6 +43,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/stores', label: 'Stores', icon: <Store className="h-4 w-4" /> },
   { href: '/drivers', label: 'Drivers', icon: <Bike className="h-4 w-4" /> },
   { href: '/catalog', label: 'Catalog', icon: <BookOpen className="h-4 w-4" /> },
+  { href: '/catalog-requests', label: 'Catalog requests', icon: <BookOpen className="h-4 w-4" /> },
   { href: '/promos', label: 'Promos', icon: <Ticket className="h-4 w-4" /> },
   { href: '/orders', label: 'Orders', icon: <ShoppingCart className="h-4 w-4" /> },
   { href: '/wallets', label: 'Wallets', icon: <Wallet className="h-4 w-4" /> },

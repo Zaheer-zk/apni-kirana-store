@@ -18,6 +18,7 @@ import authRouter from './routes/auth.routes';
 import storesRouter from './routes/stores.routes';
 import itemsRouter from './routes/items.routes';
 import catalogRouter from './routes/catalog.routes';
+import catalogRequestsRouter, { adminRouter as catalogRequestsAdminRouter } from './routes/catalog-requests.routes';
 import ordersRouter from './routes/orders.routes';
 import wholesalersRouter from './routes/wholesalers.routes';
 import driversRouter from './routes/drivers.routes';
@@ -77,6 +78,11 @@ app.use('/api/v1', globalLimiter);
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/stores', storesRouter);
 app.use('/api/v1/items', itemsRouter);
+// Mount /catalog/requests BEFORE /catalog so the more-specific path wins.
+// Express tries mounts in order; without this, a future GET /catalog/:id
+// handler could swallow `/catalog/requests`.
+app.use('/api/v1/catalog/requests', catalogRequestsRouter);
+app.use('/api/v1/admin/catalog-requests', catalogRequestsAdminRouter);
 app.use('/api/v1/catalog', catalogRouter);
 app.use('/api/v1/orders', ordersRouter);
 app.use('/api/v1/wholesalers', wholesalersRouter);

@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Home,
   IndianRupee,
+  LifeBuoy,
   LogOut,
   Menu,
   Package,
@@ -71,6 +72,7 @@ function buildNavItems(t: (k: string) => string): NavItem[] {
     { href: '/earnings', label: t('earnings'), icon: <IndianRupee className="h-5 w-5" />, match: 'startsWith' },
     { href: '/profile', label: t('profile'), icon: <StoreIcon className="h-5 w-5" />, match: 'startsWith' },
     { href: '/settings', label: t('settings'), icon: <Settings className="h-5 w-5" />, match: 'startsWith' },
+    { href: '/help', label: t('help'), icon: <LifeBuoy className="h-5 w-5" />, match: 'startsWith' },
   ];
 }
 

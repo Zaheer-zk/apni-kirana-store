@@ -133,6 +133,7 @@ model User {
   store               Store?
   driver              Driver?
   wallet              Wallet?
+  catalogRequests     CatalogItemRequest[]
 
   @@unique([phone, role])
   @@unique([email, role])
@@ -209,9 +210,10 @@ model Store {
   updatedAt    DateTime      @updatedAt
 
   owner       User        @relation(fields: [ownerId], references: [id])
-  items       StoreItem[]
-  orders      Order[]     @relation("StoreOrders") // orders this store received (as seller)
-  buyerOrders Order[]     @relation("BuyerStoreOrders") // restock orders this store placed (as buyer)
+  items            StoreItem[]
+  orders           Order[]              @relation("StoreOrders") // orders this store received (as seller)
+  buyerOrders      Order[]              @relation("BuyerStoreOrders") // restock orders this store placed (as buyer)
+  catalogRequests  CatalogItemRequest[]
 
   @@index([lat, lng])
   @@index([isWholesaler])
@@ -231,6 +233,9 @@ model CatalogItem {
   updatedAt   DateTime     @updatedAt
 
   storeItems StoreItem[]
+  // When admin approves a CatalogItemRequest, the resulting CatalogItem
+  // gets linked back so the store sees 'your request became this item'.
+  requests   CatalogItemRequest[]
 
   @@index([category])
   @@index([name])
@@ -746,4 +751,45 @@ model WalletTransaction {
 
   @@index([walletId, createdAt])
   @@index([orderId])
+}
+
+// Store owner asks admin to add a new item to the master catalog. Admin
+// reviews → either approves (creates a CatalogItem + auto-adds it to the
+// requester's StoreItem inventory) or rejects with a note. Distinct from
+// CatalogItem.isActive: that's a soft-delete; this is the inbox where new
+// items get born.
+enum CatalogRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model CatalogItemRequest {
+  id          String               @id @default(cuid())
+  storeId     String               // store that raised the request
+  requestedBy String               // user id (the store owner)
+  name        String
+  description String?
+  category    ItemCategory
+  defaultUnit String
+  imageUrl    String?
+  // What the store currently sells it for — useful context for admin
+  // when triaging requests across stores.
+  priceHint   Float?
+  status      CatalogRequestStatus @default(PENDING)
+  reviewNote  String?              // admin's reason on APPROVE / REJECT
+  reviewedBy  String?              // admin user id who actioned it
+  reviewedAt  DateTime?
+  // When APPROVED, links to the newly-created CatalogItem so we can
+  // surface 'your request became this item' on the store side.
+  catalogItemId String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  store     Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  requester User         @relation(fields: [requestedBy], references: [id])
+  catalogItem CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, status])
+  @@index([status, createdAt])
 }

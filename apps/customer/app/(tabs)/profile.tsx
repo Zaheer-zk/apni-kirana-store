@@ -170,6 +170,13 @@ export default function ProfileScreen() {
           iconColor: colors.info,
         },
         {
+          icon: 'wallet-outline',
+          label: 'Wallet',
+          onPress: () => router.push('/account/wallet' as never),
+          iconBg: colors.successLight,
+          iconColor: colors.success,
+        },
+        {
           icon: 'notifications-outline',
           label: 'Notifications',
           onPress: () => router.push('/notifications'),

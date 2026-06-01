@@ -162,6 +162,8 @@ export default function RootLayout() {
             <Stack.Screen name="account/help" options={{ headerShown: false }} />
             <Stack.Screen name="account/support" options={{ title: 'Help & Support' }} />
             <Stack.Screen name="account/about" options={{ headerShown: false }} />
+            <Stack.Screen name="account/wallet" options={{ title: 'Wallet' }} />
+            <Stack.Screen name="reset-password" options={{ title: 'Reset password' }} />
             <Stack.Screen name="+not-found" options={{ title: 'Not found' }} />
           </Stack>
         </AuthGate>

@@ -265,7 +265,60 @@ export default function OrderDetailScreen() {
   const [liveStatus, setLiveStatus] = useState<OrderStatus | null>(null);
   const [driverLoc, setDriverLoc] = useState<LatLng | null>(null);
   const [rating, setRating] = useState(0);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+
+  // Download the GST invoice — mirrors the customer-web blob-fetch flow.
+  // We fetch as bytes (axios on RN can't give us a real Blob), write to a
+  // temp PDF file via expo-file-system's legacy API, and hand it to
+  // expo-sharing so the OS share sheet can save/print/email it. Modules
+  // are dynamically required so the bundle still loads on Expo Go builds
+  // that don't bundle them yet.
+  async function downloadInvoice(orderId: string) {
+    if (invoiceLoading) return;
+    setInvoiceLoading(true);
+    try {
+      // expo-file-system v19 split the API; the legacy module keeps the
+      // classic writeAsStringAsync / cacheDirectory / EncodingType surface.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const FS = require('expo-file-system/legacy') as {
+        cacheDirectory: string | null;
+        writeAsStringAsync: (path: string, contents: string, opts: { encoding: string }) => Promise<void>;
+        EncodingType: { Base64: string };
+      };
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const Sharing = require('expo-sharing') as {
+        isAvailableAsync: () => Promise<boolean>;
+        shareAsync: (uri: string, opts?: { mimeType?: string; dialogTitle?: string; UTI?: string }) => Promise<void>;
+      };
+      const res = await apiClient.get(`/api/v1/orders/${orderId}/invoice`, {
+        responseType: 'arraybuffer',
+      });
+      const bytes = new Uint8Array(res.data as ArrayBuffer);
+      let binary = '';
+      for (const b of bytes) binary += String.fromCharCode(b);
+      const base64 =
+        typeof globalThis.btoa === 'function'
+          ? globalThis.btoa(binary)
+          : Buffer.from(binary, 'binary').toString('base64');
+      const path = `${FS.cacheDirectory ?? ''}invoice-${orderId.slice(-6)}.pdf`;
+      await FS.writeAsStringAsync(path, base64, { encoding: FS.EncodingType.Base64 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(path, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Save or share GST invoice',
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        Alert.alert('Saved', `Invoice saved to ${path}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not load invoice';
+      Alert.alert('Invoice failed', message);
+    } finally {
+      setInvoiceLoading(false);
+    }
+  }
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['order', id],
@@ -492,6 +545,29 @@ export default function OrderDetailScreen() {
                 ))}
               </View>
             </View>
+          </View>
+        ) : null}
+
+        {/* Download invoice — only on delivered orders. Mirrors the web's
+            blob-fetch dance, but here we write to a temp file and hand it
+            to expo-sharing so the OS share sheet can save / print / email. */}
+        {isDelivered ? (
+          <View style={styles.section}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => downloadInvoice(order.id)}
+              disabled={invoiceLoading}
+              style={styles.invoiceBtn}
+            >
+              {invoiceLoading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons name="download-outline" size={18} color={colors.primary} />
+              )}
+              <Text style={styles.invoiceBtnText}>
+                {invoiceLoading ? 'Preparing invoice…' : 'Download GST invoice'}
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -859,6 +935,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     marginTop: spacing.lg,
+  },
+  invoiceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  invoiceBtnText: {
+    color: colors.primary,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
   },
   itemsCard: {
     backgroundColor: colors.card,

@@ -752,9 +752,28 @@ router.put(
       });
       if (!store) return sendError(res, 'Unauthorized', 403);
 
-      if (!['STORE_ACCEPTED', 'DRIVER_ASSIGNED'].includes(order.status)) {
+      // Allow from STORE_ACCEPTED (non-restaurant), COOKING (restaurant
+      // came out of the cooking step), or DRIVER_ASSIGNED (legacy edge).
+      if (!['STORE_ACCEPTED', 'COOKING', 'DRIVER_ASSIGNED'].includes(order.status)) {
         return sendError(res, `Cannot mark as ready with status ${order.status}`, 400);
       }
+
+      // Idempotent: if already packed, this is a no-op (also fixes the
+      // 'button clickable multiple times' bug — frontend should hide once
+      // packedAt is set, but server-side guard prevents duplicate sends).
+      if (order.packedAt) {
+        return sendError(res, 'Order is already marked as ready', 400);
+      }
+
+      // Set the timestamp; if restaurant was in COOKING, drop back to
+      // STORE_ACCEPTED so the existing driver-assign flow can proceed.
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          packedAt: new Date(),
+          ...(order.status === 'COOKING' ? { status: 'STORE_ACCEPTED' as const } : {}),
+        },
+      });
 
       await sendNotification(
         order.customerId,
@@ -778,10 +797,57 @@ router.put(
         }
       }
 
-      return sendSuccess(res, { orderId: order.id }, 'Order marked as ready');
+      return sendSuccess(res, { orderId: order.id, packedAt: new Date() }, 'Order marked as ready');
     } catch (err) {
       console.error('[Orders] ready error:', err);
       return sendError(res, 'Failed to mark order as ready', 500);
+    }
+  },
+);
+
+// ─── PUT /:id/cooking ─────────────────────────────────────────────────────────
+// Restaurant / cloud-kitchen workflow ONLY. Adds an intermediate COOKING
+// state between STORE_ACCEPTED and DRIVER_ASSIGNED so customers can see
+// "your food is being prepared." Non-restaurant stores don't get this
+// button on store-web; for backward compat the endpoint also rejects
+// non-RESTAURANT calls so a buggy client can't accidentally fire it.
+
+router.put(
+  '/:id/cooking',
+  authenticate,
+  authorize('STORE_OWNER'),
+  requireApproved,
+  async (req: Request, res: Response) => {
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: req.params['id'] },
+        include: { store: { select: { ownerId: true, category: true } } },
+      });
+      if (!order) return sendError(res, 'Order not found', 404);
+      if (order.store.ownerId !== req.user!.id) return sendError(res, 'Unauthorized', 403);
+      if (order.store.category !== 'RESTAURANT') {
+        return sendError(res, 'Cooking step is only for restaurant orders', 400);
+      }
+      if (order.status !== 'STORE_ACCEPTED') {
+        return sendError(res, `Cannot start cooking with status ${order.status}`, 400);
+      }
+
+      const updated = await prisma.order.update({
+        where: { id: order.id },
+        data: { status: 'COOKING', cookingStartedAt: new Date() },
+      });
+      await broadcastOrderStatus(order.id, 'COOKING');
+      await sendNotification(
+        order.customerId,
+        'Your order is cooking',
+        'The restaurant has started preparing your food.',
+        { orderId: order.id },
+      );
+
+      return sendSuccess(res, updated, 'Order marked as cooking');
+    } catch (err) {
+      console.error('[Orders] cooking error:', err);
+      return sendError(res, 'Failed to mark order as cooking', 500);
     }
   },
 );

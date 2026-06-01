@@ -42,6 +42,13 @@ enum ItemCategory {
 enum OrderStatus {
   PENDING
   STORE_ACCEPTED
+  // Hotel/restaurant workflow only: store accepted → now cooking the
+  // food. Sits between STORE_ACCEPTED and DRIVER_ASSIGNED. Skipped
+  // entirely for non-RESTAURANT stores (the lifecycle stays
+  // PENDING → STORE_ACCEPTED → DRIVER_ASSIGNED → ...). Customer
+  // tracking timeline + driver UI conditionally show this step based
+  // on the order's store.category.
+  COOKING
   DRIVER_ASSIGNED
   PICKED_UP
   DELIVERED
@@ -282,6 +289,12 @@ model Order {
   invoicePath       String?
   invoiceGeneratedAt DateTime?
   storeAcceptedAt   DateTime?
+  // Set when the store marks the order packed & ready for pickup. Drives
+  // the 'Mark as packed' button visibility on the store-web order detail
+  // (button hides once set, so admin/staff can't fire it twice).
+  packedAt          DateTime?
+  // Set when a restaurant transitions an order to COOKING.
+  cookingStartedAt  DateTime?
   driverAssignedAt  DateTime?
   pickedUpAt        DateTime?
   deliveredAt       DateTime?

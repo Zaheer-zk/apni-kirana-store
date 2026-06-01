@@ -38,6 +38,14 @@ const createOrderSchema = z.object({
   paymentMethod: z.nativeEnum(PaymentMethod),
   notes: z.string().max(500).optional(),
   promoCode: z.string().optional(),
+  // 'Order for someone else' — overrides account holder's contact at
+  // dropoff. Driver/store should call recipientPhone when present.
+  recipientName: z.string().trim().min(1).max(100).optional(),
+  recipientPhone: z
+    .string()
+    .trim()
+    .regex(/^\d{10}$/, 'Recipient phone must be 10 digits')
+    .optional(),
 });
 
 // Restock order: a store owner buys stock from a wholesaler. Items reference the
@@ -82,7 +90,7 @@ router.post(
   validate(createOrderSchema),
   async (req: Request, res: Response) => {
     try {
-      const { items, deliveryAddressId, paymentMethod, notes } = req.body as z.infer<
+      const { items, deliveryAddressId, paymentMethod, notes, recipientName, recipientPhone } = req.body as z.infer<
         typeof createOrderSchema
       >;
 
@@ -284,6 +292,8 @@ router.post(
             paymentStatus: 'PENDING',
             deliveryAddressId,
             notes,
+            recipientName: recipientName ?? null,
+            recipientPhone: recipientPhone ?? null,
             dropoffOtp,
             promoCode: promoCodeApplied,
             promoDiscount: promoDiscount > 0 ? promoDiscount : null,

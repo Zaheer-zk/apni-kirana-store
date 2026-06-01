@@ -115,6 +115,9 @@ export interface CreateOrderInput {
   paymentMethod: PaymentMethod;
   notes?: string;
   promoCode?: string;
+  /** 'Order for someone else' — driver/store call this at dropoff if set. */
+  recipientName?: string;
+  recipientPhone?: string;
 }
 
 export async function createOrder(input: CreateOrderInput): Promise<CustomerOrder> {

@@ -59,6 +59,11 @@ export default function CheckoutPage() {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.CASH_ON_DELIVERY);
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+  // 'Order for someone else' — when checked, dropoff contact differs from
+  // the account holder. Both fields required if the toggle is on.
+  const [forSomeoneElse, setForSomeoneElse] = useState(false);
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
 
   // Pre-select the default address once it loads.
   useEffect(() => {
@@ -83,11 +88,24 @@ export default function CheckoutPage() {
       if (!store) throw new Error('Cart is empty');
       if (items.length === 0) throw new Error('Cart is empty');
 
+      // Validate recipient fields if 'order for someone else' is on.
+      let recipient:
+        | { recipientName: string; recipientPhone: string }
+        | undefined;
+      if (forSomeoneElse) {
+        const name = recipientName.trim();
+        const phone = recipientPhone.trim();
+        if (!name) throw new Error('Enter the recipient’s name');
+        if (!/^\d{10}$/.test(phone)) throw new Error('Recipient phone must be 10 digits');
+        recipient = { recipientName: name, recipientPhone: phone };
+      }
+
       return createOrder({
         storeId: store.storeId,
         deliveryAddressId: selectedAddressId,
         paymentMethod,
         items: items.map((line) => ({ storeItemId: line.storeItemId, qty: line.qty })),
+        ...recipient,
       });
     },
     onSuccess: (order) => {
@@ -213,6 +231,49 @@ export default function CheckoutPage() {
                   </Button>
                 </div>
               )}
+
+              {/* 'Order for someone else' — collapsed by default. When on,
+                  driver/store call the recipient's phone at dropoff
+                  instead of the account holder's. */}
+              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={forSomeoneElse}
+                    onChange={(e) => setForSomeoneElse(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-gray-900">
+                      Order for someone else?
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Driver and store will reach the recipient — not your account number.
+                    </p>
+                  </div>
+                </label>
+                {forSomeoneElse ? (
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <input
+                      type="text"
+                      value={recipientName}
+                      onChange={(e) => setRecipientName(e.target.value)}
+                      placeholder="Recipient name"
+                      maxLength={100}
+                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <input
+                      type="tel"
+                      value={recipientPhone}
+                      onChange={(e) => setRecipientPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      placeholder="10-digit phone"
+                      maxLength={10}
+                      inputMode="numeric"
+                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-mono focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                ) : null}
+              </div>
             </StepBlock>
 
             {/* Step 2: payment */}

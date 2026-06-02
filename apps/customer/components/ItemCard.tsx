@@ -29,12 +29,17 @@ export function ItemCard({ item, onPress, variant = 'horizontal', style }: ItemC
   const cartItem = items.find((i) => i.itemId === item.id);
   const qty = cartItem?.qty ?? 0;
 
+  // Display + cart use the customer-facing price (= store payout +
+  // admin margin). Backend rolls it up as `customerPrice`; fall back to
+  // raw price for legacy responses where the field isn't present.
+  const displayPrice = item.customerPrice ?? item.price;
+
   function handleAdd(e?: { stopPropagation?: () => void }) {
     e?.stopPropagation?.();
     addItem({
       itemId: item.id,
       name: item.name,
-      price: item.price,
+      price: displayPrice,
       unit: item.unit,
       qty: 1,
       imageUrl: item.imageUrl,
@@ -76,7 +81,7 @@ export function ItemCard({ item, onPress, variant = 'horizontal', style }: ItemC
         </Text>
 
         <View style={styles.footer}>
-          <Text style={styles.price}>₹{item.price.toFixed(0)}</Text>
+          <Text style={styles.price}>₹{displayPrice.toFixed(0)}</Text>
 
           {!item.isAvailable ? (
             <View style={styles.oosTag}>

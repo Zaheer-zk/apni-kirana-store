@@ -176,10 +176,14 @@ export default function CatalogDetailScreen() {
 
   function handleAddToCart() {
     if (!selected || !item) return;
+    // Use the customer-facing price (= store input + admin margin) so the
+    // cart shows what the user will actually pay. Backend recomputes the
+    // canonical totals at order creation.
+    const si = selected.storeItem as { id: string; price: number; customerPrice?: number };
     addItem({
-      itemId: selected.storeItem.id, // storeItemId
+      itemId: si.id,
       name: item.name,
-      price: selected.storeItem.price,
+      price: si.customerPrice ?? si.price,
       unit: item.defaultUnit,
       qty,
       imageUrl: item.imageUrl ?? '',
@@ -269,7 +273,12 @@ export default function CatalogDetailScreen() {
                       </View>
                     </View>
                     <View style={styles.priceCol}>
-                      <Text style={styles.priceValue}>₹{s.storeItem.price.toFixed(0)}</Text>
+                      <Text style={styles.priceValue}>
+                        ₹{(
+                          (s.storeItem as { price: number; customerPrice?: number })
+                            .customerPrice ?? s.storeItem.price
+                        ).toFixed(0)}
+                      </Text>
                       <Text style={styles.priceUnit}>per {item.defaultUnit}</Text>
                     </View>
                     <View style={[styles.radio, isSelected && styles.radioSelected]}>

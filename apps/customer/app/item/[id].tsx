@@ -115,8 +115,12 @@ export default function ItemDetailScreen() {
   }
 
   const { item, store, distanceKm } = data;
+  // Customer-facing price = store's input + admin margin. The backend
+  // returns this rolled up as `customerPrice`; we fall back to plain
+  // `price` for legacy cached responses or items with no margin set.
+  const displayPrice = item.customerPrice ?? item.price;
   const inCart = cartItems.find((ci) => ci.itemId === item.id);
-  const totalPrice = item.price * qty;
+  const totalPrice = displayPrice * qty;
 
   function handleAdd() {
     if (inCart) {
@@ -125,7 +129,11 @@ export default function ItemDetailScreen() {
       addItem({
         itemId: item.id,
         name: item.name,
-        price: item.price,
+        // Store the customer-facing price in the cart so all downstream
+        // math (subtotal, place-order display) shows what the user actually
+        // pays, not the store's payout. Backend independently recomputes
+        // the canonical totals at order creation.
+        price: displayPrice,
         unit: item.unit,
         qty,
         imageUrl: item.imageUrl,
@@ -181,7 +189,7 @@ export default function ItemDetailScreen() {
           </View>
 
           <View style={styles.priceRow}>
-            <Text style={styles.price}>₹{item.price.toFixed(0)}</Text>
+            <Text style={styles.price}>₹{displayPrice.toFixed(0)}</Text>
             <Text style={styles.unit}>/ {item.unit}</Text>
           </View>
 

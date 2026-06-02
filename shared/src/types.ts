@@ -66,7 +66,16 @@ export interface InventoryItem {
   storeId: string;
   name: string;
   category: ItemCategory;
+  // `price` is the store owner's payout per unit (their input, what they
+  // receive when an order is delivered).
   price: number;
+  // `adminMargin` is the admin's commission per unit, added on top after
+  // negotiation. Defaults to 0 for legacy items.
+  adminMargin?: number;
+  // `customerPrice` is what the customer actually pays per unit =
+  // price + adminMargin. Computed by the backend so apps don't need to
+  // recompute. All customer-facing surfaces display this number.
+  customerPrice?: number;
   unit: string;
   stockQty: number;
   imageUrl: string;

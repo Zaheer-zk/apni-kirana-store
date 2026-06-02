@@ -1744,13 +1744,66 @@ router.get('/notifications-log', async (req: Request, res: Response) => {
 const adminAddItemSchema = z.object({
   catalogItemId: z.string().min(1),
   price: z.number().positive().max(1_000_000),
+  // Optional admin commission per unit (₹). When admin pre-stocks a store
+  // and has already negotiated, the margin can be set up-front.
+  adminMargin: z.number().min(0).max(1_000_000).optional(),
   stockQty: z.number().int().min(0).max(1_000_000).default(0),
   isAvailable: z.boolean().default(true),
+});
+
+// Edit a single StoreItem's admin margin (and optionally price/stock).
+// This is the surface admin uses post-negotiation to set the commission
+// per unit on a specific store's listing. See the 2026-06-02 two-tier
+// pricing decision: customer pays `price + adminMargin`, store keeps
+// `price × qty`, admin keeps `adminMargin × qty`.
+const adminUpdateStoreItemSchema = z.object({
+  adminMargin: z.number().min(0).max(1_000_000).optional(),
+  price: z.number().positive().max(1_000_000).optional(),
+  stockQty: z.number().int().min(0).max(1_000_000).optional(),
+  isAvailable: z.boolean().optional(),
 });
 
 const adminBulkAddItemsSchema = z.object({
   items: z.array(adminAddItemSchema).min(1).max(500),
 });
+
+// PUT /admin/store-items/:id — edit margin / price / stock for a single
+// StoreItem. The primary intended use is setting `adminMargin` after the
+// admin negotiates the commission with a store owner (two-tier pricing).
+router.put(
+  '/store-items/:id',
+  validate(adminUpdateStoreItemSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const id = req.params['id'] as string;
+      const body = req.body as z.infer<typeof adminUpdateStoreItemSchema>;
+      const existing = await prisma.storeItem.findUnique({ where: { id } });
+      if (!existing) return sendError(res, 'Store item not found', 404);
+      const updated = await prisma.storeItem.update({
+        where: { id },
+        data: {
+          ...(body.adminMargin !== undefined ? { adminMargin: body.adminMargin } : {}),
+          ...(body.price !== undefined ? { price: body.price } : {}),
+          ...(body.stockQty !== undefined ? { stockQty: body.stockQty } : {}),
+          ...(body.isAvailable !== undefined ? { isAvailable: body.isAvailable } : {}),
+        },
+        include: { catalogItem: { select: { name: true } } },
+      });
+      return sendSuccess(res, {
+        id: updated.id,
+        price: updated.price,
+        adminMargin: updated.adminMargin,
+        customerPrice: updated.price + updated.adminMargin,
+        stockQty: updated.stockQty,
+        isAvailable: updated.isAvailable,
+        catalogItem: updated.catalogItem,
+      });
+    } catch (err) {
+      console.error('[Admin] update store-item error:', err);
+      return sendError(res, 'Failed to update store item', 500);
+    }
+  },
+);
 
 router.post(
   '/stores/:id/items/bulk',
@@ -1797,6 +1850,7 @@ router.post(
               storeId,
               catalogItemId: i.catalogItemId,
               price: i.price,
+              adminMargin: i.adminMargin ?? 0,
               stockQty: i.stockQty ?? 0,
               isAvailable: i.isAvailable ?? true,
             })),

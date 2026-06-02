@@ -221,7 +221,12 @@ router.get(
         category: si.catalogItem.category,
         unit: si.catalogItem.defaultUnit,
         imageUrl: si.catalogItem.imageUrl,
+        // `price` = store owner's payout (their input).
+        // `adminMargin` = admin's commission per unit (read-only here).
+        // `customerPrice` = price + adminMargin (what customer pays).
         price: si.price,
+        adminMargin: si.adminMargin ?? 0,
+        customerPrice: si.price + (si.adminMargin ?? 0),
         stockQty: si.stockQty,
         isAvailable: si.isAvailable,
       }));
@@ -381,7 +386,10 @@ router.get('/:id/items', async (req: Request, res: Response) => {
       prisma.storeItem.count({ where }),
     ]);
 
-    // Flatten so customers see { id, name, category, price, unit, ... }
+    // Flatten so customers see { id, name, category, price, unit, ... }.
+    // We expose adminMargin + customerPrice on every storeItem response so
+    // customer surfaces can render the marked-up price and store-side
+    // surfaces can render the breakdown without recomputing.
     const flat = items.map((si) => ({
       id: si.id,
       storeId: si.storeId,
@@ -392,6 +400,8 @@ router.get('/:id/items', async (req: Request, res: Response) => {
       unit: si.catalogItem.defaultUnit,
       imageUrl: si.catalogItem.imageUrl,
       price: si.price,
+      adminMargin: si.adminMargin ?? 0,
+      customerPrice: si.price + (si.adminMargin ?? 0),
       stockQty: si.stockQty,
       isAvailable: si.isAvailable,
     }));

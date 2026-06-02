@@ -217,26 +217,34 @@ async function searchWithLocation(
     scored.sort((a, b) => b.score - a.score);
   }
 
-  const items = scored.slice(0, opts.limit).map((s) => ({
-    // Flatten so the client doesn't need to dig into nested objects.
-    storeItemId: s.row.id,
-    catalogItemId: s.row.catalogItemId,
-    name: s.row.catalogItem.name,
-    description: s.row.catalogItem.description,
-    imageUrl: s.row.catalogItem.imageUrl,
-    unit: s.row.catalogItem.defaultUnit,
-    category: s.row.catalogItem.category,
-    price: s.row.price,
-    stockQty: s.row.stockQty,
-    rating: s.row.store.rating ?? 0,
-    score: Number(s.score.toFixed(4)),
-    store: {
-      id: s.row.store.id,
-      name: s.row.store.name,
-      isOpen: s.row.store.isOpen,
-      distanceKm: Number(s.distanceKm.toFixed(2)),
-    },
-  }));
+  const items = scored.slice(0, opts.limit).map((s) => {
+    const adminMargin = (s.row as unknown as { adminMargin?: number }).adminMargin ?? 0;
+    return {
+      // Flatten so the client doesn't need to dig into nested objects.
+      storeItemId: s.row.id,
+      catalogItemId: s.row.catalogItemId,
+      name: s.row.catalogItem.name,
+      description: s.row.catalogItem.description,
+      imageUrl: s.row.catalogItem.imageUrl,
+      unit: s.row.catalogItem.defaultUnit,
+      category: s.row.catalogItem.category,
+      // `price` is the store owner's payout. `adminMargin` is admin's
+      // commission per unit. Customer-facing price = price + adminMargin
+      // (also surfaced as `customerPrice` so apps don't recompute).
+      price: s.row.price,
+      adminMargin,
+      customerPrice: s.row.price + adminMargin,
+      stockQty: s.row.stockQty,
+      rating: s.row.store.rating ?? 0,
+      score: Number(s.score.toFixed(4)),
+      store: {
+        id: s.row.store.id,
+        name: s.row.store.name,
+        isOpen: s.row.store.isOpen,
+        distanceKm: Number(s.distanceKm.toFixed(2)),
+      },
+    };
+  });
 
   return sendSuccess(res, { items, total: items.length, radiusKm });
 }
@@ -285,7 +293,13 @@ router.get('/:id', async (req: Request, res: Response) => {
     return sendSuccess(res, {
       storeItem: {
         id: storeItem.id,
+        // `price` is the store owner's payout per unit (set by store owner).
+        // `adminMargin` is admin's commission per unit (set by admin only).
+        // Customer-facing price = price + adminMargin. Surfaced as
+        // `customerPrice` so client apps don't have to recompute.
         price: storeItem.price,
+        adminMargin: storeItem.adminMargin ?? 0,
+        customerPrice: storeItem.price + (storeItem.adminMargin ?? 0),
         stockQty: storeItem.stockQty,
         isAvailable: storeItem.isAvailable,
       },

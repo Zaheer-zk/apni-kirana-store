@@ -246,7 +246,16 @@ model StoreItem {
   id            String   @id @default(cuid())
   storeId       String
   catalogItemId String
+  // What the store owner is paid per unit. Visible to the store owner as
+  // "your payout" / "your price" and never shown to the customer raw —
+  // customer-facing price is `price + adminMargin`.
   price         Float
+  // Admin-set commission per unit on this exact StoreItem. Negotiated with
+  // the store owner offline (per the 2026-06-02 pricing model decision).
+  // Customer pays `price + adminMargin`; admin retains `adminMargin × qty`
+  // per order line; store gets `price × qty`. Defaults to 0 so legacy items
+  // continue to behave as before until admin sets a margin.
+  adminMargin   Float    @default(0)
   stockQty      Int      @default(0)
   isAvailable   Boolean  @default(true)
   createdAt     DateTime @default(now())

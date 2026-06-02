@@ -112,7 +112,8 @@ router.post(
 
       let resolvedItems: Array<{
         storeItem: {
-          id: string; storeId: string; price: number; stockQty: number; isAvailable: boolean;
+          id: string; storeId: string; price: number; adminMargin: number;
+          stockQty: number; isAvailable: boolean;
           catalogItem: { name: string; defaultUnit: string; imageUrl: string | null };
         };
         qty: number;
@@ -216,11 +217,31 @@ router.post(
 
       const initialStoreId = resolvedItems[0]!.storeItem.storeId;
 
-      // Calculate totals (price snapshot at order time). Delivery fee and
-      // commission come from PlatformSetting so admins can tune pricing
-      // without redeploying — see settings.service.ts.
-      const subtotal = resolvedItems.reduce((s, r) => s + r.storeItem.price * r.qty, 0);
+      // Calculate totals (price snapshot at order time) using the two-tier
+      // pricing model:
+      //   line.customerPrice = storeItem.price + storeItem.adminMargin
+      //   line.commission    = storeItem.adminMargin × qty
+      // The store keeps `price × qty`, admin retains the sum of margins.
+      // Falls back to the global commissionPercent when ALL items have
+      // adminMargin = 0 (legacy items not yet negotiated by admin) so old
+      // pricing keeps working until admin sets per-item margins.
       const settings = await getSettings();
+      const perLine = resolvedItems.map((r) => {
+        const customerUnit = r.storeItem.price + (r.storeItem.adminMargin ?? 0);
+        const lineSubtotal = customerUnit * r.qty;
+        const lineCommission = (r.storeItem.adminMargin ?? 0) * r.qty;
+        return { ...r, customerUnit, lineSubtotal, lineCommission };
+      });
+      const subtotal = parseFloat(
+        perLine.reduce((s, p) => s + p.lineSubtotal, 0).toFixed(2),
+      );
+      const marginsSum = perLine.reduce((s, p) => s + p.lineCommission, 0);
+      const commission = parseFloat(
+        (marginsSum > 0
+          ? marginsSum
+          : subtotal * (settings.commissionPercent / 100)
+        ).toFixed(2),
+      );
 
       let distanceKm = 0;
       const initialStore = await prisma.store.findUnique({
@@ -237,9 +258,6 @@ router.post(
       }
       const deliveryFee = parseFloat(
         (settings.baseDeliveryFee + settings.perKmFee * distanceKm).toFixed(2),
-      );
-      const commission = parseFloat(
-        (subtotal * (settings.commissionPercent / 100)).toFixed(2),
       );
 
       // Promo code application (validated server-side; ignore invalid silently for now)
@@ -298,13 +316,17 @@ router.post(
             promoCode: promoCodeApplied,
             promoDiscount: promoDiscount > 0 ? promoDiscount : null,
             items: {
-              create: resolvedItems.map((r) => ({
-                itemId: r.storeItem.id,
-                name: r.storeItem.catalogItem.name,
-                price: r.storeItem.price,
-                unit: r.storeItem.catalogItem.defaultUnit,
-                qty: r.qty,
-                imageUrl: r.storeItem.catalogItem.imageUrl,
+              create: perLine.map((p) => ({
+                itemId: p.storeItem.id,
+                name: p.storeItem.catalogItem.name,
+                // OrderItem.price stores the CUSTOMER-FACING unit price (the
+                // amount the customer paid per unit, = storeItem.price +
+                // adminMargin). Bills, invoices, and refunds all multiply
+                // this × qty, so they need the post-margin number.
+                price: p.customerUnit,
+                unit: p.storeItem.catalogItem.defaultUnit,
+                qty: p.qty,
+                imageUrl: p.storeItem.catalogItem.imageUrl,
               })),
             },
           },

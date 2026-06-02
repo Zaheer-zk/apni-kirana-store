@@ -4,6 +4,24 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-06-02 — Two-tier pricing + per-zone fees + per-order money flow
+
+Net-new pricing model + admin commission controls + settlement visibility, shipped as a single coherent batch end-to-end (backend schema → APIs → customer-web + customer-mobile → store-web + store-portal mobile → admin).
+
+- [x] **Schema** — `StoreItem.adminMargin Float @default(0)` added (migration `20260602_storeitem_admin_margin`, idempotent). `Zone.baseDeliveryFee / perKmFee / commissionRate` columns already existed; this batch wires them into order math.
+- [x] **Two-tier pricing model**:
+  - `StoreItem.price` (existing) = store owner's payout per unit.
+  - `StoreItem.adminMargin` (new) = admin's commission per unit, set after offline negotiation.
+  - Customer pays `price + adminMargin`. Backend rolls it up as `customerPrice` on every storeItem response so apps don't recompute.
+  - Order math: subtotal = `(price + adminMargin) × qty`, commission = `adminMargin × qty`. Falls back to global `commissionPercent` when all items have `adminMargin = 0` so legacy items keep working.
+  - `OrderItem.price` stores the customer-facing unit price (what the customer actually paid) so invoices + refunds multiply the right amount.
+- [x] **Zone-scoped fees** — new `services/zone.service.ts` with 60s in-memory cache + smallest-radius-wins point-in-zone resolution. `POST /orders` and `POST /orders/restock` now use `zone.baseDeliveryFee / perKmFee / commissionRate` when the store falls inside an active zone, else fall back to `PlatformSetting`. Admin zone CRUD invalidates the new cache alongside the existing liveops cache.
+- [x] **Admin endpoint** — `PUT /api/v1/admin/store-items/:id` to edit per-StoreItem `adminMargin`/`price`/`stockQty`/`isAvailable`. `POST /admin/stores/:id/items/bulk` also accepts an optional `adminMargin` so admin can set the margin up-front when pre-stocking.
+- [x] **Customer surfaces** (web + mobile) — `ItemCard` / item detail / catalog store-picker / store-item card all display `customerPrice` (the marked-up number) instead of raw `price`. Cart additions persist the customer-facing amount so client-side subtotals match what the backend computes.
+- [x] **Store surfaces** (web + mobile) — inventory rows now read "Your payout: ₹X" + a sub-line "Customer pays ₹Y (+ ₹Z platform)". Empty-margin state shows "Admin hasn't set a platform margin yet".
+- [x] **Admin** — store detail page replaces the static price column with an inline `adminMargin` editor (click-to-edit, Enter/blur saves, Escape cancels, green tick on success). Each row also surfaces "Store gets ₹X · Customer pays ₹Y".
+- [x] **Per-order money flow card** — new section on admin order detail (between bill table and OTP) showing: Customer paid, Driver collected / Admin received, Owed to store, Owed to driver, Admin retains, and To-collect-from-driver (COD only after delivery). Covers both COD ("driver has the cash, admin reconciles later") and online-paid ("admin holds funds, owes store + driver") flows.
+
 ### 2026-06-01 (evening) — Full web↔mobile parity ship (13 new surfaces)
 
 Closed every web↔mobile gap the parity audit flagged. After this batch the customer / store / driver surfaces all expose the same features whether opened on web or mobile.

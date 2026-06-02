@@ -284,6 +284,13 @@ model Order {
   paymentMethod     PaymentMethod
   paymentStatus     PaymentStatus @default(PENDING)
   paymentId         String?
+  // COD reconciliation — admin flips this after physically receiving the
+  // cash from the driver (per-order, so partial settlements are visible).
+  // Only meaningful when paymentMethod = CASH_ON_DELIVERY; left false on
+  // online-paid orders. Drives the "owed by driver" totals on the admin
+  // money-flow + driver finance views.
+  codCollected      Boolean       @default(false)
+  codCollectedAt    DateTime?
   deliveryAddressId String
   notes             String?
   rejectionReason   String?
@@ -342,20 +349,37 @@ model OrderItem {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
+// Driver compensation model. PER_ORDER (default) — driver earns the
+// delivery fee on each delivered order. SALARY — admin pays a fixed
+// monthlyAmount, driver earns no per-delivery fee. Admin sets the model
+// per driver from the admin dashboard (typically promotes a driver to
+// SALARY after the 30-day / 3-orders-per-day-average eligibility).
+enum DriverCompensationType {
+  PER_ORDER
+  SALARY
+}
+
 model Driver {
-  id            String       @id @default(cuid())
-  userId        String       @unique
-  vehicleType   VehicleType
-  vehicleNumber String
-  licenseNumber String
-  status        DriverStatus @default(PENDING_APPROVAL)
-  currentLat    Float?
-  currentLng    Float?
-  rating        Float        @default(0)
-  totalRatings  Int          @default(0)
-  totalEarnings Float        @default(0)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id               String                 @id @default(cuid())
+  userId           String                 @unique
+  vehicleType      VehicleType
+  vehicleNumber    String
+  licenseNumber    String
+  status           DriverStatus           @default(PENDING_APPROVAL)
+  // Compensation model — see DriverCompensationType. Defaults to PER_ORDER
+  // so existing drivers keep their current arrangement until admin
+  // explicitly promotes them.
+  compensationType DriverCompensationType @default(PER_ORDER)
+  // Fixed monthly amount when compensationType = SALARY. Null otherwise.
+  // Admin sets this after the salary negotiation lands.
+  monthlySalary    Float?
+  currentLat       Float?
+  currentLng       Float?
+  rating           Float                  @default(0)
+  totalRatings     Int                    @default(0)
+  totalEarnings    Float                  @default(0)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   orders  Order[]

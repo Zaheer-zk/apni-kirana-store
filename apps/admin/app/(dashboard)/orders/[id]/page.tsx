@@ -1311,6 +1311,7 @@ function MoneyFlowCard({
   order,
 }: {
   order: {
+    id: string;
     subtotal: number;
     deliveryFee: number;
     commission?: number;
@@ -1318,8 +1319,11 @@ function MoneyFlowCard({
     paymentMethod?: string;
     paymentStatus?: string;
     status?: string;
+    codCollected?: boolean;
+    codCollectedAt?: string | null;
   };
 }) {
+  const queryClient = useQueryClient();
   const commission = order.commission ?? 0;
   const storePayout = Math.max(0, order.subtotal - commission);
   const driverEarnings = order.deliveryFee;
@@ -1328,9 +1332,24 @@ function MoneyFlowCard({
   const isCOD = order.paymentMethod === 'CASH_ON_DELIVERY';
   const isPaid = order.paymentStatus === 'PAID';
   const isDelivered = order.status === 'DELIVERED';
+  const codCollected = order.codCollected ?? false;
 
-  // What admin needs to collect from the driver (COD only, after delivery).
-  const collectFromDriver = isCOD && isDelivered ? order.total : 0;
+  // Outstanding from driver = full total IF this is a delivered COD order
+  // that admin hasn't marked settled yet. Goes to 0 once admin flips the
+  // codCollected switch via PUT /admin/orders/:id/cod-collected.
+  const collectFromDriver = isCOD && isDelivered && !codCollected ? order.total : 0;
+
+  const settleCod = useMutation({
+    mutationFn: async (next: boolean) => {
+      const res = await api.put(`/api/v1/admin/orders/${order.id}/cod-collected`, {
+        collected: next,
+      });
+      return res.data?.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-order', order.id] });
+    },
+  });
 
   return (
     <div className="card overflow-hidden">
@@ -1386,10 +1405,53 @@ function MoneyFlowCard({
             label="To collect from driver"
             amount={collectFromDriver}
             tone="warning"
-            hint="COD cash sitting with driver — settle on next payout"
+            hint="COD cash sitting with driver — mark settled after handover"
+          />
+        ) : null}
+        {isCOD && isDelivered && codCollected ? (
+          <MoneyRow
+            label="COD settled"
+            amount={order.total}
+            tone="positive"
+            hint={`Cash received from driver${
+              order.codCollectedAt
+                ? ` · ${new Date(order.codCollectedAt).toLocaleString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}`
+                : ''
+            }`}
           />
         ) : null}
       </div>
+      {/* Settlement action — only relevant for delivered COD orders. */}
+      {isCOD && isDelivered ? (
+        <div className="flex items-center justify-between gap-3 border-t border-gray-100 bg-gray-50 px-4 py-3 sm:px-6">
+          <p className="text-xs text-gray-600">
+            {codCollected
+              ? 'Cash has been received from the driver for this order.'
+              : 'Mark this once the driver hands over the cash for this order.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => settleCod.mutate(!codCollected)}
+            disabled={settleCod.isPending}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+              codCollected
+                ? 'border border-gray-200 bg-white text-gray-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700'
+                : 'bg-primary text-white hover:bg-primary-700'
+            } disabled:opacity-60`}
+          >
+            {settleCod.isPending
+              ? 'Saving…'
+              : codCollected
+                ? 'Undo COD settled'
+                : 'Mark COD collected'}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -933,6 +933,154 @@ router.put('/drivers/:id', validate(adminUpdateDriverSchema), async (req: Reques
 
 // GET /drivers/:id — full driver detail for the admin detail page.
 // Includes user (name/phone/email), vehicle, status, GPS, rating, earnings,
+// ─── PUT /drivers/:id/compensation — set per-order vs salary + amount ───────
+
+const compensationSchema = z
+  .object({
+    compensationType: z.enum(['PER_ORDER', 'SALARY']),
+    monthlySalary: z.number().min(0).max(10_000_000).optional(),
+  })
+  .refine(
+    (v) => v.compensationType !== 'SALARY' || (v.monthlySalary != null && v.monthlySalary > 0),
+    { message: 'monthlySalary is required (>0) when compensationType=SALARY' },
+  );
+
+router.put('/drivers/:id/compensation', validate(compensationSchema), async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const body = req.body as z.infer<typeof compensationSchema>;
+    const driver = await prisma.driver.findUnique({ where: { id } });
+    if (!driver) return sendError(res, 'Driver not found', 404);
+
+    const updated = await prisma.driver.update({
+      where: { id },
+      data: {
+        compensationType: body.compensationType,
+        monthlySalary: body.compensationType === 'SALARY' ? body.monthlySalary ?? null : null,
+      },
+    });
+
+    await prisma.notification
+      .create({
+        data: {
+          userId: driver.userId,
+          title: `Compensation updated: ${body.compensationType.replace('_', ' ').toLowerCase()}`,
+          body:
+            body.compensationType === 'SALARY'
+              ? `You're on a monthly salary of ₹${body.monthlySalary?.toFixed(2)}.`
+              : 'You earn the delivery fee on each delivered order.',
+          event: 'DRIVER_COMP_UPDATED',
+        },
+      })
+      .catch(() => undefined);
+
+    return sendSuccess(res, updated, 'Compensation updated');
+  } catch (err) {
+    console.error('[Admin] driver compensation error:', err);
+    return sendError(res, 'Failed to update compensation', 500);
+  }
+});
+
+// GET /drivers/:id/salary-eligibility — convenience flag the admin UI shows
+// when deciding whether to promote a driver. Eligibility rule per the
+// 2026-06-02 spec: ≥30 active days AND average ≥3 delivered orders per
+// active day. Active day = any day with at least one delivered order.
+router.get('/drivers/:id/salary-eligibility', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const driver = await prisma.driver.findUnique({ where: { id }, select: { createdAt: true } });
+    if (!driver) return sendError(res, 'Driver not found', 404);
+
+    const deliveries = await prisma.order.findMany({
+      where: { driverId: id, status: 'DELIVERED' },
+      select: { deliveredAt: true },
+    });
+
+    const days = new Set<string>();
+    for (const d of deliveries) {
+      if (!d.deliveredAt) continue;
+      days.add(d.deliveredAt.toISOString().slice(0, 10));
+    }
+    const activeDays = days.size;
+    const totalDeliveries = deliveries.length;
+    const avgPerActiveDay = activeDays > 0 ? totalDeliveries / activeDays : 0;
+    const eligible = activeDays >= 30 && avgPerActiveDay >= 3;
+
+    return sendSuccess(res, {
+      activeDays,
+      totalDeliveries,
+      avgPerActiveDay: Number(avgPerActiveDay.toFixed(2)),
+      threshold: { minDays: 30, minAvgPerDay: 3 },
+      eligible,
+    });
+  } catch (err) {
+    console.error('[Admin] salary eligibility error:', err);
+    return sendError(res, 'Failed to compute eligibility', 500);
+  }
+});
+
+// ─── PUT /orders/:id/cod-collected — admin marks COD cash settled ────────────
+// Flips Order.codCollected, stamps codCollectedAt. Only valid on
+// CASH_ON_DELIVERY orders that have actually been delivered.
+router.put('/orders/:id/cod-collected', async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params['id'] as string;
+    const collected = req.body?.collected !== false; // default true
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) return sendError(res, 'Order not found', 404);
+    if (order.paymentMethod !== 'CASH_ON_DELIVERY') {
+      return sendError(res, 'COD settlement only applies to CASH_ON_DELIVERY orders', 400);
+    }
+    if (order.status !== 'DELIVERED' && collected) {
+      return sendError(res, 'Cannot settle COD before delivery', 400);
+    }
+    const updated = await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        codCollected: collected,
+        codCollectedAt: collected ? new Date() : null,
+      },
+      select: { id: true, codCollected: true, codCollectedAt: true, driverId: true },
+    });
+    return sendSuccess(res, updated, collected ? 'COD marked collected' : 'COD un-marked');
+  } catch (err) {
+    console.error('[Admin] cod-collected error:', err);
+    return sendError(res, 'Failed to update COD status', 500);
+  }
+});
+
+// GET /drivers/:id/cod-outstanding — list of delivered COD orders this
+// driver hasn't handed cash over for yet, with totals.
+router.get('/drivers/:id/cod-outstanding', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const orders = await prisma.order.findMany({
+      where: {
+        driverId: id,
+        paymentMethod: 'CASH_ON_DELIVERY',
+        codCollected: false,
+        status: 'DELIVERED',
+      },
+      select: {
+        id: true,
+        total: true,
+        deliveredAt: true,
+        customerId: true,
+      },
+      orderBy: { deliveredAt: 'desc' },
+    });
+    const total = orders.reduce((s, o) => s + o.total, 0);
+    return sendSuccess(res, {
+      orders,
+      orderCount: orders.length,
+      total: parseFloat(total.toFixed(2)),
+    });
+  } catch (err) {
+    console.error('[Admin] cod-outstanding error:', err);
+    return sendError(res, 'Failed to load outstanding COD', 500);
+  }
+});
+
 // zone count, payouts count, and last 10 deliveries. One round-trip so the
 // detail page renders fast without N+1 calls.
 router.get('/drivers/:id', async (req: Request, res: Response) => {

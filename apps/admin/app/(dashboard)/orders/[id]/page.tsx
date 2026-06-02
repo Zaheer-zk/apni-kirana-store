@@ -1030,6 +1030,12 @@ export default function OrderDetailPage({
         </div>
       </div>
 
+      {/* Money flow / settlement breakdown — who owes whom what.
+          For COD the driver collects cash up-front and admin reconciles
+          with store + driver later. For online-paid orders the money is
+          already with the platform and admin owes store + driver outright. */}
+      <MoneyFlowCard order={data} />
+
       {/* OTP */}
       {showOtp && (
         <div className="card flex flex-wrap items-center justify-between gap-4 p-5">
@@ -1282,6 +1288,136 @@ export default function OrderDetailPage({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Per-order settlement panel — what each party paid, collected, or is owed.
+// Renders on every order's detail page so admin can see the full money
+// flow at a glance (matches the 2026-06-02 audit ask).
+//
+// Math (per the two-tier pricing decision):
+//   storePayout    = subtotal − commission   (store's net for the items)
+//   driverEarnings = deliveryFee             (entire delivery fee for now)
+//   adminMargin    = commission              (sum of per-line adminMargin
+//                                            OR legacy commissionPercent)
+//
+// COD vs online affects WHO holds the cash right now:
+//   COD     — driver has the full `total` in cash; admin needs to collect
+//             it from the driver, then pay store + driver their shares.
+//   Online  — customer paid the platform up front; admin already holds
+//             `total`, owes store + driver their shares.
+function MoneyFlowCard({
+  order,
+}: {
+  order: {
+    subtotal: number;
+    deliveryFee: number;
+    commission?: number;
+    total: number;
+    paymentMethod?: string;
+    paymentStatus?: string;
+    status?: string;
+  };
+}) {
+  const commission = order.commission ?? 0;
+  const storePayout = Math.max(0, order.subtotal - commission);
+  const driverEarnings = order.deliveryFee;
+  const adminRetains = commission;
+
+  const isCOD = order.paymentMethod === 'CASH_ON_DELIVERY';
+  const isPaid = order.paymentStatus === 'PAID';
+  const isDelivered = order.status === 'DELIVERED';
+
+  // What admin needs to collect from the driver (COD only, after delivery).
+  const collectFromDriver = isCOD && isDelivered ? order.total : 0;
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="border-b border-gray-100 px-4 py-4 sm:px-6">
+        <h2 className="text-base font-semibold text-gray-900">Money flow</h2>
+        <p className="text-xs text-gray-500">
+          {isCOD
+            ? 'Cash on delivery — driver collects from customer, admin reconciles with store + driver.'
+            : 'Online payment — admin holds the funds, owes store + driver their shares.'}
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-px bg-gray-100 md:grid-cols-2">
+        <MoneyRow
+          label="Customer paid"
+          amount={order.total}
+          tone="neutral"
+          hint={`${order.paymentMethod ?? '—'} · ${order.paymentStatus ?? 'PENDING'}`}
+        />
+        <MoneyRow
+          label={isCOD ? 'Driver collected (cash)' : 'Admin received (PG)'}
+          amount={isPaid || (isCOD && isDelivered) ? order.total : 0}
+          tone="positive"
+          hint={
+            isCOD
+              ? isDelivered
+                ? 'Driver has this cash'
+                : 'Not yet delivered'
+              : isPaid
+                ? 'Sitting in platform balance'
+                : 'Awaiting payment'
+          }
+        />
+        <MoneyRow
+          label="Owed to store"
+          amount={storePayout}
+          tone="negative"
+          hint={`Items ₹${order.subtotal.toFixed(2)} − commission ₹${commission.toFixed(2)}`}
+        />
+        <MoneyRow
+          label="Owed to driver"
+          amount={driverEarnings}
+          tone="negative"
+          hint="Delivery fee earned"
+        />
+        <MoneyRow
+          label="Admin retains"
+          amount={adminRetains}
+          tone="positive"
+          hint="Platform commission this order"
+        />
+        {collectFromDriver > 0 ? (
+          <MoneyRow
+            label="To collect from driver"
+            amount={collectFromDriver}
+            tone="warning"
+            hint="COD cash sitting with driver — settle on next payout"
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function MoneyRow({
+  label,
+  amount,
+  tone,
+  hint,
+}: {
+  label: string;
+  amount: number;
+  tone: 'neutral' | 'positive' | 'negative' | 'warning';
+  hint?: string;
+}) {
+  const toneClasses =
+    tone === 'positive'
+      ? 'text-emerald-700'
+      : tone === 'negative'
+        ? 'text-rose-700'
+        : tone === 'warning'
+          ? 'text-amber-700'
+          : 'text-gray-900';
+  return (
+    <div className="bg-white px-4 py-4 sm:px-6">
+      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
+      <p className={`mt-1 text-xl font-bold ${toneClasses}`}>₹{amount.toFixed(2)}</p>
+      {hint ? <p className="mt-0.5 text-[11px] text-gray-500">{hint}</p> : null}
     </div>
   );
 }

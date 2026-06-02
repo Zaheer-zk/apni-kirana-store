@@ -14,6 +14,7 @@ import {
   scoreCandidate,
 } from '../services/ranking.service';
 import { getSettings } from '../services/settings.service';
+import { filterStoresByCustomerZone } from '../services/zone.service';
 
 const router = Router();
 
@@ -179,12 +180,25 @@ async function searchWithLocation(
   });
 
   // Compute haversine distance + drop anything outside the precise circle.
-  const enriched = raw
+  const enrichedAll = raw
     .map((row) => ({
       row,
       distanceKm: haversineDistance(opts.lat, opts.lng, row.store.lat, row.store.lng),
     }))
     .filter((r) => r.distanceKm <= radiusKm);
+
+  // Zone-restrict: customer only sees items at stores in the same zone(s)
+  // as their location. Falls back to the haversine-only list if no zones
+  // are configured (dev / early deployments).
+  const zonedStores = await filterStoresByCustomerZone(
+    enrichedAll.map((e) => ({ lat: e.row.store.lat, lng: e.row.store.lng, _e: e })),
+    opts.lat,
+    opts.lng,
+  );
+  const anyZones = (await prisma.zone.count({ where: { isActive: true } })) > 0;
+  const enriched = anyZones
+    ? zonedStores.map((s) => (s as { _e: typeof enrichedAll[number] })._e)
+    : enrichedAll;
 
   // Score with the shared ranking service so this endpoint and the matching
   // engine never disagree on what "best" means.
@@ -278,7 +292,9 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
     if (!storeItem) return sendError(res, 'Item not found', 404);
 
-    // Optional caller-provided location lets the UI show "x km away".
+    // Optional caller-provided location lets the UI show "x km away" AND
+    // gates the item if the customer is in a zone the store isn't part of
+    // (per the 2026-06-02 zone-discovery decision).
     const latStr = req.query['lat'] as string | undefined;
     const lngStr = req.query['lng'] as string | undefined;
     let distanceKm: number | null = null;
@@ -287,6 +303,24 @@ router.get('/:id', async (req: Request, res: Response) => {
       const lng = Number(lngStr);
       if (isFinite(lat) && isFinite(lng)) {
         distanceKm = Number(haversineDistance(lat, lng, storeItem.store.lat, storeItem.store.lng).toFixed(2));
+
+        // Zone gate: if customer is inside a zone, the store must share at
+        // least one of those zones. Falls back when no zones exist (dev).
+        const anyZones = (await prisma.zone.count({ where: { isActive: true } })) > 0;
+        if (anyZones) {
+          const allowed = await filterStoresByCustomerZone(
+            [{ lat: storeItem.store.lat, lng: storeItem.store.lng }],
+            lat,
+            lng,
+          );
+          if (allowed.length === 0) {
+            return sendError(
+              res,
+              'This item is not available in your delivery area',
+              404,
+            );
+          }
+        }
       }
     }
 

@@ -10,6 +10,7 @@ import { haversineDistance, getBoundingBox } from '../utils/geo';
 import { AppError } from '../middleware/error.middleware';
 import { sendNewStoreAwaitingApprovalEmail } from '../services/email.service';
 import { sendWebPushToUser } from '../services/web-push.service';
+import { filterStoresByCustomerZone, findZonesForPoint } from '../services/zone.service';
 
 const router = Router();
 
@@ -130,6 +131,9 @@ router.get('/nearby', async (req: Request, res: Response) => {
       where: {
         status: 'ACTIVE',
         isOpen: true,
+        // Customer-side discovery excludes wholesalers — they're B2B only
+        // and shouldn't surface to retail customers.
+        isWholesaler: false,
         lat: { gte: box.minLat, lte: box.maxLat },
         lng: { gte: box.minLng, lte: box.maxLng },
         ...(category ? { category } : {}),
@@ -138,13 +142,26 @@ router.get('/nearby', async (req: Request, res: Response) => {
     });
 
     // Exact distance + filter + sort
-    const results = stores
+    const withDistance = stores
       .map((store) => ({
         ...store,
         distanceKm: haversineDistance(lat, lng, store.lat, store.lng),
       }))
-      .filter((s) => s.distanceKm <= radius)
-      .sort((a, b) => a.distanceKm - b.distanceKm);
+      .filter((s) => s.distanceKm <= radius);
+
+    // Zone-restrict: customer only sees stores that share a zone with their
+    // location. If the customer is outside every active zone, we serve no
+    // stores (the customer-mobile/web CoverageBanner already explains this
+    // to the user). If no zones are configured platform-wide, we fall back
+    // to the haversine-only list so early/dev deployments still work.
+    const zoneFiltered = await filterStoresByCustomerZone(withDistance, lat, lng);
+    const anyZonesConfigured = (await findZonesForPoint(lat, lng)).length > 0 ||
+      // Probe one zone-anywhere-in-DB to decide if zones are configured at all
+      (await prisma.zone.count({ where: { isActive: true } })) > 0;
+
+    const results = (anyZonesConfigured ? zoneFiltered : withDistance).sort(
+      (a, b) => a.distanceKm - b.distanceKm,
+    );
 
     return sendSuccess(res, results);
   } catch (err) {

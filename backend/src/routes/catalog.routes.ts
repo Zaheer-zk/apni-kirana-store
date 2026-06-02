@@ -6,6 +6,7 @@ import { authenticate, authorize } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { haversineDistance, getBoundingBox } from '../utils/geo';
+import { filterStoresByCustomerZone } from '../services/zone.service';
 
 const router = Router();
 
@@ -68,7 +69,14 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     let stores: Array<{
       id: string; name: string; lat: number; lng: number; rating: number; isOpen: boolean;
-      storeItem: { id: string; price: number; stockQty: number; isAvailable: boolean };
+      storeItem: {
+        id: string;
+        price: number;
+        adminMargin: number;
+        customerPrice: number;
+        stockQty: number;
+        isAvailable: boolean;
+      };
       distanceKm?: number;
     }> = [];
 
@@ -78,28 +86,41 @@ router.get('/:id', async (req: Request, res: Response) => {
       const candidates = await prisma.store.findMany({
         where: {
           status: 'ACTIVE',
+          // Customer discovery — wholesalers are B2B-only and must not surface.
+          isWholesaler: false,
           lat: { gte: bb.minLat, lte: bb.maxLat },
           lng: { gte: bb.minLng, lte: bb.maxLng },
           items: { some: { catalogItemId: id, isAvailable: true, stockQty: { gt: 0 } } },
         },
         include: { items: { where: { catalogItemId: id }, take: 1 } },
       });
-      stores = candidates
+      const enriched = candidates
         .map((s) => ({
           id: s.id, name: s.name, lat: s.lat, lng: s.lng, rating: s.rating, isOpen: s.isOpen,
           storeItem: {
             id: s.items[0]!.id, price: s.items[0]!.price,
+            adminMargin: s.items[0]!.adminMargin ?? 0,
+            customerPrice: s.items[0]!.price + (s.items[0]!.adminMargin ?? 0),
             stockQty: s.items[0]!.stockQty, isAvailable: s.items[0]!.isAvailable,
           },
           distanceKm: haversineDistance(lat, lng, s.lat, s.lng),
         }))
-        .filter((s) => s.distanceKm! <= radiusKm)
-        .sort((a, b) => a.distanceKm! - b.distanceKm!);
+        .filter((s) => s.distanceKm! <= radiusKm);
+
+      // Zone gate (skipped when no zones configured).
+      const anyZones = (await prisma.zone.count({ where: { isActive: true } })) > 0;
+      stores = (anyZones
+        ? await filterStoresByCustomerZone(enriched, lat, lng)
+        : enriched
+      ).sort((a, b) => a.distanceKm! - b.distanceKm!);
     } else {
-      // No location — just list all stores carrying it
+      // No location — just list all stores carrying it (no zone gate
+      // possible without a customer position; this is the dev / generic
+      // browse path).
       const candidates = await prisma.store.findMany({
         where: {
           status: 'ACTIVE',
+          isWholesaler: false,
           items: { some: { catalogItemId: id, isAvailable: true } },
         },
         include: { items: { where: { catalogItemId: id }, take: 1 } },
@@ -108,6 +129,8 @@ router.get('/:id', async (req: Request, res: Response) => {
         id: s.id, name: s.name, lat: s.lat, lng: s.lng, rating: s.rating, isOpen: s.isOpen,
         storeItem: {
           id: s.items[0]!.id, price: s.items[0]!.price,
+          adminMargin: s.items[0]!.adminMargin ?? 0,
+          customerPrice: s.items[0]!.price + (s.items[0]!.adminMargin ?? 0),
           stockQty: s.items[0]!.stockQty, isAvailable: s.items[0]!.isAvailable,
         },
       }));

@@ -19,7 +19,7 @@ export interface ZoneFees {
   commissionRate: number;
 }
 
-interface ZoneRow extends ZoneFees {
+export interface ZoneRow extends ZoneFees {
   centerLat: number;
   centerLng: number;
   radiusKm: number;
@@ -87,4 +87,38 @@ export async function findZoneForPoint(
     perKmFee: best.perKmFee,
     commissionRate: best.commissionRate,
   };
+}
+
+/**
+ * Return EVERY active zone that contains (lat, lng) — useful for the
+ * customer discovery side where overlap shouldn't suppress matches
+ * (a customer at the corner of zone A + zone B should see stores from
+ * both, not just the smaller one).
+ */
+export async function findZonesForPoint(
+  lat: number,
+  lng: number,
+): Promise<ZoneRow[]> {
+  const zones = await loadZones();
+  return zones.filter(
+    (z) => haversineDistance(lat, lng, z.centerLat, z.centerLng) <= z.radiusKm,
+  );
+}
+
+/**
+ * Filter a list of stores to those that fall inside the same zone(s) as
+ * the customer's position. If the customer is outside every zone, returns
+ * an empty list — there's no fallback because the whole point of the zone
+ * model is "we don't deliver outside our serving area".
+ */
+export async function filterStoresByCustomerZone<
+  T extends { lat: number; lng: number },
+>(stores: T[], customerLat: number, customerLng: number): Promise<T[]> {
+  const customerZones = await findZonesForPoint(customerLat, customerLng);
+  if (customerZones.length === 0) return [];
+  return stores.filter((s) =>
+    customerZones.some(
+      (z) => haversineDistance(s.lat, s.lng, z.centerLat, z.centerLng) <= z.radiusKm,
+    ),
+  );
 }

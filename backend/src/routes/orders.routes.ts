@@ -10,6 +10,7 @@ import { assignDriverForOrder } from '../services/driver.service';
 import { sendNotification, notifyAdmins, notify } from '../services/notification.service';
 import { broadcastOrderStatus } from '../services/order-events.service';
 import { getSettings } from '../services/settings.service';
+import { findZoneForPoint } from '../services/zone.service';
 import { haversineDistance } from '../utils/geo';
 import { creditWallet } from '../services/wallet.service';
 import { generateInvoiceForOrder, resolveInvoiceAbsolutePath } from '../services/invoice.service';
@@ -222,9 +223,9 @@ router.post(
       //   line.customerPrice = storeItem.price + storeItem.adminMargin
       //   line.commission    = storeItem.adminMargin × qty
       // The store keeps `price × qty`, admin retains the sum of margins.
-      // Falls back to the global commissionPercent when ALL items have
-      // adminMargin = 0 (legacy items not yet negotiated by admin) so old
-      // pricing keeps working until admin sets per-item margins.
+      // Falls back to the zone-scoped (or global) commissionPercent when
+      // ALL items have adminMargin = 0 (legacy items not yet negotiated)
+      // so old pricing keeps working until admin sets per-item margins.
       const settings = await getSettings();
       const perLine = resolvedItems.map((r) => {
         const customerUnit = r.storeItem.price + (r.storeItem.adminMargin ?? 0);
@@ -235,19 +236,33 @@ router.post(
       const subtotal = parseFloat(
         perLine.reduce((s, p) => s + p.lineSubtotal, 0).toFixed(2),
       );
-      const marginsSum = perLine.reduce((s, p) => s + p.lineCommission, 0);
-      const commission = parseFloat(
-        (marginsSum > 0
-          ? marginsSum
-          : subtotal * (settings.commissionPercent / 100)
-        ).toFixed(2),
-      );
 
-      let distanceKm = 0;
+      // Per-zone fees: look up the zone containing the store. If found we
+      // use its baseDeliveryFee + perKmFee + commissionRate; otherwise
+      // fall back to the global PlatformSetting (legacy behaviour).
       const initialStore = await prisma.store.findUnique({
         where: { id: initialStoreId },
         select: { lat: true, lng: true },
       });
+      const zone = initialStore
+        ? await findZoneForPoint(initialStore.lat, initialStore.lng)
+        : null;
+      const effectiveBaseFee = zone?.baseDeliveryFee ?? settings.baseDeliveryFee;
+      const effectivePerKmFee = zone?.perKmFee ?? settings.perKmFee;
+      // commissionRate stored as a fraction (0.10) on the zone, percent (10)
+      // on PlatformSetting — normalise to a fraction here.
+      const effectiveCommissionFraction =
+        zone?.commissionRate ?? settings.commissionPercent / 100;
+
+      const marginsSum = perLine.reduce((s, p) => s + p.lineCommission, 0);
+      const commission = parseFloat(
+        (marginsSum > 0
+          ? marginsSum
+          : subtotal * effectiveCommissionFraction
+        ).toFixed(2),
+      );
+
+      let distanceKm = 0;
       if (initialStore && address.lat != null && address.lng != null) {
         distanceKm = haversineDistance(
           initialStore.lat,
@@ -257,7 +272,7 @@ router.post(
         );
       }
       const deliveryFee = parseFloat(
-        (settings.baseDeliveryFee + settings.perKmFee * distanceKm).toFixed(2),
+        (effectiveBaseFee + effectivePerKmFee * distanceKm).toFixed(2),
       );
 
       // Promo code application (validated server-side; ignore invalid silently for now)
@@ -449,9 +464,13 @@ router.post(
       }
 
       // Totals. Restock carries no platform commission (B2B); the buyer still
-      // pays the delivery fee that funds the driver.
+      // pays the delivery fee that funds the driver. Fees are zone-scoped:
+      // we look up the zone containing the wholesaler and use its
+      // baseDeliveryFee/perKmFee when set, falling back to the global
+      // PlatformSetting otherwise.
       const subtotal = resolved.reduce((s, r) => s + r.storeItem.price * r.qty, 0);
       const settings = await getSettings();
+      const restockZone = await findZoneForPoint(wholesaler.lat, wholesaler.lng);
       const distanceKm = haversineDistance(
         wholesaler.lat,
         wholesaler.lng,
@@ -459,7 +478,10 @@ router.post(
         buyerStore.lng,
       );
       const deliveryFee = parseFloat(
-        (settings.baseDeliveryFee + settings.perKmFee * distanceKm).toFixed(2),
+        (
+          (restockZone?.baseDeliveryFee ?? settings.baseDeliveryFee) +
+          (restockZone?.perKmFee ?? settings.perKmFee) * distanceKm
+        ).toFixed(2),
       );
       const total = parseFloat((subtotal + deliveryFee).toFixed(2));
 

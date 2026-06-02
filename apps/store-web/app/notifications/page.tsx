@@ -216,7 +216,7 @@ function relativeTime(iso: string): string {
   const d = Math.floor(h / 24);
   if (d < 7) return `${d}d ago`;
   try {
-    return new Date(iso).toLocaleDateString();
+    return new Date(iso).toLocaleDateString('en-IN');
   } catch {
     return '';
   }

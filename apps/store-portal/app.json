@@ -31,9 +31,10 @@
       },
       "package": "com.apnikirana.storeportal",
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
       ],
       "useNextNotificationsApi": true,
       "edgeToEdgeEnabled": false,
@@ -70,6 +71,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "993cc63e-6675-4593-bec9-86b1723fbd16"
+      }
     }
   }
 }

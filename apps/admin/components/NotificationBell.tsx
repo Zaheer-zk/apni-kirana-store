@@ -49,7 +49,7 @@ function relativeTime(iso: string): string {
   if (day < 7) return `${day}d ago`;
   const wk = Math.floor(day / 7);
   if (wk < 5) return `${wk}w ago`;
-  return new Date(iso).toLocaleDateString();
+  return new Date(iso).toLocaleDateString('en-IN');
 }
 
 /**

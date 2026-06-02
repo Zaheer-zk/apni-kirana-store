@@ -17,7 +17,7 @@ import { writeAudit } from '../utils/audit';
 import { creditWallet, getWalletWithTxns } from '../services/wallet.service';
 import { aggregateLastWeek, aggregatePayoutsForPeriod } from '../services/payout.service';
 import { invalidateZoneCache } from '../services/liveops.service';
-import { invalidateZoneFeeCache } from '../services/zone.service';
+import { findZonesForPoint, invalidateZoneFeeCache } from '../services/zone.service';
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const BCRYPT_ROUNDS = 10;
@@ -1224,6 +1224,19 @@ router.get('/orders/:id/eligible-stores', async (req: Request, res: Response) =>
     });
 
     const { lat, lng } = order.deliveryAddress;
+    // Resolve which zone(s) the order belongs to (via dropoff). Each store
+    // gets an `inZone` flag so admin can see at a glance whether assigning
+    // would cross zones. We do NOT hide out-of-zone stores — admin needs
+    // the option (rescue case where local supply is thin) — but the UI
+    // should warn before confirming.
+    const orderZones = await findZonesForPoint(lat, lng);
+    const inZone = (sLat: number, sLng: number) =>
+      orderZones.length === 0
+        ? true
+        : orderZones.some(
+            (z) => haversineDistance(sLat, sLng, z.centerLat, z.centerLng) <= z.radiusKm,
+          );
+
     const ranked = stores
       .map((s) => {
         const matchedItems = new Set(s.items.map((i) => i.catalogItemId)).size;
@@ -1238,12 +1251,17 @@ router.get('/orders/:id/eligible-stores', async (req: Request, res: Response) =>
           city: s.city,
           owner: s.owner,
           distanceKm: Number(haversineDistance(lat, lng, s.lat, s.lng).toFixed(2)),
+          inZone: inZone(s.lat, s.lng),
           matchedItems,
           totalItems,
           matchPercent: Math.round((matchedItems / totalItems) * 100),
         };
       })
-      .sort((a, b) => b.matchPercent - a.matchPercent || a.distanceKm - b.distanceKm);
+      .sort((a, b) => {
+        // In-zone first, then by match%, then by distance.
+        if (a.inZone !== b.inZone) return a.inZone ? -1 : 1;
+        return b.matchPercent - a.matchPercent || a.distanceKm - b.distanceKm;
+      });
 
     return sendSuccess(res, ranked);
   } catch (err) {
@@ -1332,25 +1350,50 @@ router.get('/orders/:id/eligible-drivers', async (req: Request, res: Response) =
         currentLat: { not: null },
         currentLng: { not: null },
       },
-      include: { user: { select: { id: true, name: true, phone: true, email: true, isActive: true, role: true } } },
+      include: {
+        user: { select: { id: true, name: true, phone: true, email: true, isActive: true, role: true } },
+        // Include the driver's selected zones so we can flag whether the
+        // driver serves the zone(s) this order belongs to.
+        zones: { select: { zoneId: true } },
+      },
     });
 
+    // The order's zone(s) — derived from the store location (where the
+    // driver picks up) so the driver-zone overlap test is meaningful.
+    const orderZones = await findZonesForPoint(origin.lat, origin.lng);
+    const orderZoneIds = new Set(orderZones.map((z) => z.zoneId));
+
     const ranked = drivers
-      .map((d) => ({
-        id: d.id,
-        vehicleType: d.vehicleType,
-        vehicleNumber: d.vehicleNumber,
-        rating: d.rating,
-        totalRatings: d.totalRatings,
-        currentLat: d.currentLat,
-        currentLng: d.currentLng,
-        user: d.user,
-        distanceKm:
-          d.currentLat != null && d.currentLng != null
-            ? Number(haversineDistance(origin.lat, origin.lng, d.currentLat, d.currentLng).toFixed(2))
-            : null,
-      }))
-      .sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999));
+      .map((d) => {
+        const driverZoneIds = new Set(d.zones.map((z) => z.zoneId));
+        // If the order's location isn't in any zone, treat all drivers as
+        // 'inZone' (legacy fallback). Otherwise the driver must serve at
+        // least one of the order's zones.
+        const inZone =
+          orderZoneIds.size === 0
+            ? true
+            : [...driverZoneIds].some((zid) => orderZoneIds.has(zid));
+        return {
+          id: d.id,
+          vehicleType: d.vehicleType,
+          vehicleNumber: d.vehicleNumber,
+          rating: d.rating,
+          totalRatings: d.totalRatings,
+          currentLat: d.currentLat,
+          currentLng: d.currentLng,
+          user: d.user,
+          inZone,
+          distanceKm:
+            d.currentLat != null && d.currentLng != null
+              ? Number(haversineDistance(origin.lat, origin.lng, d.currentLat, d.currentLng).toFixed(2))
+              : null,
+        };
+      })
+      .sort((a, b) => {
+        // In-zone drivers first, then by distance.
+        if (a.inZone !== b.inZone) return a.inZone ? -1 : 1;
+        return (a.distanceKm ?? 999) - (b.distanceKm ?? 999);
+      });
 
     return sendSuccess(res, ranked);
   } catch (err) {
@@ -1365,10 +1408,14 @@ router.put('/orders/:id/assign-store', async (req: Request, res: Response) => {
   try {
     const orderId = req.params['id']!;
     const storeId = req.body?.storeId as string | undefined;
+    const force = req.body?.force === true;
     if (!storeId) return sendError(res, 'storeId required', 400);
 
     const [order, store] = await Promise.all([
-      prisma.order.findUnique({ where: { id: orderId } }),
+      prisma.order.findUnique({
+        where: { id: orderId },
+        include: { deliveryAddress: { select: { lat: true, lng: true } } },
+      }),
       prisma.store.findUnique({ where: { id: storeId } }),
     ]);
     if (!order) return sendError(res, 'Order not found', 404);
@@ -1389,6 +1436,28 @@ router.put('/orders/:id/assign-store', async (req: Request, res: Response) => {
     }
     if (store.status !== 'ACTIVE') {
       return sendError(res, 'Assigned store must be ACTIVE', 400);
+    }
+    // Zone validation — the store must share at least one zone with the
+    // order's dropoff. Without this an admin could route an order outside
+    // the platform's serving area. Admin can override with { force: true }
+    // for rescue cases where local supply is genuinely thin.
+    if (!force) {
+      const dropZones = await findZonesForPoint(
+        order.deliveryAddress.lat,
+        order.deliveryAddress.lng,
+      );
+      if (dropZones.length > 0) {
+        const storeInZone = dropZones.some(
+          (z) => haversineDistance(store.lat, store.lng, z.centerLat, z.centerLng) <= z.radiusKm,
+        );
+        if (!storeInZone) {
+          return sendError(
+            res,
+            "Store is outside the order's delivery zone. Pass { force: true } to override.",
+            409,
+          );
+        }
+      }
     }
     // CANCELLED orders are intentionally still rescuable: admin can assign a
     // store to un-cancel and resume the order. cancelReason is cleared so the
@@ -1446,11 +1515,18 @@ router.put('/orders/:id/assign-driver', async (req: Request, res: Response) => {
   try {
     const orderId = req.params['id']!;
     const driverId = req.body?.driverId as string | undefined;
+    const force = req.body?.force === true;
     if (!driverId) return sendError(res, 'driverId required', 400);
 
     const [order, driver] = await Promise.all([
-      prisma.order.findUnique({ where: { id: orderId } }),
-      prisma.driver.findUnique({ where: { id: driverId }, include: { user: true } }),
+      prisma.order.findUnique({
+        where: { id: orderId },
+        include: { store: { select: { lat: true, lng: true } } },
+      }),
+      prisma.driver.findUnique({
+        where: { id: driverId },
+        include: { user: true, zones: { select: { zoneId: true } } },
+      }),
     ]);
     if (!order) return sendError(res, 'Order not found', 404);
     if (!driver) return sendError(res, 'Driver not found', 404);
@@ -1459,6 +1535,23 @@ router.put('/orders/:id/assign-driver', async (req: Request, res: Response) => {
     }
     if (!order.storeId) {
       return sendError(res, 'Order has no store yet — assign a store first', 400);
+    }
+    // Zone validation — driver must serve at least one of the order's zones
+    // (derived from the store's location). Pass { force: true } to override
+    // for rescue cases (e.g. the only available driver is just outside).
+    if (!force && order.store) {
+      const orderZones = await findZonesForPoint(order.store.lat, order.store.lng);
+      if (orderZones.length > 0) {
+        const driverZoneIds = new Set(driver.zones.map((z) => z.zoneId));
+        const overlaps = orderZones.some((z) => driverZoneIds.has(z.zoneId));
+        if (!overlaps) {
+          return sendError(
+            res,
+            "Driver doesn't serve this order's zone. Pass { force: true } to override.",
+            409,
+          );
+        }
+      }
     }
 
     const updated = await prisma.order.update({

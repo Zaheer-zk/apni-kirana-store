@@ -4,6 +4,16 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-06-02 (evening) — Zone enforcement everywhere + driver compensation + COD tracking + time audit
+
+- [x] **Customer discovery zone filter** — 5 endpoints (`/stores/nearby`, `/items/search`, `/items/:id`, `/catalog/:id`, search hits via Fuse) now restrict to stores that share at least one active zone with the customer's location. Wholesalers excluded across all 5 (was inconsistent before). Falls back to haversine-only when no zones are configured (dev / early deploys).
+- [x] **`services/zone.service.ts` extended** with `findZonesForPoint(lat, lng)` (all matching zones, vs the existing `findZoneForPoint` smallest-radius pick) and `filterStoresByCustomerZone(stores, lat, lng)` reused by every customer-side endpoint.
+- [x] **Admin zone validation on rescue endpoints** — `GET /admin/orders/:id/eligible-stores` and `/eligible-drivers` now annotate each row with `inZone: boolean` and sort in-zone first. `PUT /admin/orders/:id/assign-store` and `/assign-driver` reject with 409 when assigning out-of-zone unless body has `{ force: true }`. Admin UI gets the flag for free and can warn before confirming.
+- [x] **Driver compensation model** — schema gains `DriverCompensationType` enum (`PER_ORDER` | `SALARY`), `Driver.compensationType` default PER_ORDER, `Driver.monthlySalary` Float?. Migration `20260602_driver_comp_cod_tracking` (idempotent). New `PUT /admin/drivers/:id/compensation` to set type + monthly amount, `GET /admin/drivers/:id/salary-eligibility` returns activeDays / totalDeliveries / avgPerActiveDay / threshold {30 days, 3/day} / eligible boolean.
+- [x] **COD reconciliation** — `Order.codCollected Boolean default false` + `codCollectedAt DateTime?` (with a partial index keyed on driverId+codCollected for outstanding-by-driver queries). New `PUT /admin/orders/:id/cod-collected` (admin marks COD settled per delivered order, reversible) and `GET /admin/drivers/:id/cod-outstanding` (list + total of delivered COD orders the driver hasn't handed cash for).
+- [x] **Admin order-detail money-flow card** — now reads `codCollected`/`codCollectedAt`, hides 'To collect from driver' once admin settles, surfaces a 'COD settled' positive row with the timestamp, and adds a footer 'Mark COD collected' / 'Undo COD settled' action that mutates the new endpoint.
+- [x] **Time display audit** — six fallback `toLocaleDateString()` calls in the notification inboxes (3 web + 3 mobile) were using the device default. Pinned all to `'en-IN'` so DD/MM/YYYY is consistent with the other 69 toLocale calls in the apps.
+
 ### 2026-06-02 — Two-tier pricing + per-zone fees + per-order money flow
 
 Net-new pricing model + admin commission controls + settlement visibility, shipped as a single coherent batch end-to-end (backend schema → APIs → customer-web + customer-mobile → store-web + store-portal mobile → admin).

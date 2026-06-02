@@ -23,7 +23,12 @@ export interface StoreSearchHit {
   imageUrl?: string | null;
   unit: string;
   category: string;
+  /** Store owner's payout per unit. */
   price: number;
+  /** Admin's commission per unit (added on top of `price`). */
+  adminMargin?: number;
+  /** Customer-facing price = price + adminMargin. Computed server-side. */
+  customerPrice?: number;
   stockQty: number;
   rating: number;
   store: {
@@ -47,6 +52,11 @@ export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
     line: Parameters<typeof add>[1];
   } | null>(null);
 
+  // Customer-facing price = store payout + admin margin. Backend serves it
+  // as `customerPrice`; fall back to plain `price` for legacy responses.
+  const displayPrice =
+    (hit as { customerPrice?: number; price: number }).customerPrice ?? hit.price;
+
   function handleAdd(): void {
     const ctx: CartStoreContext = {
       storeId: hit.store.id,
@@ -57,7 +67,7 @@ export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
       storeItemId: hit.storeItemId,
       catalogItemId: hit.catalogItemId,
       name: hit.name,
-      price: hit.price,
+      price: displayPrice,
       unit: hit.unit,
       imageUrl: hit.imageUrl ?? null,
       maxStock: hit.stockQty,
@@ -96,7 +106,7 @@ export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
           <p className="mt-0.5 text-xs text-gray-500">{hit.unit}</p>
         </Link>
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-base font-bold text-gray-900">{rupees(hit.price)}</span>
+          <span className="text-base font-bold text-gray-900">{rupees(displayPrice)}</span>
           <Button
             size="sm"
             variant={outOfStock ? 'outline' : 'default'}
@@ -165,7 +175,7 @@ export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
       </div>
 
       <div className="flex flex-col items-end justify-between gap-2">
-        <span className="text-base font-bold text-gray-900 sm:text-lg">{rupees(hit.price)}</span>
+        <span className="text-base font-bold text-gray-900 sm:text-lg">{rupees(displayPrice)}</span>
         <Button
           variant={outOfStock ? 'outline' : 'default'}
           size="sm"

@@ -71,11 +71,16 @@ export default function ItemDetailPage() {
       etaMinutes:
         store.distanceKm != null ? Math.max(15, Math.round(store.distanceKm * 5) + 5) : undefined,
     };
+    // Use the customer-facing price (= store payout + admin margin) so cart
+    // math matches what the user sees on the product page. Backend always
+    // recomputes canonical totals at order creation.
+    const customerUnit =
+      (storeItem as { customerPrice?: number }).customerPrice ?? storeItem.price;
     const line = {
       storeItemId: storeItem.id,
       catalogItemId: catalogItem.id,
       name: catalogItem.name,
-      price: storeItem.price,
+      price: customerUnit,
       unit: catalogItem.defaultUnit ?? '1 unit',
       imageUrl: catalogItem.imageUrl ?? null,
       maxStock: storeItem.stockQty,
@@ -210,7 +215,12 @@ function Detail({
         </div>
 
         <div className="flex items-end gap-2">
-          <span className="text-3xl font-bold text-gray-900">{rupees(storeItem.price)}</span>
+          <span className="text-3xl font-bold text-gray-900">
+            {rupees(
+              (storeItem as { customerPrice?: number; price: number }).customerPrice ??
+                storeItem.price,
+            )}
+          </span>
           <span className="pb-1 text-sm text-gray-500">inclusive of all taxes</span>
         </div>
 
@@ -263,7 +273,12 @@ function Detail({
             disabled={outOfStock}
             onClick={onAdd}
           >
-            {outOfStock ? 'Out of stock' : `Add ${qty} to cart · ${rupees(storeItem.price * qty)}`}
+            {outOfStock
+              ? 'Out of stock'
+              : `Add ${qty} to cart · ${rupees(
+                  ((storeItem as { customerPrice?: number; price: number }).customerPrice ??
+                    storeItem.price) * qty,
+                )}`}
           </Button>
         </div>
 

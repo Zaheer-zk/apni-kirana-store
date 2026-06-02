@@ -353,8 +353,18 @@ function InventoryInner() {
 
                     <div className="flex items-center gap-6 text-sm">
                       <div>
-                        <p className="text-xs uppercase text-gray-400">Price</p>
+                        <p className="text-xs uppercase text-gray-400">Your payout</p>
                         <p className="font-semibold text-gray-900">{rupees(item.price)}</p>
+                        {item.adminMargin && item.adminMargin > 0 ? (
+                          <p className="mt-0.5 text-[11px] text-gray-500">
+                            Customer pays {rupees(item.customerPrice ?? item.price + (item.adminMargin ?? 0))}
+                            {' '}(+ {rupees(item.adminMargin)} platform)
+                          </p>
+                        ) : (
+                          <p className="mt-0.5 text-[11px] text-gray-400">
+                            Admin hasn&apos;t set a platform margin yet
+                          </p>
+                        )}
                       </div>
                       <div>
                         <p className="text-xs uppercase text-gray-400">Stock</p>

@@ -2,7 +2,7 @@
 
 import { use, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Star, Package, ShoppingBag, MapPin, Phone, Plus, User, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -41,6 +41,105 @@ interface StoreDetailResponse {
   store: StoreDetail;
   items: InventoryItem[];
   recentOrders: (Order & { customerName: string })[];
+}
+
+// Single inventory row with inline editor for `adminMargin`. The store
+// owner's `price` (their payout) is read-only here — admin doesn't override
+// the store's pricing. Admin adds a margin on top via PUT
+// /admin/store-items/:id; the customer then pays price + adminMargin.
+function InventoryRow({ item }: { item: InventoryItem }) {
+  const queryClient = useQueryClient();
+  const [margin, setMargin] = useState<string>(String(item.adminMargin ?? 0));
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedTick, setSavedTick] = useState(false);
+
+  async function save() {
+    const next = Number(margin);
+    if (!Number.isFinite(next) || next < 0) {
+      setMargin(String(item.adminMargin ?? 0));
+      setEditing(false);
+      return;
+    }
+    if (next === (item.adminMargin ?? 0)) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.put(`/api/v1/admin/store-items/${item.id}`, { adminMargin: next });
+      await queryClient.invalidateQueries({ queryKey: ['admin-store'] });
+      setSavedTick(true);
+      setTimeout(() => setSavedTick(false), 1500);
+    } catch {
+      setMargin(String(item.adminMargin ?? 0));
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  }
+
+  const customerPrice =
+    item.customerPrice ?? item.price + (item.adminMargin ?? 0);
+
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-gray-900">{item.name}</p>
+        <p className="text-xs text-gray-400">
+          {item.category} · {item.unit}
+        </p>
+        <p className="mt-0.5 text-[11px] text-gray-500">
+          Store gets <span className="font-mono text-gray-700">₹{item.price.toFixed(2)}</span>
+          {' · '}Customer pays{' '}
+          <span className="font-mono font-semibold text-gray-900">
+            ₹{customerPrice.toFixed(2)}
+          </span>
+        </p>
+      </div>
+      <div className="flex flex-col items-end gap-1">
+        {/* Stock indicator */}
+        <p className={`text-[11px] ${item.stockQty === 0 ? 'text-red-500' : 'text-gray-400'}`}>
+          {item.stockQty === 0 ? 'Out of stock' : `Stock: ${item.stockQty}`}
+        </p>
+        {/* Inline margin editor */}
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] text-gray-500">Margin ₹</span>
+          {editing ? (
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              autoFocus
+              value={margin}
+              onChange={(e) => setMargin(e.target.value)}
+              onBlur={save}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                if (e.key === 'Escape') {
+                  setMargin(String(item.adminMargin ?? 0));
+                  setEditing(false);
+                }
+              }}
+              disabled={saving}
+              className="w-20 rounded border border-primary px-2 py-0.5 text-right text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded border border-gray-200 bg-white px-2 py-0.5 text-right font-mono text-xs hover:border-primary hover:bg-primary-50"
+              title="Click to edit admin commission per unit"
+            >
+              {(item.adminMargin ?? 0).toFixed(2)}
+            </button>
+          )}
+          {saving ? <span className="text-[10px] text-gray-400">…</span> : null}
+          {savedTick ? <span className="text-[10px] text-emerald-600">✓</span> : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
@@ -172,20 +271,9 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
           {items.length === 0 ? (
             <p className="px-4 py-10 text-sm text-gray-400 text-center sm:px-6">No items listed yet.</p>
           ) : (
-            <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
+            <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
               {items.map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{item.name}</p>
-                    <p className="text-xs text-gray-400">{item.category} · {item.unit}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-gray-900">₹{item.price}</p>
-                    <p className={`text-xs ${item.stockQty === 0 ? 'text-red-500' : 'text-gray-400'}`}>
-                      {item.stockQty === 0 ? 'Out of stock' : `Stock: ${item.stockQty}`}
-                    </p>
-                  </div>
-                </div>
+                <InventoryRow key={item.id} item={item} />
               ))}
             </div>
           )}

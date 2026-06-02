@@ -130,6 +130,21 @@ export function InventoryItem({ item, onToggleAvailability, onEdit, onDelete }: 
               </Text>
             </Text>
           </View>
+          {/* Two-tier pricing breakdown — your payout is the price above;
+              admin adds a per-unit margin and that becomes the customer-
+              facing price. We surface both so the store owner always knows
+              what the customer actually pays. */}
+          {(() => {
+            const ext = item as unknown as { adminMargin?: number; customerPrice?: number };
+            const margin = ext.adminMargin ?? 0;
+            if (margin <= 0) return null;
+            const customer = ext.customerPrice ?? item.price + margin;
+            return (
+              <Text style={styles.itemMargin}>
+                Customer pays ₹{customer.toFixed(2)} (+₹{margin.toFixed(2)} platform)
+              </Text>
+            );
+          })()}
         </View>
 
         {/* Availability Toggle */}
@@ -205,6 +220,7 @@ const styles = StyleSheet.create({
   itemMeta: { fontSize: 12, color: '#9CA3AF', marginBottom: 4 },
   itemPriceRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   itemPrice: { fontSize: 15, fontWeight: '800', color: '#111827' },
+  itemMargin: { fontSize: 11, color: '#6B7280', marginTop: 2 },
   itemStock: { fontSize: 12, color: '#9CA3AF' },
   itemStockValue: { color: '#6B7280', fontWeight: '700' },
   outOfStock: { color: '#DC2626' },

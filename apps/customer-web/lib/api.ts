@@ -73,14 +73,33 @@ api.interceptors.response.use(
       }
     }
     // Normalise so `error.message` is human-readable for React Query / forms.
+    // Backends return three shapes:
+    //   1. { error: "string" }                    — business errors
+    //   2. { error: { message: "string" } }       — legacy AppError
+    //   3. { error: { fieldErrors, formErrors } } — Zod validation errors
     const respData = error?.response?.data as
-      | { error?: string | { message?: string }; message?: string }
+      | {
+          error?: unknown;
+          message?: string;
+        }
       | undefined;
-    const apiMessage =
-      (typeof respData?.error === 'string' ? respData.error : respData?.error?.message) ??
-      respData?.message ??
-      error?.message ??
-      'Network error';
+    let apiMessage: string | undefined;
+    if (typeof respData?.error === 'string') {
+      apiMessage = respData.error;
+    } else if (respData?.error && typeof respData.error === 'object') {
+      const e = respData.error as {
+        message?: string;
+        fieldErrors?: Record<string, string[]>;
+        formErrors?: string[];
+      };
+      apiMessage =
+        e.message ??
+        e.formErrors?.[0] ??
+        Object.values(e.fieldErrors ?? {})
+          .flat()
+          .find(Boolean);
+    }
+    apiMessage = apiMessage ?? respData?.message ?? error?.message ?? 'Network error';
     if (error instanceof Error && typeof apiMessage === 'string') {
       error.message = apiMessage;
     }

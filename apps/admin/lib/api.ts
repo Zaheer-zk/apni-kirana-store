@@ -41,13 +41,29 @@ api.interceptors.response.use(
       }
     }
     // Normalise to a friendly Error so React Query's `error.message` is useful.
-    const apiMessage =
-      error?.response?.data?.error ??
-      error?.response?.data?.message ??
-      error?.message ??
-      'Network error';
+    // Three error shapes — string, AppError object, Zod flattened.
+    const respData = error?.response?.data as
+      | { error?: unknown; message?: string }
+      | undefined;
+    let apiMessage: string | undefined;
+    if (typeof respData?.error === 'string') {
+      apiMessage = respData.error;
+    } else if (respData?.error && typeof respData.error === 'object') {
+      const e = respData.error as {
+        message?: string;
+        fieldErrors?: Record<string, string[]>;
+        formErrors?: string[];
+      };
+      apiMessage =
+        e.message ??
+        e.formErrors?.[0] ??
+        Object.values(e.fieldErrors ?? {})
+          .flat()
+          .find(Boolean);
+    }
+    const finalMessage = apiMessage ?? respData?.message ?? error?.message ?? 'Network error';
     if (error instanceof Error) {
-      error.message = typeof apiMessage === 'string' ? apiMessage : error.message;
+      error.message = finalMessage;
     }
     return Promise.reject(error);
   }

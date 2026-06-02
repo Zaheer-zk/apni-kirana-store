@@ -27,10 +27,14 @@ api.interceptors.request.use(
   (error: AxiosError) => Promise.reject(error)
 );
 
-// Response interceptor — handle expired sessions, then surface error messages
+// Response interceptor — handle expired sessions, then surface error messages.
+// Backends return `{ error: "string" }` for business errors and
+// `{ error: { fieldErrors, formErrors } }` for Zod validation errors —
+// extract a readable string from either shape so callers see something
+// actionable instead of axios's generic "Request failed with status code N".
 api.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError<{ message?: string }>) => {
+  async (error: AxiosError<{ error?: unknown; message?: string }>) => {
     if (error.response?.status === 401) {
       await SecureStore.deleteItemAsync(STORAGE_KEYS.accessToken);
       await SecureStore.deleteItemAsync(STORAGE_KEYS.refreshToken);
@@ -39,8 +43,24 @@ api.interceptors.response.use(
       useDriverStore.getState().clearAuth();
       router.replace('/(auth)/login');
     }
-    const message =
-      error.response?.data?.message ?? error.message ?? 'An unexpected error occurred';
+    const body = error.response?.data;
+    let readable: string | undefined;
+    if (body) {
+      if (typeof body.error === 'string') readable = body.error;
+      else if (typeof body.message === 'string') readable = body.message;
+      else if (body.error && typeof body.error === 'object') {
+        const e = body.error as {
+          fieldErrors?: Record<string, string[]>;
+          formErrors?: string[];
+        };
+        readable =
+          e.formErrors?.[0] ??
+          Object.values(e.fieldErrors ?? {})
+            .flat()
+            .find(Boolean);
+      }
+    }
+    const message = readable ?? error.message ?? 'An unexpected error occurred';
     return Promise.reject(new Error(message));
   }
 );

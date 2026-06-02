@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
@@ -125,6 +126,10 @@ function CartItemRow({ item }: { item: CartItem }) {
 }
 
 export default function CartScreen() {
+  // Native stack header is translucent on Android; without offsetting the
+  // ScrollView, the first item card slides under the "Cart" title and looks
+  // overlapped (per the user-reported visual bug).
+  const headerHeight = useHeaderHeight();
   const items = useCartStore((s) => s.items);
   const total = useCartStore((s) => s.total);
   const clearCart = useCartStore((s) => s.clearCart);
@@ -256,7 +261,10 @@ export default function CartScreen() {
       >
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: headerHeight + spacing.md },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         {/* Items */}

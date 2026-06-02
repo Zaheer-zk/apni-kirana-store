@@ -45,6 +45,38 @@ apiClient.interceptors.response.use(
       // Redirect to login
       router.replace('/(auth)/login');
     }
+
+    // Surface the backend's real error string so callers' Alert.alert(…,
+    // err.message) shows something actionable instead of the generic
+    // "Request failed with status code 400" that axios sets by default.
+    // Backends return either `{ error: "string" }` or `{ error: { fieldErrors, formErrors } }`
+    // (Zod's flattened shape).
+    const body = error.response?.data as
+      | { error?: unknown; message?: string }
+      | undefined;
+    if (body) {
+      let readable: string | undefined;
+      if (typeof body.error === 'string') {
+        readable = body.error;
+      } else if (typeof body.message === 'string') {
+        readable = body.message;
+      } else if (body.error && typeof body.error === 'object') {
+        const e = body.error as {
+          fieldErrors?: Record<string, string[]>;
+          formErrors?: string[];
+        };
+        const first =
+          e.formErrors?.[0] ??
+          Object.values(e.fieldErrors ?? {})
+            .flat()
+            .find(Boolean);
+        if (first) readable = first;
+      }
+      if (readable) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (error as any).message = readable;
+      }
+    }
     return Promise.reject(error);
   }
 );

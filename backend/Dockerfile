@@ -56,6 +56,12 @@ COPY --from=builder /app/backend/dist ./backend/dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 # Whole prisma dir (schema + migrations) so `prisma migrate deploy` works in prod
 COPY backend/prisma ./backend/prisma
+# Entrypoint runs `prisma migrate deploy` then starts the app — every
+# container start auto-applies pending migrations so deploys can't end up
+# with code that expects schema the DB doesn't have yet (the 500-after-
+# deploy class of bug seen in May/June rollouts).
+COPY backend/docker-entrypoint.sh ./backend/docker-entrypoint.sh
+RUN chmod +x ./backend/docker-entrypoint.sh
 WORKDIR /app/backend
 EXPOSE 3000
-CMD ["node", "dist/index.js"]
+CMD ["./docker-entrypoint.sh"]

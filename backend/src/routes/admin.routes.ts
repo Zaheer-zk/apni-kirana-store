@@ -1845,6 +1845,10 @@ router.get('/analytics', async (_req: Request, res: Response) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    // 7-day window starts at today minus 6 days so the bar chart shows
+    // 7 distinct bars (today + the previous 6).
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
 
     const [
       totalOrdersToday,
@@ -1853,6 +1857,8 @@ router.get('/analytics', async (_req: Request, res: Response) => {
       activeStores,
       totalOrders,
       totalUsers,
+      last7Orders,
+      recentOrdersRaw,
     ] = await Promise.all([
       prisma.order.count({
         where: { createdAt: { gte: today }, status: { not: 'CANCELLED' } },
@@ -1865,25 +1871,79 @@ router.get('/analytics', async (_req: Request, res: Response) => {
       prisma.store.count({ where: { status: 'ACTIVE', isOpen: true } }),
       prisma.order.count(),
       prisma.user.count(),
+      // Pull every non-cancelled order from the last 7 days; aggregating in
+      // JS is fine at this volume (admin dashboard is low-traffic) and
+      // sidesteps the cross-database SQL we'd otherwise need for a daily
+      // grouping. Status filter excludes CANCELLED so the bars match the
+      // "real" order count, not abandoned attempts.
+      prisma.order.findMany({
+        where: { createdAt: { gte: sevenDaysAgo }, status: { not: 'CANCELLED' } },
+        select: { createdAt: true },
+      }),
+      prisma.order.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        include: {
+          customer: { select: { name: true } },
+          store: { select: { name: true } },
+        },
+      }),
     ]);
 
+    // Build a date → count map for every day in the 7-day window so days
+    // with zero orders still render as empty bars (not gaps).
+    const dayBuckets = new Map<string, number>();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(sevenDaysAgo);
+      d.setDate(d.getDate() + i);
+      dayBuckets.set(toISODate(d), 0);
+    }
+    for (const o of last7Orders) {
+      const key = toISODate(o.createdAt);
+      if (dayBuckets.has(key)) dayBuckets.set(key, dayBuckets.get(key)! + 1);
+    }
+    const ordersPerDay = [...dayBuckets.entries()].map(([date, orders]) => ({
+      date: date.slice(5), // 'MM-DD' for compact x-axis labels
+      orders,
+    }));
+
+    const recentOrders = recentOrdersRaw.map((o) => ({
+      id: o.id,
+      customerName: o.customer?.name ?? '—',
+      storeName: o.store?.name ?? '—',
+      total: o.total,
+      status: o.status,
+      createdAt: o.createdAt,
+    }));
+
     return sendSuccess(res, {
-      today: {
-        orders: totalOrdersToday,
-        gmv: gmvResult._sum.total ?? 0,
-      },
+      // Flat keys the admin dashboard expects (apps/admin/app/(dashboard)/page.tsx).
+      // The earlier nested `{ today: {orders, gmv} }` shape was a regression —
+      // dashboard read undefined and showed 0 / empty chart / "No orders yet today".
+      ordersToday: totalOrdersToday,
+      gmvToday: gmvResult._sum.total ?? 0,
       activeDrivers,
       activeStores,
-      allTime: {
-        orders: totalOrders,
-        users: totalUsers,
-      },
+      ordersPerDay,
+      recentOrders,
+      // Kept for backwards-compat with anything still on the nested shape.
+      today: { orders: totalOrdersToday, gmv: gmvResult._sum.total ?? 0 },
+      allTime: { orders: totalOrders, users: totalUsers },
     });
   } catch (err) {
     console.error('[Admin] analytics error:', err);
     return sendError(res, 'Failed to fetch analytics', 500);
   }
 });
+
+function toISODate(d: Date): string {
+  // Use local-time YYYY-MM-DD (not UTC) so a 10pm IST order on Monday
+  // doesn't get charted as Tuesday for an admin sitting in IST.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 // ─── Audit log ────────────────────────────────────────────────────────────────
 

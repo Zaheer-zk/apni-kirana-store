@@ -10,7 +10,7 @@ import { assignDriverForOrder } from '../services/driver.service';
 import { sendNotification, notifyAdmins, notify } from '../services/notification.service';
 import { broadcastOrderStatus } from '../services/order-events.service';
 import { getSettings } from '../services/settings.service';
-import { findZoneForPoint } from '../services/zone.service';
+import { findZoneForPoint, findZonesForPoint } from '../services/zone.service';
 import { haversineDistance } from '../utils/geo';
 import { creditWallet } from '../services/wallet.service';
 import { generateInvoiceForOrder, resolveInvoiceAbsolutePath } from '../services/invoice.service';
@@ -115,6 +115,10 @@ router.post(
         storeItem: {
           id: string; storeId: string; price: number; adminMargin: number;
           stockQty: number; isAvailable: boolean;
+          // catalogItemId is the FK; we read it directly during the cross-zone
+          // re-match (see below) so we can swap to a different store's
+          // StoreItem rows for the same catalog item.
+          catalogItemId: string;
           catalogItem: { name: string; defaultUnit: string; imageUrl: string | null };
         };
         qty: number;
@@ -205,6 +209,146 @@ router.post(
         return sendError(res, 'Each item needs storeItemId or catalogItemId', 400);
       }
 
+      // ── Cross-zone gate (added 2026-06-03) ─────────────────────────────
+      // Up to this point `resolvedItems[0].storeItem.storeId` is whichever
+      // store the customer browsed (mode 1) or the catalog auto-picked
+      // (mode 2). For "order for someone else" the dropoff can sit in a
+      // different zone than that store — e.g. customer in Sikar checking
+      // out for a recipient in Kandela. In that case we MUST re-match the
+      // cart to a store in the dropoff's zone, because the original store
+      // simply doesn't deliver there.
+      //
+      // Algorithm:
+      //   1. Look up the dropoff address's zone(s).
+      //   2. If the chosen store's location is already inside one of those
+      //      zones, do nothing — happy path.
+      //   3. Otherwise, find ACTIVE stores in the dropoff zone that carry
+      //      ALL the cart's catalog items in stock. Pick the closest one to
+      //      the recipient and swap `resolvedItems` over to its StoreItem
+      //      rows. Pricing (price + adminMargin) re-snapshots from those
+      //      new rows further down, which is correct — the recipient zone's
+      //      store sets its own retail price.
+      //   4. If no such store exists, 422 with a clear message so the UI
+      //      can prompt the customer to pick a different recipient address
+      //      or trim items.
+      //
+      // We skip this when the dropoff address sits outside every active
+      // zone — that case is handled by the legacy fallback further down
+      // (orders still get created so existing flows keep working until
+      // every region is zoned).
+      const chosenStore0 = await prisma.store.findUnique({
+        where: { id: resolvedItems[0]!.storeItem.storeId },
+        select: { lat: true, lng: true, name: true },
+      });
+      const dropoffZones = await findZonesForPoint(address.lat, address.lng);
+      const chosenStoreInDropoffZone =
+        !chosenStore0 || dropoffZones.length === 0
+          ? true
+          : dropoffZones.some(
+              (z) =>
+                haversineDistance(chosenStore0.lat, chosenStore0.lng, z.centerLat, z.centerLng) <=
+                z.radiusKm,
+            );
+
+      if (!chosenStoreInDropoffZone) {
+        const cartCatalogIds = resolvedItems
+          .map((r) => r.storeItem.catalogItemId)
+          .filter((x): x is string => !!x);
+        // Bounding box around the union of dropoff zones — a cheap prefilter
+        // so we don't `findMany` over every store in the country before the
+        // haversine pass below.
+        const allLats = dropoffZones.flatMap((z) => [
+          z.centerLat - z.radiusKm / 110,
+          z.centerLat + z.radiusKm / 110,
+        ]);
+        const allLngs = dropoffZones.flatMap((z) => [
+          z.centerLng - z.radiusKm / 110,
+          z.centerLng + z.radiusKm / 110,
+        ]);
+        const candidates = await prisma.store.findMany({
+          where: {
+            status: 'ACTIVE',
+            isOpen: true,
+            isWholesaler: false,
+            lat: { gte: Math.min(...allLats), lte: Math.max(...allLats) },
+            lng: { gte: Math.min(...allLngs), lte: Math.max(...allLngs) },
+            items: {
+              some: {
+                catalogItemId: { in: cartCatalogIds },
+                isAvailable: true,
+                stockQty: { gt: 0 },
+              },
+            },
+          },
+          include: {
+            items: {
+              where: {
+                catalogItemId: { in: cartCatalogIds },
+                isAvailable: true,
+                stockQty: { gt: 0 },
+              },
+              include: { catalogItem: true },
+            },
+          },
+        });
+        const inZone = candidates.filter((s) =>
+          dropoffZones.some(
+            (z) => haversineDistance(s.lat, s.lng, z.centerLat, z.centerLng) <= z.radiusKm,
+          ),
+        );
+        // Must carry every catalog item in the cart — we don't split orders.
+        const fullMatches = inZone.filter((s) => {
+          const carriedIds = new Set(s.items.map((i) => i.catalogItemId));
+          return cartCatalogIds.every((cid) => carriedIds.has(cid));
+        });
+        if (fullMatches.length === 0) {
+          return sendError(
+            res,
+            "No store in the recipient's delivery zone carries all of these items right now. " +
+              'Try a different recipient address or remove items.',
+            422,
+          );
+        }
+        fullMatches.sort(
+          (a, b) =>
+            haversineDistance(a.lat, a.lng, address.lat, address.lng) -
+            haversineDistance(b.lat, b.lng, address.lat, address.lng),
+        );
+        const newStore = fullMatches[0]!;
+        const byCatalog = new Map(newStore.items.map((it) => [it.catalogItemId, it]));
+        // Re-validate stock against the NEW StoreItem rows (the previous
+        // stock check is moot since we just swapped stores).
+        const swapped: typeof resolvedItems = [];
+        for (const r of resolvedItems) {
+          const fresh = byCatalog.get(r.storeItem.catalogItemId);
+          if (!fresh || fresh.stockQty < r.qty) {
+            return sendError(
+              res,
+              `Insufficient stock at the in-zone store for ${r.storeItem.catalogItem.name}.`,
+              400,
+            );
+          }
+          swapped.push({
+            storeItem: {
+              id: fresh.id,
+              storeId: fresh.storeId,
+              price: fresh.price,
+              adminMargin: fresh.adminMargin ?? 0,
+              stockQty: fresh.stockQty,
+              isAvailable: fresh.isAvailable,
+              catalogItemId: fresh.catalogItemId,
+              catalogItem: {
+                name: fresh.catalogItem.name,
+                defaultUnit: fresh.catalogItem.defaultUnit,
+                imageUrl: fresh.catalogItem.imageUrl,
+              },
+            },
+            qty: r.qty,
+          });
+        }
+        resolvedItems = swapped;
+      }
+
       // Verify sufficient stock + all items belong to the same store
       const storeIds = new Set(resolvedItems.map((r) => r.storeItem.storeId));
       if (storeIds.size > 1) {
@@ -271,9 +415,20 @@ router.post(
           address.lng,
         );
       }
-      const deliveryFee = parseFloat(
+      let deliveryFee = parseFloat(
         (effectiveBaseFee + effectivePerKmFee * distanceKm).toFixed(2),
       );
+      // Free-delivery threshold (per zone). When admin has set
+      // freeDeliveryThreshold > 0 on the zone AND the customer's subtotal
+      // crosses it, delivery is on the house. Surfaced on the checkout UI
+      // as "Add ₹X for free delivery" / "🎉 Free delivery applied".
+      if (
+        zone?.freeDeliveryThreshold &&
+        zone.freeDeliveryThreshold > 0 &&
+        subtotal >= zone.freeDeliveryThreshold
+      ) {
+        deliveryFee = 0;
+      }
 
       // Promo code application (validated server-side; ignore invalid silently for now)
       let promoDiscount = 0;

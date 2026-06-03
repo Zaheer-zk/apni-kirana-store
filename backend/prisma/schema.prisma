@@ -715,6 +715,10 @@ model Zone {
   baseDeliveryFee Float    @default(30)
   perKmFee        Float    @default(0)
   commissionRate  Float    @default(0.10) // 10%
+  // Subtotal (rupees) at which delivery becomes free for this zone.
+  // 0 disables the perk; admin sets it per zone. The order-create math
+  // zeroes deliveryFee when subtotal >= freeDeliveryThreshold > 0.
+  freeDeliveryThreshold Float @default(0)
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

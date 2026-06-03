@@ -17,6 +17,12 @@ export interface ZoneFees {
   perKmFee: number;
   /** Stored as 0.10 = 10%. */
   commissionRate: number;
+  /**
+   * Subtotal in rupees at which delivery becomes free for this zone.
+   * 0 disables the perk. Order-create math zeroes deliveryFee when
+   * `subtotal >= freeDeliveryThreshold && freeDeliveryThreshold > 0`.
+   */
+  freeDeliveryThreshold: number;
 }
 
 export interface ZoneRow extends ZoneFees {
@@ -60,6 +66,7 @@ async function loadZones(): Promise<ZoneRow[]> {
       baseDeliveryFee: true,
       perKmFee: true,
       commissionRate: true,
+      freeDeliveryThreshold: true,
     },
   });
   cache = {
@@ -72,6 +79,7 @@ async function loadZones(): Promise<ZoneRow[]> {
       baseDeliveryFee: r.baseDeliveryFee,
       perKmFee: r.perKmFee,
       commissionRate: r.commissionRate,
+      freeDeliveryThreshold: r.freeDeliveryThreshold,
     })),
     fetchedAt: Date.now(),
   };
@@ -107,6 +115,7 @@ export async function findZoneForPoint(
     baseDeliveryFee: best.baseDeliveryFee,
     perKmFee: best.perKmFee,
     commissionRate: best.commissionRate,
+    freeDeliveryThreshold: best.freeDeliveryThreshold,
   };
 }
 

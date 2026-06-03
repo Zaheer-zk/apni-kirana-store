@@ -2348,6 +2348,9 @@ const zoneCreateSchema = z.object({
   baseDeliveryFee: z.number().min(0).max(10000).optional(),
   perKmFee: z.number().min(0).max(1000).optional(),
   commissionRate: z.number().min(0).max(1).optional(),
+  // 0 disables free delivery; >0 means delivery is free when order subtotal
+  // crosses this rupee amount. Cap at 1L so a typo doesn't lock out the perk.
+  freeDeliveryThreshold: z.number().min(0).max(100000).optional(),
   isActive: z.boolean().optional(),
 });
 const zoneUpdateSchema = zoneCreateSchema.partial();

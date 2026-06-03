@@ -1,6 +1,6 @@
 # Development Roadmap
 
-## Apni Kirana Store — Hyperlocal Delivery App
+## Quick Easy Mart — Hyperlocal Delivery App
 
 **Version:** 1.0  
 **Date:** 2026-05-06

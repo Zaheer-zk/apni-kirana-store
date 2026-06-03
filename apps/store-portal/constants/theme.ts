@@ -1,7 +1,7 @@
 import { Platform, ViewStyle } from 'react-native';
 
 /**
- * Apni Kirana — Store Portal Design System
+ * Quick Easy Mart — Store Portal Design System
  *
  * Brand is unified green (#16A34A) across customer / store / driver / admin
  * surfaces. The earlier blue palette made store-owner mobile look like a

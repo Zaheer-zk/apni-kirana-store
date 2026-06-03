@@ -7,15 +7,15 @@ import { getLocale, getMessages } from '@/lib/i18n';
 export const metadata: Metadata = {
   title: {
     default: 'Quick Easy Mart — Driver',
-    template: '%s · AKS Driver',
+    template: '%s · Quick Easy Mart Driver',
   },
   description:
     'Drive for Quick Easy Mart — manage your deliveries, earnings and profile from any device.',
-  applicationName: 'AKS Driver',
+  applicationName: 'Quick Easy Mart Driver',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    title: 'AKS Driver',
+    title: 'Quick Easy Mart Driver',
     statusBarStyle: 'default',
   },
   icons: {

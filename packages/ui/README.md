@@ -1,4 +1,4 @@
-# @aks/ui — shared UI for the Apni Kirana Store web apps
+# @aks/ui — shared UI for the Quick Easy Mart web apps
 
 This workspace holds the shadcn/ui component library, Tailwind preset and brand-token exports that every web app in the monorepo consumes:
 

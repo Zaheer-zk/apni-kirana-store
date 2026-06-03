@@ -1,6 +1,6 @@
-# Apni Kirana Store — Documentation
+# Quick Easy Mart — Documentation
 
-Welcome to the Apni Kirana Store documentation. This is a hyperlocal delivery platform for kirana, grocery, and pharmacy stores in South Asia — think Uber Eats, but for your neighbourhood store.
+Welcome to the Quick Easy Mart documentation. This is a hyperlocal delivery platform for kirana, grocery, and pharmacy stores in South Asia — think Uber Eats, but for your neighbourhood store.
 
 ## Table of Contents
 

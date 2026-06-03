@@ -7,8 +7,8 @@ import type { MetadataRoute } from 'next';
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Apni Kirana',
-    short_name: 'Apni Kirana',
+    name: 'Quick Easy Mart',
+    short_name: 'Quick Easy Mart',
     description: 'Your neighbourhood kirana store, online. 30-minute delivery.',
     start_url: '/',
     display: 'standalone',

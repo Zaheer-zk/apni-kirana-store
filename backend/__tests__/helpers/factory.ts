@@ -1,5 +1,5 @@
 /**
- * Test data factories for the Apni Kirana Store backend.
+ * Test data factories for the Quick Easy Mart backend.
  * All factories accept optional overrides and return persisted Prisma rows.
  */
 import {

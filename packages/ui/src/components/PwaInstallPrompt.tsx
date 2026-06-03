@@ -44,8 +44,8 @@ interface BeforeInstallPromptEvent extends Event {
 export interface PwaInstallPromptProps {
   /**
    * Human-readable name shown inside the banner — keeps copy per-app.
-   * e.g. "Apni Kirana", "Apni Kirana for Store Operators",
-   * "Apni Kirana for Drivers".
+   * e.g. "Quick Easy Mart", "Quick Easy Mart for Store Operators",
+   * "Quick Easy Mart for Drivers".
    */
   appLabel: string;
   /** Optional className for the outer banner — for one-off positioning tweaks. */

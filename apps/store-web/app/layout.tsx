@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'AKS Store',
+    title: 'Quick Easy Mart Store',
   },
   icons: {
     icon: [

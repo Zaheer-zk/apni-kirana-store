@@ -1,6 +1,6 @@
 # Architecture
 
-A bird's-eye view of how Apni Kirana Store is put together.
+A bird's-eye view of how Quick Easy Mart is put together.
 
 ## High-level diagram
 

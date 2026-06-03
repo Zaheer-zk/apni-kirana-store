@@ -39,7 +39,7 @@ export default function DashboardLayout({
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
               <ShoppingBasket className="h-3.5 w-3.5 text-white" />
             </div>
-            <p className="text-sm font-semibold text-gray-900">Apni Kirana Admin</p>
+            <p className="text-sm font-semibold text-gray-900">Quick Easy Mart Admin</p>
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell />

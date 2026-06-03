@@ -1,5 +1,5 @@
 /**
- * @aks/ui — shared shadcn/ui component library for the Apni Kirana Store
+ * @aks/ui — shared shadcn/ui component library for the Quick Easy Mart
  * web apps. Import individual components from subpaths to keep tree-shaking
  * tight (e.g. `import { Button } from '@aks/ui/components/button'`).
  *

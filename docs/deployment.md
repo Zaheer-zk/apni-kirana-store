@@ -77,7 +77,7 @@ This guide targets the **HyperVPS** plan (6 vCPU / 12 GB / 150 GB NVMe). Any VPS
 
 HostLelo (<https://www.hostlelo.com>) was the originally-scoped provider. Their closest equivalent to the HyperVPS is the **Multi-Region Cloud VPS** (pick the Mumbai region); the **AMD EPYC VDS** line is the next step up if you want dedicated CPU cores and managed support. Avoid their **Shared / WordPress / UAE Web Hosting** plans — those are cPanel-only and cannot run Docker.
 
-### Resource sizing for Apni Kirana Store
+### Resource sizing for Quick Easy Mart
 
 What the core stack actually uses at idle and under MVP load (~50 stores, ~500 customers, ~10 orders/min peak). `nginx` and `certbot` add only a few MB each:
 
@@ -482,12 +482,12 @@ backend's `services/email.service.ts` handles delivery; you just supply a key.
      to Resend's shared `onboarding@resend.dev` sender. Works immediately.
    - *Production:* dashboard → **Domains** → **Add Domain** → add the DNS
      records Resend shows (SPF + DKIM) at your domain registrar → wait for
-     "Verified". Then set `EMAIL_FROM=Apni Kirana Store <noreply@yourdomain.com>`.
+     "Verified". Then set `EMAIL_FROM=Quick Easy Mart <noreply@yourdomain.com>`.
 4. In `.env.prod` set:
    ```
    EMAIL_PROVIDER=RESEND
    RESEND_API_KEY=re_your_key_here
-   EMAIL_FROM=Apni Kirana Store <noreply@yourdomain.com>   # or leave blank
+   EMAIL_FROM=Quick Easy Mart <noreply@yourdomain.com>   # or leave blank
    WEB_APP_URL=https://admin.yourdomain.com
    ```
 5. Copy the env into the container and restart:

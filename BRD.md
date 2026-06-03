@@ -1,6 +1,6 @@
 # Business Requirements Document (BRD)
 
-## Apni Kirana Store — Hyperlocal Delivery App
+## Quick Easy Mart — Hyperlocal Delivery App
 
 **Version:** 1.0  
 **Date:** 2026-05-06  
@@ -10,7 +10,7 @@
 
 ## 1. Executive Summary
 
-Apni Kirana Store is a mobile hybrid application that connects users with nearby local stores (general stores, pharmacies, grocery shops) for on-demand delivery. The platform handles item discovery, smart store matching, and driver dispatch — end-to-end within a user's local area.
+Quick Easy Mart is a mobile hybrid application that connects users with nearby local stores (general stores, pharmacies, grocery shops) for on-demand delivery. The platform handles item discovery, smart store matching, and driver dispatch — end-to-end within a user's local area.
 
 ---
 

@@ -1,7 +1,7 @@
 import { Platform, ViewStyle } from 'react-native';
 
 /**
- * Apni Kirana Store — Driver Design System
+ * Quick Easy Mart — Driver Design System
  *
  * Brand is unified green (#16A34A) across customer / store / driver / admin
  * surfaces. The earlier red palette made driver mobile look like a different

@@ -104,7 +104,7 @@ export function AppHeader() {
           </SheetContent>
         </Sheet>
 
-        <Link href="/" aria-label="AKS Driver home" className="flex-shrink-0">
+        <Link href="/" aria-label="Quick Easy Mart Driver home" className="flex-shrink-0">
           <BrandMark size="sm" withWordmark />
         </Link>
 

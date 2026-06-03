@@ -10,7 +10,7 @@ Import these two files into Postman to exercise the API end-to-end.
 ## Import
 
 1. Open Postman → **File → Import** → drop both files in
-2. Top-right environment dropdown → pick **"Apni Kirana Store — Local"**
+2. Top-right environment dropdown → pick **"Quick Easy Mart — Local"**
 
 ## Login flow (do this first)
 

@@ -63,7 +63,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         closeButton
         toastOptions={{ duration: 3500 }}
       />
-      <PwaInstallPrompt appLabel="Apni Kirana" />
+      <PwaInstallPrompt appLabel="Quick Easy Mart" />
     </QueryClientProvider>
   );
 }

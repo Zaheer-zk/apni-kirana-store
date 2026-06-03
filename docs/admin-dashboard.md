@@ -198,7 +198,7 @@ otherwise `/`.
 self.addEventListener('push', (event) => {
   const payload = event.data ? event.data.json() : {};
   event.waitUntil(
-    self.registration.showNotification(payload.title ?? 'Apni Kirana', {
+    self.registration.showNotification(payload.title ?? 'Quick Easy Mart', {
       body: payload.body,
       icon: payload.icon ?? '/icon-192.png',
       data: { url: payload.url ?? '/' },

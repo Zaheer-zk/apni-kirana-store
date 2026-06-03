@@ -22,7 +22,7 @@ export function TransitionOverlay() {
       <View style={styles.logoBadge}>
         <Ionicons name="basket" size={56} color={colors.white} />
       </View>
-      <Text style={styles.brand}>Apni Kirana Store</Text>
+      <Text style={styles.brand}>Quick Easy Mart</Text>
       {message ? <Text style={styles.message}>{message}</Text> : null}
       <ActivityIndicator
         size="large"

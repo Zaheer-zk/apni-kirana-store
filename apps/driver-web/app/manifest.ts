@@ -11,7 +11,7 @@ import type { MetadataRoute } from 'next';
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Quick Easy Mart — Driver',
-    short_name: 'AKS Driver',
+    short_name: 'Quick Easy Mart Driver',
     description:
       'Manage your deliveries, earnings and profile on Quick Easy Mart.',
     start_url: '/',

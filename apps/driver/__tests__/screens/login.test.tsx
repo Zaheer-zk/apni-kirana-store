@@ -6,7 +6,7 @@ import LoginScreen from '@/app/(auth)/login';
 describe('Driver LoginScreen (smoke)', () => {
   it('renders title and phone input', () => {
     renderWithProviders(<LoginScreen />);
-    expect(screen.getByText('AKS Driver')).toBeTruthy();
+    expect(screen.getByText('Quick Easy Mart Driver')).toBeTruthy();
     expect(screen.getByPlaceholderText('Enter your phone number')).toBeTruthy();
   });
 

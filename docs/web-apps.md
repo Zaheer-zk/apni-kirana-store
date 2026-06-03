@@ -1,4 +1,4 @@
-# Apni Kirana Store — web apps pattern
+# Quick Easy Mart — web apps pattern
 
 This monorepo will ship **three** customer-facing web surfaces. They share infrastructure, code and brand:
 

@@ -65,7 +65,7 @@ The app is a Progressive Web App and meets the Lighthouse
   `components/Providers.tsx` on idle. It pre-caches the offline shell +
   icons; on navigation it falls back to `/offline.html` when offline.
 - `public/icons/*.png` are placeholder branded icons (green tile +
-  "AKS"). Replace with the real logo before public launch — keep the
+  "Quick Easy Mart"). Replace with the real logo before public launch — keep the
   same filenames so the manifest doesn't need touching.
 
 ### Install on Android

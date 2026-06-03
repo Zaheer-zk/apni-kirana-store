@@ -6,7 +6,7 @@ import LoginScreen from '@/app/(auth)/login';
 describe('LoginScreen (smoke)', () => {
   it('renders welcome and brand text', () => {
     renderWithProviders(<LoginScreen />);
-    expect(screen.getByText('Apni Kirana Store')).toBeTruthy();
+    expect(screen.getByText('Quick Easy Mart')).toBeTruthy();
     expect(screen.getByText('Welcome')).toBeTruthy();
   });
 

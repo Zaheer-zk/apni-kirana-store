@@ -39,7 +39,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         toastOptions={{ duration: 3500 }}
       />
       <PwaRegister />
-      <PwaInstallPrompt appLabel="Apni Kirana for Store Operators" />
+      <PwaInstallPrompt appLabel="Quick Easy Mart for Store Operators" />
     </QueryClientProvider>
   );
 }

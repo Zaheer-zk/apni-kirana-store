@@ -30,7 +30,7 @@ function SplashScreen() {
       <View style={styles.splashIcon}>
         <Ionicons name="bicycle" size={48} color={colors.white} />
       </View>
-      <Text style={styles.splashTitle}>AKS Driver</Text>
+      <Text style={styles.splashTitle}>Quick Easy Mart Driver</Text>
       <Text style={styles.splashSubtitle}>Deliver smart, earn more</Text>
       <ActivityIndicator
         color={colors.primary}

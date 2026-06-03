@@ -133,7 +133,7 @@ process.on('uncaughtException', (err) => {
 // ─── Start Server ─────────────────────────────────────────────────────────────
 
 server.listen(config.port, () => {
-  console.log(`[Server] Apni Kirana Store API running on port ${config.port} (${config.nodeEnv})`);
+  console.log(`[Server] Quick Easy Mart API running on port ${config.port} (${config.nodeEnv})`);
 
   // Start BullMQ workers
   startWorkers();

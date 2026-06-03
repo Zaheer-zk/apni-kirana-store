@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Apni Kirana",
+    "name": "Quick Easy Mart",
     "slug": "apni-kirana-customer",
     "version": "1.0.0",
     "scheme": "apni-kirana",
@@ -13,12 +13,12 @@
     "web": {
       "bundler": "metro",
       "favicon": "./assets/apni-favicon.png",
-      "name": "Apni Kirana",
-      "shortName": "Apni Kirana",
+      "name": "Quick Easy Mart",
+      "shortName": "Quick Easy Mart",
       "themeColor": "#16A34A",
       "backgroundColor": "#FFFFFF",
       "lang": "en",
-      "description": "Apni Kirana — daily essentials, delivered fast."
+      "description": "Quick Easy Mart — daily essentials, delivered fast."
     },
     "backgroundColor": "#FFFFFF",
     "primaryColor": "#16A34A",
@@ -56,8 +56,8 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Apni Kirana to use your location to find nearby stores.",
-          "locationWhenInUsePermission": "Allow Apni Kirana to use your location to find nearby stores."
+          "locationAlwaysAndWhenInUsePermission": "Allow Quick Easy Mart to use your location to find nearby stores.",
+          "locationWhenInUsePermission": "Allow Quick Easy Mart to use your location to find nearby stores."
         }
       ],
       [

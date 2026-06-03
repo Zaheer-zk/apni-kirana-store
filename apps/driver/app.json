@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "AKS Driver",
+    "name": "Quick Easy Mart Driver",
     "slug": "apni-kirana-driver",
     "version": "1.0.0",
     "scheme": "apni-kirana-driver",
@@ -20,8 +20,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.apnikirana.driver",
       "infoPlist": {
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "AKS Driver needs your location to track active deliveries in the background.",
-        "NSLocationWhenInUseUsageDescription": "AKS Driver needs your location while you are on a delivery.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Quick Easy Mart Driver needs your location to track active deliveries in the background.",
+        "NSLocationWhenInUseUsageDescription": "Quick Easy Mart Driver needs your location while you are on a delivery.",
         "UIBackgroundModes": [
           "location",
           "fetch"
@@ -58,7 +58,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "AKS Driver needs your location to track active deliveries in the background.",
+          "locationAlwaysAndWhenInUsePermission": "Quick Easy Mart Driver needs your location to track active deliveries in the background.",
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
         }

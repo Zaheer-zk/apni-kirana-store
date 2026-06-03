@@ -99,7 +99,7 @@ export async function startLocationTracking(orderId: string, token: string): Pro
     distanceInterval: 20, // or every 20 metres
     showsBackgroundLocationIndicator: true,
     foregroundService: {
-      notificationTitle: 'AKS Driver — Delivery in Progress',
+      notificationTitle: 'Quick Easy Mart Driver — Delivery in Progress',
       notificationBody: 'Location is being tracked for your active delivery.',
       notificationColor: '#16A34A',
     },

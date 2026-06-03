@@ -9,7 +9,7 @@ interface BrandMarkProps {
 
 /**
  * Driver-app brand mark — a bike icon in a green tile, optionally with the
- * "AKS Driver" wordmark. Visually parallel to customer-web's `BrandMark`
+ * "Quick Easy Mart Driver" wordmark. Visually parallel to customer-web's `BrandMark`
  * (basket icon) so the family of apps reads as one product.
  */
 export function BrandMark({ size = 'md', withWordmark = false, className }: BrandMarkProps) {
@@ -43,7 +43,7 @@ export function BrandMark({ size = 'md', withWordmark = false, className }: Bran
       </div>
       {withWordmark ? (
         <span className={cn('font-bold tracking-tight text-gray-900', labelClass)}>
-          AKS Driver
+          Quick Easy Mart Driver
         </span>
       ) : null}
     </div>

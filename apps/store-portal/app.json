@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "AKS Store",
+    "name": "Quick Easy Mart Store",
     "slug": "apni-kirana-store-portal",
     "version": "1.0.0",
     "scheme": "apni-kirana-store",
@@ -20,8 +20,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.apnikirana.storeportal",
       "infoPlist": {
-        "NSCameraUsageDescription": "AKS Store uses your camera to capture product images.",
-        "NSPhotoLibraryUsageDescription": "AKS Store needs access to your photo library to select product images."
+        "NSCameraUsageDescription": "Quick Easy Mart Store uses your camera to capture product images.",
+        "NSPhotoLibraryUsageDescription": "Quick Easy Mart Store needs access to your photo library to select product images."
       }
     },
     "android": {
@@ -54,14 +54,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "AKS Store needs access to your photos to upload product images.",
-          "cameraPermission": "AKS Store needs camera access to capture product images."
+          "photosPermission": "Quick Easy Mart Store needs access to your photos to upload product images.",
+          "cameraPermission": "Quick Easy Mart Store needs camera access to capture product images."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "AKS Store needs camera access to capture product images."
+          "cameraPermission": "Quick Easy Mart Store needs camera access to capture product images."
         }
       ],
       "expo-document-picker",

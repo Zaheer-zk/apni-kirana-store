@@ -218,9 +218,9 @@ export default function StoreProfileScreen() {
           />
           <MenuRow
             icon="information-circle-outline"
-            title="About Apni Kirana"
+            title="About Quick Easy Mart"
             onPress={() =>
-              Alert.alert('Apni Kirana — Store Portal', 'Version 1.0.0')
+              Alert.alert('Quick Easy Mart — Store Portal', 'Version 1.0.0')
             }
           />
         </Card>

@@ -1,7 +1,7 @@
 import { Platform, ViewStyle } from 'react-native';
 
 /**
- * Apni Kirana Store — Design System
+ * Quick Easy Mart — Design System
  * Used across every screen/component for visual consistency.
  */
 

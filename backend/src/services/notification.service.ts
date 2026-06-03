@@ -175,7 +175,7 @@ const TEMPLATES: Record<NotificationEvent, TemplateFn> = {
   }),
   STORE_APPROVED: () => ({
     title: 'Store approved!',
-    body: 'Your store is now live on Apni Kirana Store. Customers can start ordering.',
+    body: 'Your store is now live on Quick Easy Mart. Customers can start ordering.',
   }),
   STORE_SUSPENDED: (v) => ({
     title: 'Store suspended',
@@ -192,7 +192,7 @@ const TEMPLATES: Record<NotificationEvent, TemplateFn> = {
   }),
   DRIVER_APPROVED: () => ({
     title: "You're approved!",
-    body: 'Welcome to the Apni Kirana driver network. Tap to go online and start earning.',
+    body: 'Welcome to the Quick Easy Mart driver network. Tap to go online and start earning.',
   }),
   DRIVER_SUSPENDED: (v) => ({
     title: 'Account suspended',
@@ -227,7 +227,7 @@ const TEMPLATES: Record<NotificationEvent, TemplateFn> = {
   }),
 
   SUPPORT_REPLY: (v) => ({
-    title: 'Apni Kirana Support',
+    title: 'Quick Easy Mart Support',
     body: v.preview ?? 'A support agent replied to your message.',
   }),
   ADMIN_SUPPORT_NEW: (v) => ({

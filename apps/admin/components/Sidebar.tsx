@@ -136,10 +136,10 @@ export default function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
       >
         {/* Logo + mobile close */}
         <div className="flex items-center justify-between gap-2.5 border-b border-gray-100 px-5 py-5">
-          <Link href="/" onClick={handleNavClick} aria-label="Apni Kirana — Admin home">
+          <Link href="/" onClick={handleNavClick} aria-label="Quick Easy Mart — Admin home">
             <Image
               src="/logo-horizontal.png"
-              alt="Apni Kirana"
+              alt="Quick Easy Mart"
               width={180}
               height={60}
               priority

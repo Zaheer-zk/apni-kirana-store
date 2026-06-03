@@ -317,7 +317,7 @@ function Footer() {
   return (
     <footer className="border-t border-gray-200 bg-white">
       <div className="page-shell flex flex-col items-center justify-between gap-3 py-6 text-xs text-gray-500 sm:flex-row">
-        <p>© {new Date().getFullYear()} Quick Easy Mart — Apni Kirana Store</p>
+        <p>© {new Date().getFullYear()} Quick Easy Mart — Quick Easy Mart</p>
         <p>
           {t('footerHelp')} <a className="font-semibold text-primary hover:text-primary-700" href="mailto:support@quickeasymart.com">support@quickeasymart.com</a>
         </p>

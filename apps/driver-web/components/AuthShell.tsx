@@ -31,7 +31,7 @@ export function AuthShell({ title, subtitle, children, footer }: AuthShellProps)
       {footer ? <div className="mt-6 text-center text-sm text-gray-500">{footer}</div> : null}
 
       <p className="mt-8 text-center text-xs text-gray-400">
-        © {new Date().getFullYear()} Quick Easy Mart · Apni Kirana Store
+        © {new Date().getFullYear()} Quick Easy Mart · Quick Easy Mart
       </p>
     </main>
   );

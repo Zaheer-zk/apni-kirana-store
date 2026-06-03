@@ -247,7 +247,7 @@ export default function LoginScreen() {
       ) : null}
 
       <View style={authStyles.footerRow}>
-        <Text style={authStyles.footerMuted}>New to Apni Kirana Store? </Text>
+        <Text style={authStyles.footerMuted}>New to Quick Easy Mart? </Text>
         <Link href="/(auth)/register" asChild>
           <TouchableOpacity>
             <Text style={authStyles.linkText}>Create account</Text>

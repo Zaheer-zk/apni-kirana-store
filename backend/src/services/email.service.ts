@@ -7,7 +7,7 @@
 //
 // Required env when EMAIL_PROVIDER=RESEND:
 //   RESEND_API_KEY   — API key from the Resend dashboard (starts with "re_")
-//   EMAIL_FROM       — verified sender, e.g. "Apni Kirana Store <noreply@yourdomain.com>"
+//   EMAIL_FROM       — verified sender, e.g. "Quick Easy Mart <noreply@yourdomain.com>"
 //                      (defaults to Resend's shared onboarding sender)
 //
 // Add a provider: implement SendEmailFn, register it in PROVIDERS, set
@@ -25,7 +25,7 @@ interface EmailMessage {
 
 type SendEmailFn = (msg: EmailMessage) => Promise<void>;
 
-const DEFAULT_FROM = 'Apni Kirana Store <onboarding@resend.dev>';
+const DEFAULT_FROM = 'Quick Easy Mart <onboarding@resend.dev>';
 
 const consoleProvider: SendEmailFn = async (msg) => {
   console.log(
@@ -108,7 +108,7 @@ export async function sendNewStoreAwaitingApprovalEmail(opts: {
     `Store : ${opts.storeName}\n` +
     `Owner : ${opts.ownerName ?? '—'}${opts.ownerPhone ? ` (${opts.ownerPhone})` : ''}\n\n` +
     `Review and approve here:\n${link}\n\n` +
-    `— Apni Kirana Store`;
+    `— Quick Easy Mart`;
   const html = `
     <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;color:#1f2937">
       <h2 style="color:#16a34a">New store awaiting approval</h2>
@@ -152,7 +152,7 @@ export async function sendNewDriverAwaitingApprovalEmail(opts: {
     `Driver  : ${opts.driverName ?? '—'}${opts.driverPhone ? ` (${opts.driverPhone})` : ''}\n` +
     `Vehicle : ${opts.vehicleType} — ${opts.vehicleNumber}\n\n` +
     `Review and approve here:\n${link}\n\n` +
-    `— Apni Kirana Store`;
+    `— Quick Easy Mart`;
   const html = `
     <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;color:#1f2937">
       <h2 style="color:#16a34a">New driver awaiting approval</h2>
@@ -193,15 +193,15 @@ export async function sendAccountApprovedEmail(opts: {
   const subject = `Your ${noun} is approved`;
   const text =
     `${greeting}\n\n` +
-    `Good news — your ${noun} on Apni Kirana Store has been approved by our team.\n` +
+    `Good news — your ${noun} on Quick Easy Mart has been approved by our team.\n` +
     `You can now sign in and start taking orders.\n\n` +
     `${opts.loginUrl}\n\n` +
-    `— Apni Kirana Store`;
+    `— Quick Easy Mart`;
   const html = `
     <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;color:#1f2937">
       <h2 style="color:#16a34a">You're approved!</h2>
       <p>${greeting}</p>
-      <p>Good news — your ${noun} on Apni Kirana Store has been approved by our team. You can now sign in and start taking orders.</p>
+      <p>Good news — your ${noun} on Quick Easy Mart has been approved by our team. You can now sign in and start taking orders.</p>
       <p style="margin:24px 0">
         <a href="${opts.loginUrl}" style="background:#16a34a;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">Sign in</a>
       </p>
@@ -231,18 +231,18 @@ export async function sendPasswordResetEmail(
   link: string,
 ): Promise<void> {
   const greeting = name ? `Hi ${name},` : 'Hi,';
-  const subject = 'Reset your Apni Kirana Store password';
+  const subject = 'Reset your Quick Easy Mart password';
   const text =
     `${greeting}\n\n` +
     `We received a request to reset your password. Open the link below to choose a new one:\n\n` +
     `${link}\n\n` +
     `This link expires in 1 hour. If you didn't request this, you can safely ignore this email.\n\n` +
-    `— Apni Kirana Store`;
+    `— Quick Easy Mart`;
   const html = `
     <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;color:#1f2937">
       <h2 style="color:#16a34a">Reset your password</h2>
       <p>${greeting}</p>
-      <p>We received a request to reset your Apni Kirana Store password. Click the button below to choose a new one.</p>
+      <p>We received a request to reset your Quick Easy Mart password. Click the button below to choose a new one.</p>
       <p style="margin:24px 0">
         <a href="${link}" style="background:#16a34a;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block">Reset password</a>
       </p>

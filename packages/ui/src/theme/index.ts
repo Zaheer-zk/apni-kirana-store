@@ -1,5 +1,5 @@
 /**
- * Brand tokens for the Apni Kirana Store web apps.
+ * Brand tokens for the Quick Easy Mart web apps.
  *
  * These mirror the React Native theme in `apps/customer/constants/theme.ts`
  * so the mobile + web surfaces stay visually identical. If you change brand

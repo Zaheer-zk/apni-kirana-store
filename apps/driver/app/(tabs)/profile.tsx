@@ -262,7 +262,7 @@ export default function ProfileScreen() {
             label="About"
             subtitle="App version & legal"
             onPress={() =>
-              Alert.alert('AKS Driver', 'Version 1.0.0\n© Apni Kirana Store')
+              Alert.alert('Quick Easy Mart Driver', 'Version 1.0.0\n© Quick Easy Mart')
             }
             isLast
           />

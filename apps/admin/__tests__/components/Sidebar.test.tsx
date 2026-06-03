@@ -20,6 +20,6 @@ describe('Sidebar', () => {
 
   it('renders brand label', () => {
     render(<Sidebar />);
-    expect(screen.getByText('Apni Kirana')).toBeInTheDocument();
+    expect(screen.getByText('Quick Easy Mart')).toBeInTheDocument();
   });
 });

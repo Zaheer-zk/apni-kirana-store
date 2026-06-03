@@ -78,7 +78,7 @@ function ResetPasswordInner() {
         <div className="mb-8 flex flex-col items-center text-center">
           <Image
             src="/logo-horizontal.png"
-            alt="Apni Kirana"
+            alt="Quick Easy Mart"
             width={200}
             height={67}
             priority

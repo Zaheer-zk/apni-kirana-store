@@ -6,18 +6,18 @@ import { getLocale, getMessages } from '@/lib/i18n';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Apni Kirana — your neighbourhood store, online',
-    template: '%s · Apni Kirana',
+    default: 'Quick Easy Mart — your neighbourhood store, online',
+    template: '%s · Quick Easy Mart',
   },
   description:
     'Order groceries, daily essentials and medicines from your nearest kirana store. 30-minute delivery, cash on delivery, no minimum order.',
-  applicationName: 'Apni Kirana',
+  applicationName: 'Quick Easy Mart',
   formatDetection: { telephone: false },
   // iOS-specific PWA meta — Next emits these as `apple-mobile-web-app-*`
   // tags so Safari treats us like a native app once added to Home Screen.
   appleWebApp: {
     capable: true,
-    title: 'Apni Kirana',
+    title: 'Quick Easy Mart',
     statusBarStyle: 'default',
   },
   icons: {
@@ -36,10 +36,10 @@ export const metadata: Metadata = {
   },
   manifest: '/manifest.webmanifest',
   openGraph: {
-    title: 'Apni Kirana',
+    title: 'Quick Easy Mart',
     description: 'Your neighbourhood store, online.',
     images: ['/logo-horizontal.png'],
-    siteName: 'Apni Kirana',
+    siteName: 'Quick Easy Mart',
   },
 };
 

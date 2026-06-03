@@ -136,7 +136,7 @@ await Location.startLocationUpdatesAsync(LOCATION_TASK, {
   distanceInterval: 25,
   showsBackgroundLocationIndicator: true,
   foregroundService: {
-    notificationTitle: 'Apni Kirana — On duty',
+    notificationTitle: 'Quick Easy Mart — On duty',
     notificationBody: 'Sharing location while you are online',
   },
 });

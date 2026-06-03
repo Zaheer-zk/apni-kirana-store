@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide gets the entire Apni Kirana Store stack running on your laptop in under 10 minutes, then walks through the day-to-day commands you'll actually use.
+This guide gets the entire Quick Easy Mart stack running on your laptop in under 10 minutes, then walks through the day-to-day commands you'll actually use.
 
 ## Prerequisites
 

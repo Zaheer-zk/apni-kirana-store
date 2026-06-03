@@ -15,7 +15,7 @@ import type { MetadataRoute } from 'next';
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Quick Easy Mart — Store',
-    short_name: 'AKS Store',
+    short_name: 'Quick Easy Mart Store',
     description:
       'Manage your Quick Easy Mart store — accept orders, update stock and change opening hours.',
     start_url: '/',

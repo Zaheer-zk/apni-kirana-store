@@ -37,7 +37,7 @@ export default function AboutScreen() {
           <View style={styles.logoBadge}>
             <Ionicons name="basket" size={48} color={colors.white} />
           </View>
-          <Text style={styles.appName}>Apni Kirana Store</Text>
+          <Text style={styles.appName}>Quick Easy Mart</Text>
           <Text style={styles.tagline}>Daily essentials, delivered fast</Text>
           <Text style={styles.version}>Version {APP_VERSION}</Text>
         </View>
@@ -79,7 +79,7 @@ export default function AboutScreen() {
         <View style={styles.footer}>
           <Text style={styles.footerText}>Made in India 🇮🇳</Text>
           <Text style={styles.copyright}>
-            © {new Date().getFullYear()} Apni Kirana Store. All rights reserved.
+            © {new Date().getFullYear()} Quick Easy Mart. All rights reserved.
           </Text>
         </View>
       </ScrollView>

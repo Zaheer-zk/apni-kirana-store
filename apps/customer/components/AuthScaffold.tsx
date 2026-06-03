@@ -16,7 +16,7 @@ import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
  * forgot-password, change-password). Keeps the screens themselves to just
  * their form content.
  *
- * Hero shows the Apni Kirana icon badge on the brand-green background; the
+ * Hero shows the Quick Easy Mart icon badge on the brand-green background; the
  * white sheet leads with the horizontal wordmark so the brand reads cleanly
  * over a light surface before the form copy starts.
  */
@@ -52,7 +52,7 @@ export function AuthScaffold({ children }: { children: ReactNode }) {
             source={require('@/assets/apni-horizontal.png')}
             style={styles.wordmark}
             resizeMode="contain"
-            accessibilityLabel="Apni Kirana"
+            accessibilityLabel="Quick Easy Mart"
           />
           {children}
         </ScrollView>

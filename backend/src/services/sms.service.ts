@@ -23,7 +23,7 @@ const consoleProvider: SendOtpFn = async (phone, otp) => {
 const twilioProvider: SendOtpFn = async (phone, otp) => {
   const client = twilio(config.twilio.accountSid, config.twilio.authToken);
   await client.messages.create({
-    body: `Your Apni Kirana Store OTP is ${otp}. Valid for 5 minutes.`,
+    body: `Your Quick Easy Mart OTP is ${otp}. Valid for 5 minutes.`,
     from: config.twilio.phoneNumber,
     to: `+91${phone}`,
   });

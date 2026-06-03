@@ -118,7 +118,7 @@ export async function generateInvoiceForOrder(orderId: string): Promise<InvoiceR
     // Header
     doc
       .fontSize(18)
-      .text('Apni Kirana Store', { align: 'left' })
+      .text('Quick Easy Mart', { align: 'left' })
       .fontSize(10)
       .fillColor('#666')
       .text('Tax Invoice', { align: 'left' })

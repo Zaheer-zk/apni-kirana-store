@@ -1,6 +1,6 @@
 # Privacy Model
 
-This document describes how Apni Kirana protects customer PII from delivery
+This document describes how Quick Easy Mart protects customer PII from delivery
 drivers, and how delivery handoff works without exposing phone numbers or
 addresses.
 

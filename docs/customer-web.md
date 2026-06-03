@@ -1,6 +1,6 @@
 # Customer storefront (`apps/customer-web`)
 
-The public-facing storefront for Apni Kirana Store, served at **`https://quickeasymart.com`**. A Next.js 16 app router project consuming the shared `@aks/ui` library, the same backend as the mobile and admin apps, and the same brand tokens as the React Native customer app.
+The public-facing storefront for Quick Easy Mart, served at **`https://quickeasymart.com`**. A Next.js 16 app router project consuming the shared `@aks/ui` library, the same backend as the mobile and admin apps, and the same brand tokens as the React Native customer app.
 
 > The Expo customer app (`apps/customer/`) is not going away — this is a parallel web channel for users who'd rather order from a desktop / laptop / WhatsApp link.
 

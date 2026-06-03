@@ -86,11 +86,11 @@ The complete event catalog as of `notification.service.ts`:
 | `STORE_NEW_ORDER` | store owner | `newOrderAlerts` | New order received | Order #{{orderShort}} — {{itemCount}} items, ₹{{total}}. Accept within 3 minutes. |
 | `STORE_ORDER_OFFERED` | store owner | `newOrderAlerts` | New order offer | Order #{{orderShort}} — {{itemCount}} items match your inventory, {{distanceKm}} km away. |
 | `STORE_ORDER_RESCINDED` | store owner | `rescindedAlerts` | Order taken | Order #{{orderShort}} was accepted by another nearby store. |
-| `STORE_APPROVED` | store owner | always | Store approved! | Your store is now live on Apni Kirana Store. Customers can start ordering. |
+| `STORE_APPROVED` | store owner | always | Store approved! | Your store is now live on Quick Easy Mart. Customers can start ordering. |
 | `STORE_SUSPENDED` | store owner | always | Store suspended | {{reason}} or "Your store has been suspended. Contact support for details." |
 | `DRIVER_NEW_DELIVERY` | driver | `newDeliveryAlerts` | New delivery offer | Pickup {{distanceKm}} km away. Estimated earnings ₹{{earning}}. Tap to view. |
 | `DRIVER_OFFER_RESCINDED` | driver | `newDeliveryAlerts` | Offer taken | Another driver accepted order #{{orderShort}}. Stay online for the next one. |
-| `DRIVER_APPROVED` | driver | always | You're approved! | Welcome to the Apni Kirana driver network. Tap to go online and start earning. |
+| `DRIVER_APPROVED` | driver | always | You're approved! | Welcome to the Quick Easy Mart driver network. Tap to go online and start earning. |
 | `DRIVER_SUSPENDED` | driver | always | Account suspended | {{reason}} or "Your driver account has been suspended. Contact support." |
 | `DRIVER_PAYOUT` | driver | `payoutNotifications` | Payout processed | ₹{{amount}} has been transferred to your registered account. |
 | `ADMIN_NEW_STORE_PENDING` | admin | `newStoreApprovals` | New store awaiting approval | {{storeName}} just registered. Review and approve. |
@@ -177,7 +177,7 @@ Service worker at `public/sw.js`:
 self.addEventListener('push', (event) => {
   const payload = event.data ? event.data.json() : {};
   event.waitUntil(
-    self.registration.showNotification(payload.title ?? 'Apni Kirana', {
+    self.registration.showNotification(payload.title ?? 'Quick Easy Mart', {
       body: payload.body,
       icon: payload.icon ?? '/icon-192.png',
       data: { url: payload.url ?? '/' },

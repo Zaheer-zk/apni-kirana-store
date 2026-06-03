@@ -28,7 +28,7 @@ function SplashScreen() {
       <View style={styles.splashIcon}>
         <Ionicons name="basket" size={48} color={colors.white} />
       </View>
-      <Text style={styles.splashTitle}>Apni Kirana Store</Text>
+      <Text style={styles.splashTitle}>Quick Easy Mart</Text>
       <Text style={styles.splashSubtitle}>Daily essentials, delivered fast</Text>
       <ActivityIndicator
         color={colors.primary}

@@ -92,9 +92,13 @@ function unwrapList<T>(payload: unknown, listKey?: string): T[] {
   return [];
 }
 
-async function fetchNearbyStores(): Promise<StoreProfile[]> {
+async function fetchNearbyStores(lat: number, lng: number): Promise<StoreProfile[]> {
+  // Pass the customer's actual lat/lng. The backend filters /stores/nearby
+  // by zone membership against THIS point — using a hardcoded default
+  // would silently show stores from the wrong zone for any customer outside
+  // the default city (the bug we hit testing from Sikar).
   const res = await apiClient.get(
-    `/api/v1/stores/nearby?lat=${DEFAULT_LAT}&lng=${DEFAULT_LNG}`
+    `/api/v1/stores/nearby?lat=${lat}&lng=${lng}`
   );
   return unwrapList<StoreProfile>(res.data, 'stores');
 }
@@ -192,9 +196,16 @@ export default function HomeScreen() {
   const meQuery = useQuery({ queryKey: ['me'], queryFn: fetchMe });
   const defaultAddress = meQuery.data?.defaultAddress ?? null;
 
+  // Use the customer's saved default address when present; otherwise fall back
+  // to the platform DEFAULT_LAT/LNG so first-time users on the onboarding
+  // path still see something. Re-keying on lat/lng means the query refetches
+  // when the user picks a new address — keeping zone-scoped results in sync
+  // with the location pill above.
+  const queryLat = defaultAddress?.lat ?? DEFAULT_LAT;
+  const queryLng = defaultAddress?.lng ?? DEFAULT_LNG;
   const storesQuery = useQuery({
-    queryKey: ['nearby-stores'],
-    queryFn: fetchNearbyStores,
+    queryKey: ['nearby-stores', queryLat, queryLng],
+    queryFn: () => fetchNearbyStores(queryLat, queryLng),
   });
 
   const itemsQuery = useQuery({

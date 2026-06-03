@@ -20,9 +20,28 @@ export interface ZoneFees {
 }
 
 export interface ZoneRow extends ZoneFees {
+  name: string;
   centerLat: number;
   centerLng: number;
   radiusKm: number;
+}
+
+/**
+ * Zone annotated with its position relative to a reference point — used by the
+ * admin assignment UI so candidate stores / drivers can show "in order zone"
+ * vs "nearest fallback zone #2", etc.
+ */
+export interface RankedZone extends ZoneRow {
+  /** Great-circle distance from the reference point to the zone center. */
+  distanceKm: number;
+  /** True if the reference point lies inside this zone. */
+  containsPoint: boolean;
+  /**
+   * 0 for the order's own zone(s); 1..N for the 1st/2nd/Nth nearest fallback
+   * zone when the primary zone has no candidates. Mirrors what we surface
+   * in the admin assign-store / assign-driver dialogs.
+   */
+  rank: number;
 }
 
 let cache: { value: ZoneRow[]; fetchedAt: number } | null = null;
@@ -34,6 +53,7 @@ async function loadZones(): Promise<ZoneRow[]> {
     where: { isActive: true },
     select: {
       id: true,
+      name: true,
       centerLat: true,
       centerLng: true,
       radiusKm: true,
@@ -45,6 +65,7 @@ async function loadZones(): Promise<ZoneRow[]> {
   cache = {
     value: rows.map((r) => ({
       zoneId: r.id,
+      name: r.name,
       centerLat: r.centerLat,
       centerLng: r.centerLng,
       radiusKm: r.radiusKm,
@@ -103,6 +124,42 @@ export async function findZonesForPoint(
   return zones.filter(
     (z) => haversineDistance(lat, lng, z.centerLat, z.centerLng) <= z.radiusKm,
   );
+}
+
+/**
+ * Build the admin-assignment "search horizon" around a point:
+ *   - every zone that contains the point (rank 0 — the order's own zones)
+ *   - plus the `fallbackCount` nearest zones whose center is closest to the
+ *     point but which DO NOT contain it (rank 1..N — fallbacks shown only
+ *     when the primary zones turn up no candidates)
+ *
+ * Sorted by rank ascending, then distance ascending. Returns at most
+ * `primary.length + fallbackCount` rows. Used by GET /admin/orders/:id/
+ * eligible-{stores,drivers} so the admin UI can group candidates by
+ * "in zone" vs "nearest 3 fallback zones" — matching how the product is
+ * supposed to behave per the 2026-06 zone-engine spec.
+ */
+export async function nearestZonesForPoint(
+  lat: number,
+  lng: number,
+  fallbackCount = 3,
+): Promise<RankedZone[]> {
+  const zones = await loadZones();
+  if (zones.length === 0) return [];
+  const annotated = zones.map((z) => {
+    const distanceKm = haversineDistance(lat, lng, z.centerLat, z.centerLng);
+    return { ...z, distanceKm, containsPoint: distanceKm <= z.radiusKm };
+  });
+  const primary = annotated
+    .filter((z) => z.containsPoint)
+    .sort((a, b) => a.radiusKm - b.radiusKm) // tightest first
+    .map((z) => ({ ...z, rank: 0 }));
+  const fallback = annotated
+    .filter((z) => !z.containsPoint)
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, fallbackCount)
+    .map((z, i) => ({ ...z, rank: i + 1 }));
+  return [...primary, ...fallback];
 }
 
 /**

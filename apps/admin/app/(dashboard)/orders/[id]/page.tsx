@@ -119,6 +119,13 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   [OrderStatus.REJECTED]: 'Rejected',
 };
 
+// `zoneRank` semantics (added 2026-06-03):
+//   0    — candidate is inside the order's own zone(s)
+//   1..3 — candidate is in one of the 3 nearest fallback zones, in order
+//   null — candidate is outside the 4-zone horizon (rescue case)
+// Pre-2026-06-03 backends omit these fields; the UI falls back to `inZone`
+// from the older shape so an admin running on a stale API doesn't see a
+// broken section.
 interface EligibleStore {
   id: string;
   name: string;
@@ -133,6 +140,10 @@ interface EligibleStore {
   totalItems: number;
   matchPercent: number;
   owner: { id: string; name: string | null; phone: string };
+  inZone?: boolean;
+  zoneId?: string | null;
+  zoneName?: string | null;
+  zoneRank?: number | null;
 }
 
 interface EligibleDriver {
@@ -145,6 +156,33 @@ interface EligibleDriver {
   currentLng: number | null;
   distanceKm: number | null;
   user: { id: string; name: string | null; phone: string };
+  inZone?: boolean;
+  zoneId?: string | null;
+  zoneName?: string | null;
+  zoneRank?: number | null;
+}
+
+/** Bucket eligibility results into "in zone" / "nearest zone N" / "outside"
+ *  groups so the admin UI can render the dropdown grouped, matching the
+ *  zone-engine spec from 2026-06-03. */
+function groupByZoneRank<T extends { zoneRank?: number | null; zoneName?: string | null }>(
+  rows: T[],
+): Array<{ rank: number | null; label: string; items: T[] }> {
+  const buckets = new Map<number | null, { label: string; items: T[] }>();
+  for (const r of rows) {
+    const rank = r.zoneRank ?? null;
+    const label =
+      rank === 0
+        ? `In order zone${r.zoneName ? ` (${r.zoneName})` : ''}`
+        : rank === null
+          ? 'Outside serving area'
+          : `Nearest zone #${rank}${r.zoneName ? ` — ${r.zoneName}` : ''}`;
+    if (!buckets.has(rank)) buckets.set(rank, { label, items: [] });
+    buckets.get(rank)!.items.push(r);
+  }
+  return [...buckets.entries()]
+    .sort(([a], [b]) => (a ?? 99) - (b ?? 99))
+    .map(([rank, b]) => ({ rank, label: b.label, items: b.items }));
 }
 
 interface ChatParticipant {
@@ -275,10 +313,10 @@ export default function OrderDetailPage({
   });
 
   const assignStoreMutation = useMutation({
-    mutationFn: async (storeId: string) => {
+    mutationFn: async (args: { storeId: string; force?: boolean }) => {
       const res = await api.put<{ success: boolean; data: OrderDetail }>(
         `/api/v1/admin/orders/${id}/assign-store`,
-        { storeId }
+        { storeId: args.storeId, force: args.force ?? false }
       );
       return res.data.data;
     },
@@ -323,10 +361,10 @@ export default function OrderDetailPage({
   });
 
   const assignDriverMutation = useMutation({
-    mutationFn: async (driverId: string) => {
+    mutationFn: async (args: { driverId: string; force?: boolean }) => {
       const res = await api.put<{ success: boolean; data: OrderDetail }>(
         `/api/v1/admin/orders/${id}/assign-driver`,
-        { driverId }
+        { driverId: args.driverId, force: args.force ?? false }
       );
       return res.data.data;
     },
@@ -646,10 +684,24 @@ export default function OrderDetailPage({
               No active store carries these items right now.
             </div>
           ) : (
-            <ul className="divide-y divide-gray-50">
-              {eligibleStores
-                .filter((s) => s.id !== data.store?.id)
-                .map((s) => (
+            <div className="divide-y divide-gray-50">
+              {groupByZoneRank(
+                eligibleStores.filter((s) => s.id !== data.store?.id),
+              ).map((group) => (
+                <div key={group.rank ?? 'outside'}>
+                  <div
+                    className={`px-4 py-2 text-xs font-semibold uppercase tracking-wide sm:px-6 ${
+                      group.rank === 0
+                        ? 'bg-green-50 text-green-700'
+                        : group.rank === null
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-blue-50 text-blue-700'
+                    }`}
+                  >
+                    {group.label} · {group.items.length}
+                  </div>
+                  <ul className="divide-y divide-gray-50">
+                  {group.items.map((s) => (
                   <li
                     key={s.id}
                     className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"
@@ -697,12 +749,29 @@ export default function OrderDetailPage({
                       </div>
                     </div>
                     <button
-                      onClick={() => assignStoreMutation.mutate(s.id)}
+                      onClick={() => {
+                        // Out-of-zone assignment requires the backend's force
+                        // confirm so we don't silently cross zones — wrap in a
+                        // browser confirm for now (the backend rejects with
+                        // 409 if the flag isn't set).
+                        if (
+                          s.zoneRank === null &&
+                          !window.confirm(
+                            'This store is outside the order\'s 4-zone serving horizon. Assign anyway?',
+                          )
+                        ) {
+                          return;
+                        }
+                        assignStoreMutation.mutate({
+                          storeId: s.id,
+                          force: s.zoneRank === null,
+                        });
+                      }}
                       disabled={assignStoreMutation.isPending}
                       className="btn-primary text-sm"
                     >
                       {assignStoreMutation.isPending &&
-                      assignStoreMutation.variables === s.id ? (
+                      assignStoreMutation.variables?.storeId === s.id ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : data.store ? (
                         'Reassign'
@@ -712,7 +781,10 @@ export default function OrderDetailPage({
                     </button>
                   </li>
                 ))}
-            </ul>
+                  </ul>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -729,7 +801,8 @@ export default function OrderDetailPage({
                   {data.driver ? 'Reassign driver' : 'Assign a driver'}
                 </h3>
                 <span className="text-xs text-gray-400">
-                  Online drivers, ranked by distance from store
+                  Online drivers, grouped by serving zone (in-zone first, then
+                  3 nearest fallback zones)
                 </span>
               </div>
             </div>
@@ -775,10 +848,24 @@ export default function OrderDetailPage({
                 </div>
               </div>
             ) : (
-              <ul className="divide-y divide-gray-50">
-                {eligibleDrivers
-                  .filter((d) => d.id !== data.driver?.id)
-                  .map((d) => (
+              <div className="divide-y divide-gray-50">
+                {groupByZoneRank(
+                  eligibleDrivers.filter((d) => d.id !== data.driver?.id),
+                ).map((group) => (
+                  <div key={group.rank ?? 'outside'}>
+                    <div
+                      className={`px-4 py-2 text-xs font-semibold uppercase tracking-wide sm:px-6 ${
+                        group.rank === 0
+                          ? 'bg-green-50 text-green-700'
+                          : group.rank === null
+                            ? 'bg-amber-50 text-amber-700'
+                            : 'bg-blue-50 text-blue-700'
+                      }`}
+                    >
+                      {group.label} · {group.items.length}
+                    </div>
+                    <ul className="divide-y divide-gray-50">
+                {group.items.map((d) => (
                     <li
                       key={d.id}
                       className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"
@@ -817,12 +904,25 @@ export default function OrderDetailPage({
                         </div>
                       </div>
                       <button
-                        onClick={() => assignDriverMutation.mutate(d.id)}
+                        onClick={() => {
+                          if (
+                            d.zoneRank === null &&
+                            !window.confirm(
+                              "This driver doesn't serve any of the order's nearest 4 zones. Assign anyway?",
+                            )
+                          ) {
+                            return;
+                          }
+                          assignDriverMutation.mutate({
+                            driverId: d.id,
+                            force: d.zoneRank === null,
+                          });
+                        }}
                         disabled={assignDriverMutation.isPending}
                         className="btn-primary text-sm"
                       >
                         {assignDriverMutation.isPending &&
-                        assignDriverMutation.variables === d.id ? (
+                        assignDriverMutation.variables?.driverId === d.id ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : data.driver ? (
                           'Reassign'
@@ -832,7 +932,10 @@ export default function OrderDetailPage({
                       </button>
                     </li>
                   ))}
-              </ul>
+                    </ul>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}

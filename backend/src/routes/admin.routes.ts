@@ -17,7 +17,11 @@ import { writeAudit } from '../utils/audit';
 import { creditWallet, getWalletWithTxns } from '../services/wallet.service';
 import { aggregateLastWeek, aggregatePayoutsForPeriod } from '../services/payout.service';
 import { invalidateZoneCache } from '../services/liveops.service';
-import { findZonesForPoint, invalidateZoneFeeCache } from '../services/zone.service';
+import {
+  findZonesForPoint,
+  invalidateZoneFeeCache,
+  nearestZonesForPoint,
+} from '../services/zone.service';
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const BCRYPT_ROUNDS = 10;
@@ -1372,22 +1376,28 @@ router.get('/orders/:id/eligible-stores', async (req: Request, res: Response) =>
     });
 
     const { lat, lng } = order.deliveryAddress;
-    // Resolve which zone(s) the order belongs to (via dropoff). Each store
-    // gets an `inZone` flag so admin can see at a glance whether assigning
-    // would cross zones. We do NOT hide out-of-zone stores — admin needs
-    // the option (rescue case where local supply is thin) — but the UI
-    // should warn before confirming.
-    const orderZones = await findZonesForPoint(lat, lng);
-    const inZone = (sLat: number, sLng: number) =>
-      orderZones.length === 0
-        ? true
-        : orderZones.some(
-            (z) => haversineDistance(sLat, sLng, z.centerLat, z.centerLng) <= z.radiusKm,
-          );
+    // Zone horizon = the order's own zones (rank 0) + the 3 nearest fallback
+    // zones. Per the 2026-06 spec: admin assignment should default to
+    // in-zone candidates and only surface fallback-zone candidates when the
+    // primary zone runs dry. We don't hide out-of-horizon stores entirely —
+    // admin still needs a rescue path — but they're bucketed last.
+    const horizon = await nearestZonesForPoint(lat, lng, 3);
+    const zoneOf = (
+      sLat: number,
+      sLng: number,
+    ): { zoneId: string; zoneName: string; zoneRank: number } | null => {
+      for (const z of horizon) {
+        if (haversineDistance(sLat, sLng, z.centerLat, z.centerLng) <= z.radiusKm) {
+          return { zoneId: z.zoneId, zoneName: z.name, zoneRank: z.rank };
+        }
+      }
+      return null;
+    };
 
     const ranked = stores
       .map((s) => {
         const matchedItems = new Set(s.items.map((i) => i.catalogItemId)).size;
+        const zoneInfo = zoneOf(s.lat, s.lng);
         return {
           id: s.id,
           name: s.name,
@@ -1399,18 +1409,28 @@ router.get('/orders/:id/eligible-stores', async (req: Request, res: Response) =>
           city: s.city,
           owner: s.owner,
           distanceKm: Number(haversineDistance(lat, lng, s.lat, s.lng).toFixed(2)),
-          inZone: inZone(s.lat, s.lng),
+          inZone: zoneInfo?.zoneRank === 0,
+          zoneId: zoneInfo?.zoneId ?? null,
+          zoneName: zoneInfo?.zoneName ?? null,
+          // 0 = order's zone, 1..3 = nearest fallback zone, null = outside the
+          // 4-zone horizon (admin can still pick, with a force=true confirm).
+          zoneRank: zoneInfo?.zoneRank ?? null,
           matchedItems,
           totalItems,
           matchPercent: Math.round((matchedItems / totalItems) * 100),
         };
       })
       .sort((a, b) => {
-        // In-zone first, then by match%, then by distance.
-        if (a.inZone !== b.inZone) return a.inZone ? -1 : 1;
+        // Zone rank first (0 < 1 < 2 < 3 < null), then match%, then distance.
+        const ar = a.zoneRank ?? 99;
+        const br = b.zoneRank ?? 99;
+        if (ar !== br) return ar - br;
         return b.matchPercent - a.matchPercent || a.distanceKm - b.distanceKm;
       });
 
+    // Flat array stays the response shape — admin UI groups by
+    // candidate.zoneRank / zoneName client-side. (Wrapping in
+    // { zones, candidates } would break legacy consumers, so we don't.)
     return sendSuccess(res, ranked);
   } catch (err) {
     console.error('[Admin] eligible-stores error:', err);
@@ -1506,21 +1526,30 @@ router.get('/orders/:id/eligible-drivers', async (req: Request, res: Response) =
       },
     });
 
-    // The order's zone(s) — derived from the store location (where the
-    // driver picks up) so the driver-zone overlap test is meaningful.
-    const orderZones = await findZonesForPoint(origin.lat, origin.lng);
-    const orderZoneIds = new Set(orderZones.map((z) => z.zoneId));
+    // Zone horizon = the order's own zones (rank 0) + 3 nearest fallback
+    // zones. A driver is bucketed by the BEST rank among the zones they
+    // serve. If the driver doesn't serve any zone in the horizon, they're
+    // out-of-horizon (rank null) and sorted last — admin can still pick
+    // them, but they show up under a "outside serving area" group.
+    const horizon = await nearestZonesForPoint(origin.lat, origin.lng, 3);
+    const horizonById = new Map(
+      horizon.map((z) => [z.zoneId, { name: z.name, rank: z.rank }]),
+    );
 
     const ranked = drivers
       .map((d) => {
-        const driverZoneIds = new Set(d.zones.map((z) => z.zoneId));
-        // If the order's location isn't in any zone, treat all drivers as
-        // 'inZone' (legacy fallback). Otherwise the driver must serve at
-        // least one of the order's zones.
-        const inZone =
-          orderZoneIds.size === 0
-            ? true
-            : [...driverZoneIds].some((zid) => orderZoneIds.has(zid));
+        let bestRank: number | null = null;
+        let bestZoneId: string | null = null;
+        let bestZoneName: string | null = null;
+        for (const dz of d.zones) {
+          const h = horizonById.get(dz.zoneId);
+          if (!h) continue;
+          if (bestRank === null || h.rank < bestRank) {
+            bestRank = h.rank;
+            bestZoneId = dz.zoneId;
+            bestZoneName = h.name;
+          }
+        }
         return {
           id: d.id,
           vehicleType: d.vehicleType,
@@ -1530,7 +1559,11 @@ router.get('/orders/:id/eligible-drivers', async (req: Request, res: Response) =
           currentLat: d.currentLat,
           currentLng: d.currentLng,
           user: d.user,
-          inZone,
+          // inZone preserved for older UI builds; new field is zoneRank.
+          inZone: bestRank === 0,
+          zoneId: bestZoneId,
+          zoneName: bestZoneName,
+          zoneRank: bestRank,
           distanceKm:
             d.currentLat != null && d.currentLng != null
               ? Number(haversineDistance(origin.lat, origin.lng, d.currentLat, d.currentLng).toFixed(2))
@@ -1538,8 +1571,9 @@ router.get('/orders/:id/eligible-drivers', async (req: Request, res: Response) =
         };
       })
       .sort((a, b) => {
-        // In-zone drivers first, then by distance.
-        if (a.inZone !== b.inZone) return a.inZone ? -1 : 1;
+        const ar = a.zoneRank ?? 99;
+        const br = b.zoneRank ?? 99;
+        if (ar !== br) return ar - br;
         return (a.distanceKm ?? 999) - (b.distanceKm ?? 999);
       });
 

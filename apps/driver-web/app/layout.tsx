@@ -5,6 +5,7 @@ import { Providers } from '@/components/Providers';
 import { getLocale, getMessages } from '@/lib/i18n';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://driver.quickeasymart.com'),
   title: {
     default: 'Quick Easy Mart — Driver',
     template: '%s · Quick Easy Mart Driver',
@@ -23,6 +24,8 @@ export const metadata: Metadata = {
     apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
   formatDetection: { telephone: false },
+  // Auth-gated companion — no public content worth indexing.
+  robots: { index: false, follow: false, nocache: true },
 };
 
 export const viewport: Viewport = {

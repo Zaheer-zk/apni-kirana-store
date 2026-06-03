@@ -389,7 +389,12 @@ export interface StoreInventoryItem {
   category: string;
   unit: string;
   imageUrl?: string | null;
+  // `price` = store owner's payout per unit (their input).
+  // `adminMargin` = admin's commission per unit (admin-only edit).
+  // `customerPrice` = price + adminMargin (what the customer pays).
   price: number;
+  adminMargin?: number;
+  customerPrice?: number;
   stockQty: number;
   isAvailable: boolean;
 }

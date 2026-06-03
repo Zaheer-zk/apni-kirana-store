@@ -37,6 +37,10 @@ export default function RootLayout({
         <title>Quick Easy Mart — Admin</title>
         <meta name="description" content="Internal admin dashboard for Quick Easy Mart" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* Internal-only tool — never index. The admin app is auth-gated so
+            crawlers only see the login wall anyway, but a robots meta is
+            cheaper than waiting for them to find that out. */}
+        <meta name="robots" content="noindex, nofollow, noarchive" />
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/favicon.png" />
         <meta name="theme-color" content="#16A34A" />

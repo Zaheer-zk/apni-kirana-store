@@ -5,6 +5,7 @@ import { Providers } from '@/components/Providers';
 import { getLocale, getMessages } from '@/lib/i18n';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://store.quickeasymart.com'),
   title: {
     default: 'Quick Easy Mart — Store dashboard',
     template: '%s · Store dashboard',
@@ -25,6 +26,14 @@ export const metadata: Metadata = {
       { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [{ url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+  },
+  // Auth-gated dashboard — no value in being indexed; every page renders
+  // the same login wall for crawlers. Leaving the open-graph tags off too
+  // since there's no public preview to share.
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
   },
 };
 

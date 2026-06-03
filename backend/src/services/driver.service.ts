@@ -32,7 +32,7 @@
 
 import { prisma } from '../config/prisma';
 import { haversineDistance, getBoundingBox } from '../utils/geo';
-import { sendNotification } from './notification.service';
+import { sendNotification, notify } from './notification.service';
 import { driverQueue } from '../queues/queues';
 import { io } from '../socket';
 import { getSettings } from './settings.service';
@@ -195,12 +195,19 @@ async function broadcastToDrivers(orderId: string, scored: ScoredDriver[]): Prom
 
   await Promise.all(
     top.map(async (d) => {
-      await sendNotification(
-        d.userId,
-        'New delivery offer',
-        `Pickup ${d.distanceKm.toFixed(1)} km away. Tap to view & accept.`,
-        { orderId, distanceKm: String(d.distanceKm) },
-      );
+      // Use the templated notify() so the persisted notification.data.url
+      // points to the driver's offer screen (/deliveries/new?orderId=...).
+      // Previous sendNotification() left data.url unset, which made the
+      // bell row a dead button — driver could see "new offer" but had no
+      // way to act on it once the socket dialog was dismissed/missed.
+      await notify('DRIVER_NEW_DELIVERY', d.userId, {
+        orderId,
+        orderShort: orderId.slice(-6),
+        distanceKm: d.distanceKm.toFixed(1),
+        // Driver fee not yet computed at broadcast time — placeholder until
+        // the matching engine threads through the per-order earnings.
+        earning: 0,
+      });
       io?.to(`user:${d.userId}`).emit('order:assigned', {
         orderId, distanceKm: d.distanceKm, score: d.score,
       });
@@ -227,12 +234,15 @@ async function cascadeToBestDriver(
     where: { id: orderId },
     data: { driverId: best.driverId, status: 'DRIVER_ASSIGNED', driverAssignedAt: new Date() },
   });
-  await sendNotification(
-    best.userId,
-    'New delivery',
-    'You have been assigned a delivery. Accept within 60 seconds.',
-    { orderId },
-  );
+  // Cascade mode = single assignment, not broadcast. Use the templated
+  // notify() so the bell row links to /deliveries/new?orderId=... (the
+  // accept dialog), same as broadcast.
+  await notify('DRIVER_NEW_DELIVERY', best.userId, {
+    orderId,
+    orderShort: orderId.slice(-6),
+    distanceKm: best.distanceKm.toFixed(1),
+    earning: 0,
+  });
   io?.to(`user:${best.userId}`).emit('order:assigned', { orderId });
   await driverQueue.add(
     'driver-accept-timeout',

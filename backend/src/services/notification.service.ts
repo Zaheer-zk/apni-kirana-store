@@ -125,49 +125,80 @@ export type NotificationEvent =
 interface Template {
   title: string;
   body: string;
+  /**
+   * Relative landing URL for this notification, e.g. `/orders/abc` or
+   * `/deliveries/new?orderId=abc`. Surfaces in two places:
+   *   1. The persisted `notification.data.url` field — the in-app bell
+   *      / inbox renders the row as a `<Link>` to this URL.
+   *   2. The web-push payload (was previously hardcoded to
+   *      `/orders/<orderId>`, which broke driver web-push because the
+   *      driver app doesn't have a `/orders/:id` route).
+   * Different roles' apps have different route trees, so we encode the
+   * correct path per event template instead of deriving it.
+   */
+  url?: string;
 }
 
 type TemplateFn = (vars: Record<string, string>) => Template;
+
+// Helper: customer/store apps both use `/orders/<id>` for the order detail
+// route. Driver apps use `/deliveries/<id>` for accepted orders and
+// `/deliveries/new?orderId=<id>` for an offer still in the accept window.
+const customerOrderUrl = (orderId: string | undefined) =>
+  orderId ? `/orders/${orderId}` : undefined;
+const driverOfferUrl = (orderId: string | undefined) =>
+  orderId ? `/deliveries/new?orderId=${orderId}` : undefined;
+const driverDeliveryUrl = (orderId: string | undefined) =>
+  orderId ? `/deliveries/${orderId}` : undefined;
 
 const TEMPLATES: Record<NotificationEvent, TemplateFn> = {
   ORDER_PLACED: (v) => ({
     title: 'Order placed',
     body: `Your order #${v.orderShort} is being matched with a nearby store.`,
+    url: customerOrderUrl(v.orderId),
   }),
   ORDER_ACCEPTED: (v) => ({
     title: 'Order accepted',
     body: `${v.storeName} is preparing your order. We'll find a delivery partner shortly.`,
+    url: customerOrderUrl(v.orderId),
   }),
   ORDER_REJECTED: (v) => ({
     title: 'Order could not be fulfilled',
     body: v.reason
       ? `Order #${v.orderShort} was rejected: ${v.reason}. We're trying another store.`
       : `We're trying another store for order #${v.orderShort}.`,
+    url: customerOrderUrl(v.orderId),
   }),
   ORDER_DRIVER_ASSIGNED: (v) => ({
     title: 'Driver on the way',
     body: `${v.driverName} is heading to ${v.storeName} to pick up your order.`,
+    url: customerOrderUrl(v.orderId),
   }),
   ORDER_PICKED_UP: (v) => ({
     title: 'Order picked up',
     body: `Your order is on its way. Show OTP ${v.dropoffOtp} to the driver at delivery.`,
+    url: customerOrderUrl(v.orderId),
   }),
-  ORDER_DELIVERED: () => ({
+  ORDER_DELIVERED: (v) => ({
     title: 'Order delivered',
     body: `Your order has been delivered. Tap to rate your experience.`,
+    url: customerOrderUrl(v.orderId),
   }),
   ORDER_CANCELLED: (v) => ({
     title: 'Order cancelled',
     body: v.reason ?? 'Your order was cancelled.',
+    url: customerOrderUrl(v.orderId),
   }),
 
   STORE_NEW_ORDER: (v) => ({
     title: 'New order received',
     body: `Order #${v.orderShort} — ${v.itemCount} items, ₹${v.total}. Accept within 3 minutes.`,
+    url: customerOrderUrl(v.orderId),
   }),
   STORE_ORDER_OFFERED: (v) => ({
     title: 'New order offer',
     body: `Order #${v.orderShort} — ${v.itemCount} items match your inventory, ${v.distanceKm} km away.`,
+    url: customerOrderUrl(v.orderId),
   }),
   STORE_ORDER_RESCINDED: (v) => ({
     title: 'Order taken',
@@ -185,10 +216,17 @@ const TEMPLATES: Record<NotificationEvent, TemplateFn> = {
   DRIVER_NEW_DELIVERY: (v) => ({
     title: 'New delivery offer',
     body: `Pickup ${v.distanceKm} km away. Estimated earnings ₹${v.earning}. Tap to view.`,
+    // /deliveries/new opens the same Accept/Decline dialog as the socket
+    // popup — critical so a driver who missed the live socket event (page
+    // refreshed, just opened the bell) can still take the offer from the
+    // notification row. Previous code routed every webpush to /orders/<id>
+    // which 404'd in driver-web.
+    url: driverOfferUrl(v.orderId),
   }),
   DRIVER_OFFER_RESCINDED: (v) => ({
     title: 'Offer taken',
     body: `Another driver accepted order #${v.orderShort}. Stay online for the next one.`,
+    url: '/',
   }),
   DRIVER_APPROVED: () => ({
     title: "You're approved!",
@@ -268,7 +306,15 @@ export async function notify(
     Object.entries(vars).map(([k, v]) => [k, v == null ? '' : String(v)]),
   );
   const tpl = TEMPLATES[event](stringVars);
-  await persistAndPush(userId, tpl.title, tpl.body, { event, ...stringVars });
+  // Merge the template's url into the persisted data so the in-app inbox
+  // can render the row as a Link, AND so the web-push handler doesn't have
+  // to re-derive it. Existing rows without `data.url` continue to render
+  // as no-op buttons (graceful degrade).
+  await persistAndPush(userId, tpl.title, tpl.body, {
+    event,
+    ...stringVars,
+    ...(tpl.url ? { url: tpl.url } : {}),
+  });
 }
 
 /**
@@ -395,10 +441,19 @@ async function dispatchWebPush(
   event: string | null,
 ): Promise<void> {
   try {
+    // Prefer the explicit `url` set by the template (role-aware path) over
+    // the legacy `/orders/<orderId>` heuristic — that heuristic 404'd on
+    // driver-web for every offer push.
+    const pushUrl =
+      typeof data?.url === 'string' && data.url.startsWith('/')
+        ? data.url
+        : typeof data?.orderId === 'string'
+          ? `/orders/${data.orderId}`
+          : '/';
     const result = await sendWebPushToUser(userId, {
       title,
       body,
-      url: typeof data?.orderId === 'string' ? `/orders/${data.orderId}` : '/',
+      url: pushUrl,
     });
     if (!result.attempted) return; // no subscriptions / no VAPID — don't pollute log
     const status: DispatchStatus = result.failed > 0 ? 'FAILED' : 'DELIVERED';

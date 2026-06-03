@@ -14,6 +14,12 @@ import { findZoneForPoint, findZonesForPoint } from '../services/zone.service';
 import { haversineDistance } from '../utils/geo';
 import { creditWallet } from '../services/wallet.service';
 import { generateInvoiceForOrder, resolveInvoiceAbsolutePath } from '../services/invoice.service';
+import {
+  decrementStockForOrder,
+  incrementStockForOrder,
+  InsufficientStockError,
+  statusHadStockDecrement,
+} from '../services/inventory.service';
 
 const router = Router();
 
@@ -861,10 +867,30 @@ router.put(
         return sendError(res, `Cannot accept order with status ${order.status}`, 400);
       }
 
-      const updated = await prisma.order.update({
-        where: { id: order.id },
-        data: { status: 'STORE_ACCEPTED', storeAcceptedAt: new Date() },
-      });
+      // Stock commit happens on accept (not on create). Wrap the decrement
+      // + status flip in a transaction so a stock failure aborts the whole
+      // accept — the order stays PENDING and the store-portal can show
+      // "Update inventory, then try again". InsufficientStockError bubbles
+      // out of the transaction so we can map it to a 409.
+      let updated;
+      try {
+        updated = await prisma.$transaction(async (tx) => {
+          await decrementStockForOrder(tx, order.id);
+          return tx.order.update({
+            where: { id: order.id },
+            data: { status: 'STORE_ACCEPTED', storeAcceptedAt: new Date() },
+          });
+        });
+      } catch (err) {
+        if (err instanceof InsufficientStockError) {
+          return sendError(
+            res,
+            `${err.itemName} is now out of stock. Update your inventory then try again.`,
+            409,
+          );
+        }
+        throw err;
+      }
 
       await broadcastOrderStatus(order.id, 'STORE_ACCEPTED');
       await sendNotification(order.customerId, 'Order Accepted', 'Your order has been accepted by the store!', { orderId: order.id });
@@ -1091,13 +1117,21 @@ router.put(
         Math.round(order.subtotal * 100) + Math.round(order.deliveryFee * 100);
       const refundPaise = Math.max(0, refundPaiseRaw);
 
-      const updated = await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          status: 'CANCELLED',
-          cancelReason: reason,
-          paymentStatus: shouldRefund ? 'REFUNDED' : order.paymentStatus,
-        },
+      // Revert stock if it had been decremented (i.e. order was past PENDING).
+      // PENDING → CANCELLED never touched stock, so no revert in that case.
+      const shouldRevertStock = statusHadStockDecrement(order.status);
+      const updated = await prisma.$transaction(async (tx) => {
+        if (shouldRevertStock) {
+          await incrementStockForOrder(tx, order.id);
+        }
+        return tx.order.update({
+          where: { id: order.id },
+          data: {
+            status: 'CANCELLED',
+            cancelReason: reason,
+            paymentStatus: shouldRefund ? 'REFUNDED' : order.paymentStatus,
+          },
+        });
       });
 
       // Credit the wallet AFTER the order state is durable. If this throws

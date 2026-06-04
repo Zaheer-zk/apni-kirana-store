@@ -95,6 +95,42 @@ interface OrderDetail {
   pickedUpAt?: string | null;
   deliveredAt?: string | null;
   driverAssignedAt?: string | null;
+  /** Set when this order is one leg of a multi-store basket — the
+   *  driver app shows a pickup-leg list so the driver knows every
+   *  store they need to visit before delivery. See
+   *  GET /api/v1/drivers/order-group/:id. */
+  orderGroupId?: string | null;
+}
+
+interface PickupLeg {
+  orderId: string;
+  status: string;
+  pickedUpAt: string | null;
+  subtotal: number;
+  itemsCount: number;
+  store?: {
+    id?: string;
+    name?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+    city?: string | null;
+    street?: string | null;
+  } | null;
+}
+
+interface OrderGroupDetail {
+  id: string;
+  status: string;
+  total: number;
+  paymentMethod: string;
+  pickupLegs: PickupLeg[];
+  deliveryAddress: {
+    lat: number;
+    lng: number;
+    label: string;
+    city: string;
+    pincode: string;
+  } | null;
 }
 
 // Visual checkpoints the driver clicks through. Only PICKED_UP and DELIVERED
@@ -134,6 +170,22 @@ function ActiveDelivery({ orderId }: { orderId: string }) {
     queryFn: async () => {
       const r = await api.get<{ success: boolean; data: OrderDetail }>(
         `/api/v1/orders/${orderId}`,
+      );
+      return r.data?.data;
+    },
+    refetchInterval: 30_000,
+  });
+
+  // Multi-store sibling fetch — only when the current order is one
+  // leg of a group. Surfaces the full pickup list so the driver knows
+  // every store they need to visit before the single delivery.
+  const groupId = detailQuery.data?.orderGroupId ?? null;
+  const groupQuery = useQuery<OrderGroupDetail>({
+    queryKey: ['driver-order-group', groupId],
+    enabled: !!groupId,
+    queryFn: async () => {
+      const r = await api.get<{ success: boolean; data: OrderGroupDetail }>(
+        `/api/v1/drivers/order-group/${groupId}`,
       );
       return r.data?.data;
     },
@@ -300,6 +352,65 @@ function ActiveDelivery({ orderId }: { orderId: string }) {
           {humanStatus(order.status)}
         </Badge>
       </div>
+
+      {/* Multi-store pickup list — only when this order is one leg of
+          a group. Each row deep-links to that leg's delivery screen so
+          the driver can mark pickup-by-store. The single delivery
+          happens from the last leg. */}
+      {groupQuery.data && groupQuery.data.pickupLegs.length > 1 ? (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+            Multi-store pickup ·{' '}
+            {groupQuery.data.pickupLegs.filter((l) => l.pickedUpAt).length}/
+            {groupQuery.data.pickupLegs.length} done
+          </p>
+          <ul className="mt-2 divide-y divide-primary/10">
+            {groupQuery.data.pickupLegs.map((leg, idx) => {
+              const isCurrent = leg.orderId === orderId;
+              const isDone = !!leg.pickedUpAt;
+              return (
+                <li
+                  key={leg.orderId}
+                  className="flex items-center justify-between gap-3 py-2 text-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900">
+                      {idx + 1}. {leg.store?.name ?? 'Store'}
+                      {isCurrent ? (
+                        <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                          You're here
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {leg.itemsCount} item{leg.itemsCount === 1 ? '' : 's'} ·{' '}
+                      {leg.store?.city ?? '—'}
+                    </p>
+                  </div>
+                  {isDone ? (
+                    <span className="text-xs font-semibold text-emerald-700">
+                      ✓ Picked up
+                    </span>
+                  ) : !isCurrent ? (
+                    <Link
+                      href={`/deliveries/${leg.orderId}`}
+                      className="text-xs font-semibold text-primary hover:underline"
+                    >
+                      Open →
+                    </Link>
+                  ) : (
+                    <span className="text-xs text-gray-400">In progress</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-2 text-[11px] text-gray-500">
+            Pick up from each store; deliver everything in one go at the
+            customer's address.
+          </p>
+        </div>
+      ) : null}
 
       <DeliveryMap pickup={pickupCoords} dropoff={dropoffCoords} driver={driverPos} />
 

@@ -113,7 +113,19 @@ export async function fetchOrder(id: string): Promise<CustomerOrder> {
 export interface CreateOrderInput {
   storeId?: string;
   items: Array<{ storeItemId?: string; catalogItemId?: string; qty: number }>;
-  deliveryAddressId: string;
+  /** Pick one: existing saved address (self / known recipient) … */
+  deliveryAddressId?: string;
+  /** … or inline address for "order for someone else" — backend creates
+   *  a one-off Address row owned by the buyer (non-default). */
+  recipientAddress?: {
+    label: string;
+    street: string;
+    city: string;
+    state: string;
+    pincode: string;
+    lat: number;
+    lng: number;
+  };
   paymentMethod: PaymentMethod;
   notes?: string;
   promoCode?: string;

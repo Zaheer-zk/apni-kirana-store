@@ -49,6 +49,10 @@ export default function CheckoutPage() {
   const subtotal = useCart((s) => s.subtotal());
   const itemCount = useCart((s) => s.itemCount());
   const clearCart = useCart((s) => s.clear);
+  // Cart-side recipient choice — drives whether checkout sends a saved
+  // address id (self mode) or an inline recipientAddress payload (someone-
+  // else mode). The backend treats them as alternatives, never both.
+  const cartRecipient = useCart((s) => s.recipient);
 
   const addressesQuery = useQuery({
     queryKey: ['addresses'],
@@ -84,28 +88,54 @@ export default function CheckoutPage() {
 
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedAddressId) throw new Error('Choose a delivery address');
       if (!store) throw new Error('Cart is empty');
       if (items.length === 0) throw new Error('Cart is empty');
 
-      // Validate recipient fields if 'order for someone else' is on.
-      let recipient:
+      // Two delivery-address modes:
+      //  - cart recipient is "self" OR "someone_else but no inline address":
+      //    require selectedAddressId from the saved address book
+      //    (existing behaviour).
+      //  - cart recipient is "someone_else" with an inline address:
+      //    POST inline `recipientAddress` so the backend creates a
+      //    one-off Address owned by the buyer, and also forward the
+      //    recipient name+phone so the driver/store call THEM at
+      //    dropoff (not the account holder).
+      const isInlineRecipient =
+        cartRecipient.mode === 'someone_else' && !!cartRecipient.address;
+
+      if (!isInlineRecipient && !selectedAddressId) {
+        throw new Error('Choose a delivery address');
+      }
+
+      // Local "Order for someone else?" toggle stays as a fallback for
+      // self-mode users who want to override contact at dropoff without
+      // changing the destination. Either path can populate recipient.
+      let recipientFields:
         | { recipientName: string; recipientPhone: string }
         | undefined;
-      if (forSomeoneElse) {
+      if (isInlineRecipient) {
+        recipientFields = {
+          recipientName: cartRecipient.name!,
+          recipientPhone: cartRecipient.phone!,
+        };
+      } else if (forSomeoneElse) {
         const name = recipientName.trim();
         const phone = recipientPhone.trim();
         if (!name) throw new Error('Enter the recipient’s name');
         if (!/^\d{10}$/.test(phone)) throw new Error('Recipient phone must be 10 digits');
-        recipient = { recipientName: name, recipientPhone: phone };
+        recipientFields = { recipientName: name, recipientPhone: phone };
       }
 
       return createOrder({
+        // storeId is a hint — the backend cross-zone re-match will swap
+        // to a store in the recipient's zone when needed.
         storeId: store.storeId,
-        deliveryAddressId: selectedAddressId,
+        ...(isInlineRecipient
+          ? { recipientAddress: cartRecipient.address! }
+          : { deliveryAddressId: selectedAddressId! }),
         paymentMethod,
         items: items.map((line) => ({ storeItemId: line.storeItemId, qty: line.qty })),
-        ...recipient,
+        ...recipientFields,
       });
     },
     onSuccess: (order) => {

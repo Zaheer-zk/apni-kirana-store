@@ -43,9 +43,41 @@ export interface CartStoreContext {
   etaMinutes?: number;
 }
 
+/**
+ * Cart-level "who is this order for?" decision. Set on the cart screen
+ * before checkout so we can search store + driver against the actual
+ * dropoff zone — see backend POST /orders/preview.
+ *
+ *  - mode='self'         → checkout uses one of the customer's saved
+ *                          addresses (existing behaviour).
+ *  - mode='someone_else' → recipient is a different person; their
+ *                          address is collected inline and posted to
+ *                          POST /orders as `recipientAddress`.
+ */
+export interface CartRecipient {
+  mode: 'self' | 'someone_else';
+  name?: string;
+  phone?: string;
+  email?: string;
+  /** Whether the recipient phone matches an existing customer account. */
+  existsInDb?: boolean;
+  address?: {
+    label: string;
+    street: string;
+    city: string;
+    state: string;
+    pincode: string;
+    lat: number;
+    lng: number;
+  };
+}
+
 interface CartState {
   store: CartStoreContext | null;
   items: CartLine[];
+  /** Cart-level recipient — see {@link CartRecipient}. Defaults to self. */
+  recipient: CartRecipient;
+  setRecipient: (next: CartRecipient) => void;
 
   /** Items count (sum of quantities). */
   itemCount: () => number;
@@ -79,6 +111,10 @@ export const useCart = create<CartState>()(
     (set, get) => ({
       store: null,
       items: [],
+      // Default to self so existing checkout flows keep working without
+      // surfacing the "for someone else" choice unless the customer flips it.
+      recipient: { mode: 'self' },
+      setRecipient: (next) => set({ recipient: next }),
 
       itemCount: () => get().items.reduce((sum, l) => sum + l.qty, 0),
       subtotal: () => get().items.reduce((sum, l) => sum + l.price * l.qty, 0),
@@ -143,12 +179,21 @@ export const useCart = create<CartState>()(
         });
       },
 
-      clear: () => set({ store: null, items: [] }),
+      clear: () => set({ store: null, items: [], recipient: { mode: 'self' } }),
     }),
     {
       name: 'aks-customer-cart',
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      // v2 added the recipient field; legacy v1 carts hydrate without it,
+      // so migration coerces missing recipient → { mode: 'self' }.
+      version: 2,
+      migrate: (persisted, version) => {
+        if (!persisted || typeof persisted !== 'object') return persisted;
+        if (version < 2) {
+          (persisted as { recipient?: CartRecipient }).recipient = { mode: 'self' };
+        }
+        return persisted;
+      },
     },
   ),
 );

@@ -1481,8 +1481,36 @@ router.put(
       await broadcastOrderStatus(order.id, 'STORE_ACCEPTED');
       await sendNotification(order.customerId, 'Order Accepted', 'Your order has been accepted by the store!', { orderId: order.id });
 
-      // Trigger driver assignment
-      assignDriverForOrder(order.id).catch(console.error);
+      // Driver assignment.
+      // Single-store orders: trigger immediately as before.
+      // Multi-store group: only trigger ONCE all sibling legs in the
+      // group have transitioned past PENDING. The driver does sequential
+      // pickups for the whole group → assigning per-leg would split the
+      // basket across drivers (defeats the point). The first child that
+      // crosses the threshold queues a single assignment job using its
+      // own orderId as the seed; the matching engine then sets driverId
+      // on every sibling via the order-group service.
+      if (order.orderGroupId) {
+        const siblings = await prisma.order.findMany({
+          where: { orderGroupId: order.orderGroupId },
+          select: { id: true, status: true },
+        });
+        const allAccepted = siblings.every(
+          (s) =>
+            s.status !== 'PENDING' ||
+            // The just-accepted row reads as PENDING in this snapshot
+            // because the findMany ran in a separate query — match by id.
+            s.id === order.id,
+        );
+        if (allAccepted) {
+          assignDriverForOrder(order.id).catch(console.error);
+        }
+        // Roll up the group's status for the customer rollup.
+        const { rollUpGroupStatus } = await import('../services/order-group.service');
+        await rollUpGroupStatus(prisma, order.orderGroupId);
+      } else {
+        assignDriverForOrder(order.id).catch(console.error);
+      }
 
       return sendSuccess(res, updated, 'Order accepted');
     } catch (err) {

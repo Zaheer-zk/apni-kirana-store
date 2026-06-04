@@ -234,6 +234,11 @@ async function cascadeToBestDriver(
     where: { id: orderId },
     data: { driverId: best.driverId, status: 'DRIVER_ASSIGNED', driverAssignedAt: new Date() },
   });
+  // Multi-store group: fan the assignment to every sibling leg so the
+  // same driver handles all pickups + the single delivery. No-op for
+  // single-store orders (helper checks `orderGroupId` itself).
+  const { assignDriverToGroup } = await import('./order-group.service');
+  await assignDriverToGroup(prisma, orderId, best.driverId);
   // Cascade mode = single assignment, not broadcast. Use the templated
   // notify() so the bell row links to /deliveries/new?orderId=... (the
   // accept dialog), same as broadcast.

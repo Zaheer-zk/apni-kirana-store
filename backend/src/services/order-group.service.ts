@@ -139,6 +139,49 @@ export async function createOrderGroup(
 }
 
 /**
+ * Fan a driver assignment across every leg of a group. Called once a
+ * driver has been picked for the group (via cascade or broadcast-accept
+ * on the seed order) so every sibling leg gets the same driverId and
+ * the customer sees a single driver doing sequential pickups.
+ *
+ * Updates:
+ *   * OrderGroup.driverId
+ *   * Order.driverId + Order.driverAssignedAt on every sibling that
+ *     isn't already CANCELLED. Status flips to DRIVER_ASSIGNED for
+ *     legs still at STORE_ACCEPTED so the driver app's "pending pickup
+ *     legs" list shows everything that needs to be picked up.
+ *
+ * No-op when the seed order isn't part of a group — callers can call
+ * this unconditionally.
+ */
+export async function assignDriverToGroup(
+  tx: Tx,
+  seedOrderId: string,
+  driverId: string,
+): Promise<void> {
+  const seed = await tx.order.findUnique({
+    where: { id: seedOrderId },
+    select: { orderGroupId: true },
+  });
+  if (!seed?.orderGroupId) return;
+  await tx.orderGroup.update({
+    where: { id: seed.orderGroupId },
+    data: { driverId },
+  });
+  await tx.order.updateMany({
+    where: {
+      orderGroupId: seed.orderGroupId,
+      status: { in: ['STORE_ACCEPTED', 'COOKING'] },
+    },
+    data: {
+      driverId,
+      status: 'DRIVER_ASSIGNED',
+      driverAssignedAt: new Date(),
+    },
+  });
+}
+
+/**
  * Roll the child Order statuses up into the parent OrderGroup so the
  * customer-facing summary stays consistent. Rules:
  *   * any child PENDING  → group PENDING

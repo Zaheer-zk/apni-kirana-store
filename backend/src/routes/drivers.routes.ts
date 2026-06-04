@@ -12,6 +12,7 @@ import { generateInvoiceForOrder } from '../services/invoice.service';
 import { broadcastOrderStatus } from '../services/order-events.service';
 import { sendNewDriverAwaitingApprovalEmail } from '../services/email.service';
 import { sendWebPushToUser } from '../services/web-push.service';
+import { haversineDistance } from '../utils/geo';
 
 const router = Router();
 
@@ -267,6 +268,143 @@ router.get(
   },
 );
 
+// ─── GET /order-group/:id — driver multi-pickup rollup ────────────────────
+// Driver-side view of a multi-store basket. Returns every pickup leg the
+// driver needs to do (in route-friendly order: nearest first from their
+// current location, falling back to insertion order if no driver
+// location yet) plus the single dropoff. PII redacted: no customer
+// name/phone or full street — same privacy contract as the per-order
+// driver endpoint.
+//
+// Driver must be the one assigned to the group; otherwise 403. The
+// matching engine fans driver assignment across the group's children
+// (assignDriverToGroup in order-group.service.ts) so checking any
+// child's driverId is enough.
+
+router.get(
+  '/order-group/:id',
+  authenticate,
+  authorize('DRIVER'),
+  async (req: Request, res: Response) => {
+    try {
+      const driver = await getDriverByUser(req.user!.id);
+      if (!driver) return sendError(res, 'Driver profile not found', 404);
+
+      // Prisma's findUnique-with-include return type in this repo's
+      // tsconfig narrows away relations — explicit shape so the
+      // .orders / .deliveryAddress accesses below typecheck.
+      type GroupRow = {
+        id: string;
+        status: string;
+        driverId: string | null;
+        total: number;
+        paymentMethod: string;
+        recipientName: string | null;
+        recipientPhone: string | null;
+        deliveryAddress: {
+          lat: number;
+          lng: number;
+          label: string;
+          city: string;
+          pincode: string;
+        } | null;
+        orders: Array<{
+          id: string;
+          status: string;
+          subtotal: number;
+          pickedUpAt: Date | null;
+          items: Array<{ id: string }>;
+          store: {
+            id: string;
+            name: string;
+            lat: number;
+            lng: number;
+            city: string;
+            street: string;
+          } | null;
+        }>;
+      };
+      const group = (await prisma.orderGroup.findUnique({
+        where: { id: req.params['id'] as string },
+        include: {
+          deliveryAddress: {
+            select: { lat: true, lng: true, label: true, city: true, pincode: true },
+          },
+          orders: {
+            include: {
+              items: true,
+              store: {
+                select: { id: true, name: true, lat: true, lng: true, city: true, street: true },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      })) as unknown as GroupRow | null;
+      if (!group) return sendError(res, 'Order group not found', 404);
+      if (group.driverId !== driver.id) {
+        return sendError(res, 'This group was not assigned to you', 403);
+      }
+
+      // Order legs by proximity to the driver's current location so the
+      // sequential pickup screen reads as "nearest store first". Falls
+      // back to creation order if the driver hasn't shared a location.
+      const legs = group.orders.map((o) => ({
+        orderId: o.id,
+        status: o.status,
+        pickedUpAt: o.pickedUpAt,
+        store: o.store,
+        itemsCount: o.items.length,
+        subtotal: o.subtotal,
+      }));
+      if (driver.currentLat != null && driver.currentLng != null) {
+        const driverLat = driver.currentLat;
+        const driverLng = driver.currentLng;
+        legs.sort((a, b) => {
+          if (a.pickedUpAt && !b.pickedUpAt) return 1;
+          if (!a.pickedUpAt && b.pickedUpAt) return -1;
+          const da = haversineDistance(
+            driverLat,
+            driverLng,
+            a.store?.lat ?? 0,
+            a.store?.lng ?? 0,
+          );
+          const db = haversineDistance(
+            driverLat,
+            driverLng,
+            b.store?.lat ?? 0,
+            b.store?.lng ?? 0,
+          );
+          return da - db;
+        });
+      }
+
+      return sendSuccess(res, {
+        id: group.id,
+        status: group.status,
+        total: group.total,
+        paymentMethod: group.paymentMethod,
+        recipientName: group.recipientName,
+        recipientPhone: group.recipientPhone,
+        // Coords + label only — no street name (PII).
+        deliveryAddress: group.deliveryAddress
+          ? {
+              lat: group.deliveryAddress.lat,
+              lng: group.deliveryAddress.lng,
+              label: group.deliveryAddress.label,
+              city: group.deliveryAddress.city,
+              pincode: group.deliveryAddress.pincode,
+            }
+          : null,
+        pickupLegs: legs,
+      });
+    } catch (err) {
+      console.error('[Drivers] order-group error:', err);
+      return sendError(res, 'Failed to fetch order group', 500);
+    }
+  },
+);
+
 // ─── PUT /orders/:orderId/accept ──────────────────────────────────────────────
 
 router.put(
@@ -292,6 +430,18 @@ router.put(
         where: { id: order.id },
         data: { status: 'DRIVER_ASSIGNED' }, // status stays but driverAssignedAt is confirmed
       });
+
+      // Multi-store fan-out: if this order is part of a group, the SAME
+      // driver carries every leg (one delivery for the whole basket).
+      // Update siblings + the parent group so the driver app sees the
+      // full pickup list and the customer rollup shows one driver.
+      const { assignDriverToGroup, rollUpGroupStatus } = await import(
+        '../services/order-group.service'
+      );
+      await assignDriverToGroup(prisma, order.id, driver.id);
+      if (order.orderGroupId) {
+        await rollUpGroupStatus(prisma, order.orderGroupId);
+      }
 
       await broadcastOrderStatus(order.id, 'DRIVER_ASSIGNED', { driverId: driver.id });
       await sendNotification(
@@ -369,6 +519,15 @@ router.put(
         data: { status: 'PICKED_UP', pickedUpAt: new Date() },
       });
 
+      // Multi-store: rolling the group up keeps the customer's
+      // "X/Y pickups done" indicator in sync, and lets the customer-
+      // facing OrderGroup.status only flip to PICKED_UP once EVERY
+      // leg has been picked up (rollUpGroupStatus encodes this).
+      if (order.orderGroupId) {
+        const { rollUpGroupStatus } = await import('../services/order-group.service');
+        await rollUpGroupStatus(prisma, order.orderGroupId);
+      }
+
       await broadcastOrderStatus(order.id, 'PICKED_UP', { dropoffOtp: order.dropoffOtp });
       await sendNotification(
         order.customerId,
@@ -442,6 +601,18 @@ router.put(
         'Your order has been delivered. Enjoy!',
         { orderId: order.id },
       );
+
+      // Multi-store rollup: this child is done; if every sibling is
+      // DELIVERED too, OrderGroup.status flips to DELIVERED. (Single
+      // delivery event for the whole basket — the driver only does one
+      // physical handoff, but the per-leg orders are marked delivered
+      // independently as the driver works through the dropoff sequence.
+      // Today's UI does the whole basket at once; future "leave some
+      // here, deliver rest later" can use this rollup as-is.)
+      if (order.orderGroupId) {
+        const { rollUpGroupStatus } = await import('../services/order-group.service');
+        await rollUpGroupStatus(prisma, order.orderGroupId);
+      }
 
       // Generate the GST invoice in the background — don't block the
       // delivery-confirm response on PDF I/O. The customer can download

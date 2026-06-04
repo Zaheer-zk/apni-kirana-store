@@ -1,11 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -43,8 +47,26 @@ interface PerLeg {
   id: string;
   status: OrderStatus;
   subtotal: number;
+  pickedUpAt: string | null;
   items: Array<{ id: string; qty: number }>;
   store?: PerLegStore | null;
+}
+
+interface GroupCancelResult {
+  groupId: string;
+  cancelledLegs: string[];
+  refundRupees: number;
+}
+
+async function cancelGroupRequest(args: {
+  groupId: string;
+  reason: string;
+}): Promise<GroupCancelResult> {
+  const res = await apiClient.put<{ data: GroupCancelResult }>(
+    `/api/v1/orders/group/${args.groupId}/cancel`,
+    { reason: args.reason.trim() || 'Cancelled by customer' },
+  );
+  return res.data.data;
 }
 
 interface OrderGroupRollup {
@@ -75,11 +97,41 @@ async function fetchOrderGroup(id: string): Promise<OrderGroupRollup> {
 
 export default function OrderGroupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const queryClient = useQueryClient();
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+
   const groupQuery = useQuery({
     queryKey: ['order-group', id],
     queryFn: () => fetchOrderGroup(String(id)),
     enabled: !!id,
     refetchInterval: 15_000,
+  });
+
+  // Cancel the whole basket in one call. Backend cancels every leg
+  // that's still pre-pickup and refunds the proportional slice of
+  // the group's single deliveryFee. Already picked-up legs aren't
+  // touched — we surface the K-of-N count in the confirmation.
+  const cancelMutation = useMutation({
+    mutationFn: () =>
+      cancelGroupRequest({ groupId: String(id), reason: cancelReason }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['order-group', id] });
+      setCancelOpen(false);
+      setCancelReason('');
+      const refundLine =
+        result.refundRupees > 0
+          ? ` ₹${result.refundRupees.toFixed(0)} credited to your wallet.`
+          : '';
+      Alert.alert(
+        'Order cancelled',
+        `Cancelled ${result.cancelledLegs.length} leg(s).${refundLine}`,
+      );
+    },
+    onError: (err: unknown) => {
+      const e = err as { message?: string };
+      Alert.alert('Cancel failed', e?.message ?? 'Could not cancel the group.');
+    },
   });
 
   if (groupQuery.isLoading) {
@@ -112,6 +164,15 @@ export default function OrderGroupScreen() {
 
   const group = groupQuery.data;
   const totalRupees = `₹${group.total.toFixed(0)}`;
+  // Mirror customer-web: cancel-all is offered when at least one leg
+  // is still pre-pickup. Picked-up / delivered legs aren't touched.
+  const anyCancellable = group.orders.some(
+    (o) =>
+      o.status === OrderStatus.PENDING ||
+      o.status === OrderStatus.STORE_ACCEPTED ||
+      o.status === OrderStatus.COOKING ||
+      (o.status === OrderStatus.DRIVER_ASSIGNED && !o.pickedUpAt),
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -189,7 +250,70 @@ export default function OrderGroupScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Cancel-all — only shown when at least one leg can still be
+            cancelled. Picked-up + delivered legs are intentionally
+            skipped server-side; the confirmation copy spells that out
+            so the customer isn't surprised when the K/N count doesn't
+            match the leg total. */}
+        {anyCancellable ? (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setCancelOpen(true)}
+            style={styles.cancelBtn}
+          >
+            <Ionicons name="close-circle-outline" size={18} color={colors.error} />
+            <Text style={styles.cancelBtnText}>Cancel this order</Text>
+          </TouchableOpacity>
+        ) : null}
       </ScrollView>
+
+      <Modal
+        visible={cancelOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCancelOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Cancel this multi-store order?</Text>
+            <Text style={styles.modalBody}>
+              We'll cancel every leg that hasn't been picked up yet. The
+              proportional share of your delivery fee will be refunded to
+              your wallet. Legs the driver has already picked up can't be
+              cancelled — contact support for those.
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Reason (optional)"
+              value={cancelReason}
+              onChangeText={setCancelReason}
+              maxLength={500}
+              multiline
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                onPress={() => setCancelOpen(false)}
+                style={[styles.modalBtn, styles.modalBtnGhost]}
+                disabled={cancelMutation.isPending}
+              >
+                <Text style={styles.modalBtnGhostText}>Keep order</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => cancelMutation.mutate()}
+                style={[styles.modalBtn, styles.modalBtnDanger]}
+                disabled={cancelMutation.isPending}
+              >
+                {cancelMutation.isPending ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.modalBtnDangerText}>Cancel order</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -323,5 +447,87 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.textPrimary,
     marginTop: 2,
+  },
+  cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+  },
+  cancelBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.error,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  modalBody: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 60,
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
+    textAlignVertical: 'top',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnGhost: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalBtnGhostText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  modalBtnDanger: {
+    backgroundColor: colors.error,
+  },
+  modalBtnDangerText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.white,
   },
 });

@@ -36,6 +36,10 @@ interface Zone {
   baseDeliveryFee: number;
   perKmFee: number;
   commissionRate: number;
+  /** Subtotal threshold above which delivery is free in this zone.
+   *  0 disables the perk. Backend zeroes deliveryFee when subtotal
+   *  >= freeDeliveryThreshold && freeDeliveryThreshold > 0. */
+  freeDeliveryThreshold: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -50,6 +54,7 @@ interface ZoneFormState {
   baseDeliveryFee: string;
   perKmFee: string;
   commissionRate: string;
+  freeDeliveryThreshold: string;
   isActive: boolean;
 }
 
@@ -69,6 +74,8 @@ function emptyForm(): ZoneFormState {
     baseDeliveryFee: '',
     perKmFee: '',
     commissionRate: '',
+    // Blank = disabled; admin opts in by entering a rupee threshold.
+    freeDeliveryThreshold: '',
     isActive: true,
   };
 }
@@ -194,6 +201,13 @@ export default function ZonesPage() {
       baseDeliveryFee: Number(payload.baseDeliveryFee),
       perKmFee: Number(payload.perKmFee),
       commissionRate: Number(payload.commissionRate),
+      // Blank input means "no threshold" — send 0 so the backend
+      // disables the perk for this zone. Negative values are guarded
+      // by the validation check below.
+      freeDeliveryThreshold:
+        payload.freeDeliveryThreshold.trim() === ''
+          ? 0
+          : Number(payload.freeDeliveryThreshold),
       isActive: payload.isActive,
     };
   }
@@ -279,6 +293,12 @@ export default function ZonesPage() {
       baseDeliveryFee: String(z.baseDeliveryFee),
       perKmFee: String(z.perKmFee),
       commissionRate: String(z.commissionRate),
+      // 0 = disabled — show blank in the input so the placeholder
+      // "0 = disabled" reads as the active state.
+      freeDeliveryThreshold:
+        z.freeDeliveryThreshold && z.freeDeliveryThreshold > 0
+          ? String(z.freeDeliveryThreshold)
+          : '',
       isActive: z.isActive,
     });
     setFormError(null);
@@ -324,6 +344,17 @@ export default function ZonesPage() {
     if (Number(form.commissionRate) < 0 || Number(form.commissionRate) > 1) {
       setFormError('Commission rate must be between 0 and 1 (e.g. 0.1 for 10%).');
       return;
+    }
+
+    // freeDeliveryThreshold is OPTIONAL — blank stays blank (= disabled).
+    // When filled, must be a non-negative number; the backend caps at
+    // 100,000 so a typo doesn't lock out the perk indefinitely.
+    if (form.freeDeliveryThreshold.trim() !== '') {
+      const t = Number(form.freeDeliveryThreshold);
+      if (Number.isNaN(t) || t < 0) {
+        setFormError('Free delivery threshold must be a non-negative number (or blank to disable).');
+        return;
+      }
     }
 
     if (editing) {
@@ -396,6 +427,17 @@ export default function ZonesPage() {
         render: (z) => (
           <span className="text-gray-700 tabular-nums">
             {(z.commissionRate * 100).toFixed(1)}%
+          </span>
+        ),
+      },
+      {
+        key: 'freeDelivery',
+        header: 'Free delivery ≥',
+        render: (z) => (
+          <span className="text-gray-700 tabular-nums">
+            {z.freeDeliveryThreshold && z.freeDeliveryThreshold > 0
+              ? `₹${z.freeDeliveryThreshold.toLocaleString('en-IN')}`
+              : '—'}
           </span>
         ),
       },
@@ -659,6 +701,34 @@ export default function ZonesPage() {
                     placeholder="0.1"
                   />
                 </div>
+              </div>
+
+              {/* Free-delivery threshold — optional. When set, the backend
+                  zeroes deliveryFee for orders whose subtotal crosses
+                  this rupee amount. Blank / 0 disables the perk. */}
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Free delivery above (₹){' '}
+                  <span className="text-gray-400">— blank disables</span>
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  className="input"
+                  value={form.freeDeliveryThreshold}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      freeDeliveryThreshold: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g. 299 (subtotal ≥ ₹299 → free delivery)"
+                />
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Customer-web cart surfaces this as "Add ₹X for free
+                  delivery" / "🎉 Free delivery applied".
+                </p>
               </div>
 
               <label className="flex items-center gap-2 text-sm text-gray-700">

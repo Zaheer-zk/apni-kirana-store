@@ -130,6 +130,7 @@ model User {
 
   addresses           Address[]
   orders              Order[]              @relation("CustomerOrders")
+  orderGroups         OrderGroup[]
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   store               Store?
@@ -184,8 +185,9 @@ model Address {
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders Order[]
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders      Order[]
+  orderGroups OrderGroup[]
 }
 
 model Store {
@@ -278,6 +280,14 @@ model Order {
   driverId          String?
   orderType         OrderType     @default(CUSTOMER)
   buyerStoreId      String? // set on RESTOCK orders: the retail store that placed the order
+  // Multi-store grouping (2026-06-04). When the customer's cart spans
+  // multiple stores AND no single store can fulfil it, the order-create
+  // path creates one OrderGroup + N child Orders (one per store) sharing
+  // this orderGroupId. Single-store orders leave it null and behave
+  // exactly as before. Customer apps roll up by orderGroupId for the
+  // unified timeline; driver gets a multi-pickup sequence; admin sees
+  // per-store accept/reject. See backend/src/services/order-group.service.ts.
+  orderGroupId      String?
   status            OrderStatus   @default(PENDING)
   subtotal          Float
   deliveryFee       Float
@@ -332,10 +342,60 @@ model Order {
   deliveryAddress Address             @relation(fields: [deliveryAddressId], references: [id])
   rating          OrderRating?
   walletTxns      WalletTransaction[] @relation("OrderWalletTxns")
+  orderGroup      OrderGroup?         @relation(fields: [orderGroupId], references: [id])
 
   @@index([customerId, status])
   @@index([storeId, status])
   @@index([buyerStoreId])
+  @@index([orderGroupId])
+}
+
+// Multi-store rollup. One per user-facing "order" that spans multiple
+// stores. Carries the customer-visible aggregate (sum of children's
+// subtotals, single deliveryFee, single dropoff address) so the UI can
+// render one card per cart even though the DB has N child rows.
+//
+// Driver assignment: a SINGLE driver handles every leg of the group
+// (sequential pickups → one delivery), so driverId lives on the group
+// rather than per-child. Children inherit the driver via the group at
+// runtime to avoid sync drift.
+//
+// Why not just denormalise on Order: we'd lose the ability to track
+// per-store accept/reject deadlines and per-store COD splits cleanly.
+// A dedicated parent table keeps the per-leg lifecycle on the existing
+// Order row.
+model OrderGroup {
+  id                String        @id @default(cuid())
+  customerId        String
+  deliveryAddressId String
+  // Lifecycle: PENDING (waiting for stores) → STORES_ACCEPTED (all in) →
+  // DRIVER_ASSIGNED → PICKED_UP (driver finished last pickup) →
+  // DELIVERED. Cancelled if any child cancels and the customer chooses
+  // to abort the whole group (handled by the order-group service).
+  status            OrderStatus   @default(PENDING)
+  // Aggregated for the customer-facing summary. Each child Order still
+  // carries its own slice for per-store payouts.
+  subtotal          Float
+  deliveryFee       Float
+  total             Float
+  paymentMethod     PaymentMethod
+  paymentStatus     PaymentStatus @default(PENDING)
+  // The single driver carrying every leg of this group.
+  driverId          String?
+  // Mirrors Order.recipient* so the same dropoff contact applies to
+  // every pickup leg.
+  recipientName     String?
+  recipientPhone    String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  customer        User    @relation(fields: [customerId], references: [id])
+  deliveryAddress Address @relation(fields: [deliveryAddressId], references: [id])
+  driver          Driver? @relation(fields: [driverId], references: [id])
+  orders          Order[]
+
+  @@index([customerId, status])
+  @@index([driverId])
 }
 
 model OrderItem {
@@ -383,10 +443,11 @@ model Driver {
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
-  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders  Order[]
-  payouts Payout[]
-  zones   DriverZone[]
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders       Order[]
+  orderGroups  OrderGroup[]
+  payouts      Payout[]
+  zones        DriverZone[]
 
   @@index([currentLat, currentLng])
 }

@@ -48,6 +48,10 @@ interface PerLeg {
   status: OrderStatus;
   subtotal: number;
   pickedUpAt: string | null;
+  /** Dropoff OTP — same value across every leg in a group (set at
+   *  split-create). Customer-mobile rollup shows it once for the
+   *  whole basket; driver enters it once via the deliver-all path. */
+  dropoffOtp?: string | null;
   items: Array<{ id: string; qty: number }>;
   store?: PerLegStore | null;
   /** Per-leg rating — populated after the customer rates via
@@ -205,6 +209,33 @@ export default function OrderGroupScreen() {
             <OrderStatusBadge status={group.status} />
           </View>
         </View>
+
+        {/* Group OTP card — one delivery code for the whole basket.
+            Shown once any leg is picked up and hidden once everything
+            is delivered. Every child carries the same OTP (B-5 in the
+            2026-06-04 audit), so we just read the first leg's. */}
+        {(() => {
+          const anyPickedUp = group.orders.some((o) => o.pickedUpAt);
+          const fullyDelivered = group.orders.every(
+            (o) =>
+              o.status === OrderStatus.DELIVERED ||
+              o.status === OrderStatus.CANCELLED,
+          );
+          if (!anyPickedUp || fullyDelivered) return null;
+          const otp = group.orders.find((o) => o.dropoffOtp)?.dropoffOtp;
+          if (!otp) return null;
+          return (
+            <Card padding={spacing.lg} style={styles.otpCard}>
+              <Text style={styles.otpLabel}>
+                Your delivery code (one code for the whole basket)
+              </Text>
+              <Text style={styles.otpCode}>{otp}</Text>
+              <Text style={styles.otpHint}>
+                Share this with the driver at the door to confirm delivery.
+              </Text>
+            </Card>
+          );
+        })()}
 
         {/* Aggregate summary card */}
         <Card padding={spacing.lg}>
@@ -476,6 +507,33 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '700',
     color: colors.accent,
+  },
+  otpCard: {
+    backgroundColor: colors.primary + '10',
+    borderColor: colors.primary + '33',
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  otpLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  otpCode: {
+    marginTop: spacing.xs,
+    fontSize: 32,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: 6,
+    fontVariant: ['tabular-nums'],
+  },
+  otpHint: {
+    marginTop: spacing.xs,
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   cancelBtn: {
     flexDirection: 'row',

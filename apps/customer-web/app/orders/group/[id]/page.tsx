@@ -171,6 +171,39 @@ export default function OrderGroupPage() {
           ) : null}
         </header>
 
+        {/* Group OTP card — surfaces ONE delivery code for the whole
+            basket as soon as any leg is picked up. The customer used
+            to see N OTPs (one per leg) which was confusing; the
+            split-create path now assigns every child the same OTP so
+            this single card is the source of truth. (B-5 in the
+            2026-06-04 audit.) */}
+        {(() => {
+          const anyPickedUp = data.orders.some((o) => o.pickedUpAt);
+          const fullyDelivered = data.orders.every(
+            (o) => o.status === 'DELIVERED' || o.status === 'CANCELLED',
+          );
+          if (!anyPickedUp || fullyDelivered) return null;
+          // Every leg carries the same OTP — pull from the first one
+          // that has it.
+          const otp = data.orders.find((o) => o.dropoffOtp)?.dropoffOtp;
+          if (!otp) return null;
+          return (
+            <Card className="mb-4 border-primary/30 bg-primary/5">
+              <CardContent className="space-y-1 p-5 text-center">
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">
+                  Your delivery code (one code for the whole basket)
+                </p>
+                <p className="font-mono text-3xl font-bold tracking-widest text-gray-900">
+                  {otp}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Share this with the driver at the door to confirm delivery.
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })()}
+
         {/* Aggregate summary card — what the customer is actually paying. */}
         <Card className="mb-4">
           <CardContent className="space-y-2 p-5">

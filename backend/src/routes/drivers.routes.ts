@@ -587,6 +587,21 @@ router.put(
         return sendError(res, `Cannot confirm delivery for order with status ${order.status}`, 400);
       }
 
+      // Multi-store guard: when this leg is part of a group, force the
+      // deliver-all path (PUT /drivers/order-groups/:id/deliver). Per-
+      // leg delivery for a group would (a) leave siblings in PICKED_UP
+      // limbo and (b) ask the driver to validate the same OTP N times
+      // for one physical handoff. (B-4 / B-5 in the 2026-06-04 audit.)
+      if (order.orderGroupId) {
+        return sendError(
+          res,
+          'This order is part of a multi-store basket — call /drivers/order-groups/' +
+            order.orderGroupId +
+            '/deliver to complete every leg at once.',
+          409,
+        );
+      }
+
       // Privacy verification: driver must enter the 4-digit dropoffOtp shown
       // in the customer's app. This avoids exposing customer phone to driver.
       const submittedOtp = (req.body?.dropoffOtp as string | undefined)?.trim();
@@ -648,6 +663,155 @@ router.put(
     } catch (err) {
       console.error('[Drivers] deliver error:', err);
       return sendError(res, 'Failed to confirm delivery', 500);
+    }
+  },
+);
+
+// ─── PUT /order-groups/:id/deliver — atomic multi-store delivery ──────────
+// The driver does ONE physical handoff at the customer's door for a
+// multi-store basket. This endpoint atomically marks every PICKED_UP
+// leg DELIVERED in a single transaction so the driver doesn't have
+// to click "Confirm delivery" N times (B-4) and isn't asked to
+// remember N OTPs (B-5 — every child carries the same dropoffOtp set
+// at split-create time, so we validate once).
+//
+// Refuses when:
+//   - the requester isn't the assigned driver
+//   - any non-cancelled leg isn't yet PICKED_UP (handoff is premature)
+//   - the OTP doesn't match
+//
+// On success: every leg flips to DELIVERED + paymentStatus PAID (for
+// COD; ONLINE stays as-is per the per-order rule), driver earnings
+// credit the SUM of every leg's deliveryFee (which is zero on legs
+// since the group carries the fee — so we use OrderGroup.deliveryFee
+// directly), per-leg invoices generate, group status rolls up to
+// DELIVERED.
+
+router.put(
+  '/order-groups/:id/deliver',
+  authenticate,
+  authorize('DRIVER'),
+  requireApproved,
+  async (req: Request, res: Response) => {
+    try {
+      const driver = await getDriverByUser(req.user!.id);
+      if (!driver) return sendError(res, 'Driver profile not found', 404);
+
+      const groupId = req.params['id'] as string;
+      const group = await prisma.orderGroup.findUnique({
+        where: { id: groupId },
+        include: {
+          orders: {
+            select: {
+              id: true,
+              status: true,
+              driverId: true,
+              dropoffOtp: true,
+              paymentMethod: true,
+              customerId: true,
+            },
+          },
+        },
+      });
+      if (!group) return sendError(res, 'Order group not found', 404);
+      if (group.driverId !== driver.id) {
+        return sendError(res, 'This group was not assigned to you', 403);
+      }
+
+      const live = group.orders.filter((o) => o.status !== 'CANCELLED');
+      if (live.length === 0) {
+        return sendError(res, 'All legs in this group are cancelled', 400);
+      }
+      const notReady = live.filter((o) => o.status !== 'PICKED_UP');
+      if (notReady.length > 0) {
+        return sendError(
+          res,
+          `Cannot deliver yet — ${notReady.length} leg(s) are not picked up.`,
+          400,
+        );
+      }
+
+      // Single OTP across the group (set at split-create — see
+      // orders.routes.ts:groupDropoffOtp). Pull from the first leg and
+      // assert every other leg matches; if not, the data's corrupted
+      // and we should refuse rather than partially deliver.
+      const expectedOtp = live[0]!.dropoffOtp;
+      if (!live.every((o) => o.dropoffOtp === expectedOtp)) {
+        return sendError(
+          res,
+          'Group OTP mismatch across legs — contact support',
+          500,
+        );
+      }
+      const submittedOtp = (req.body?.dropoffOtp as string | undefined)?.trim();
+      if (expectedOtp) {
+        if (!submittedOtp) {
+          return sendError(res, 'Dropoff OTP required to confirm delivery', 400);
+        }
+        if (submittedOtp !== expectedOtp) {
+          return sendError(res, 'Incorrect dropoff OTP', 400);
+        }
+      }
+
+      const now = new Date();
+      // Driver earnings = the group's single deliveryFee (legs carry
+      // 0 each — the fee lives on the parent).
+      const driverEarning = group.deliveryFee;
+
+      await prisma.$transaction(async (tx) => {
+        await tx.order.updateMany({
+          where: { orderGroupId: groupId, status: 'PICKED_UP' },
+          data: {
+            status: 'DELIVERED',
+            deliveredAt: now,
+          },
+        });
+        // COD legs flip to PAID; ONLINE legs stay PENDING (settled
+        // separately via the existing payment hook). We do this in a
+        // second pass so we can target only COD legs.
+        await tx.order.updateMany({
+          where: {
+            orderGroupId: groupId,
+            status: 'DELIVERED',
+            paymentMethod: 'CASH_ON_DELIVERY',
+          },
+          data: { paymentStatus: 'PAID' },
+        });
+        await tx.driver.update({
+          where: { id: driver.id },
+          data: { totalEarnings: { increment: driverEarning } },
+        });
+        const { rollUpGroupStatus } = await import(
+          '../services/order-group.service'
+        );
+        await rollUpGroupStatus(tx, groupId);
+      });
+
+      // Customer-facing notifications + per-leg status broadcasts +
+      // invoice generation happen outside the transaction so a slow
+      // PDF render doesn't block the response.
+      const customerId = live[0]!.customerId;
+      await sendNotification(
+        customerId,
+        'Order Delivered',
+        'Your multi-store order has been delivered. Enjoy!',
+        { orderId: live[0]!.id, orderGroupId: groupId },
+      );
+      for (const leg of live) {
+        await broadcastOrderStatus(leg.id, 'DELIVERED').catch(() => undefined);
+        generateInvoiceForOrder(leg.id).catch((err) => {
+          console.warn('[Drivers] invoice generation failed for', leg.id, err);
+        });
+      }
+
+      return sendSuccess(
+        res,
+        { groupId, deliveredLegs: live.length, earning: driverEarning },
+        'Group delivered',
+      );
+    } catch (err) {
+      console.error('[Drivers] group deliver error:', err);
+      return sendError(res, 'Failed to confirm group delivery', 500);
     }
   },
 );

@@ -246,9 +246,19 @@ function ActiveDelivery({ orderId }: { orderId: string }) {
     onError: (err: Error) => toast.error(err.message || 'Failed to confirm pickup'),
   });
 
+  // Deliver mutation. When the active order is part of a multi-store
+  // group, we MUST hit /order-groups/:id/deliver instead of the
+  // per-order endpoint — the per-order endpoint now 409s on grouped
+  // legs to force the all-at-once path. (B-4 + B-5 in the 2026-06-04
+  // audit.) The mutation transparently picks the right URL based on
+  // `detailQuery.data.orderGroupId`.
   const deliverMutation = useMutation({
     mutationFn: async (dropoffOtp?: string) => {
-      const r = await api.put(`/api/v1/drivers/orders/${orderId}/deliver`, {
+      const groupId = detailQuery.data?.orderGroupId;
+      const url = groupId
+        ? `/api/v1/drivers/order-groups/${groupId}/deliver`
+        : `/api/v1/drivers/orders/${orderId}/deliver`;
+      const r = await api.put(url, {
         ...(dropoffOtp ? { dropoffOtp } : {}),
       });
       return r.data;
@@ -558,12 +568,38 @@ function ActiveDelivery({ orderId }: { orderId: string }) {
                 onAdvance={() => setCheckpoint('AT_CUSTOMER')}
                 disabled={order.status !== 'PICKED_UP'}
               />
+              {/* Multi-store gate: when this order is part of a
+                  group, the deliver step requires EVERY sibling to be
+                  picked up first. The backend's deliver-all endpoint
+                  enforces this too (returns 400), but we surface the
+                  gate in the UI so the driver doesn't get a confusing
+                  error toast when they tap too early. */}
               <FlowStep
-                label="Mark delivered"
+                label={
+                  order.orderGroupId
+                    ? (() => {
+                        const total = groupQuery.data?.pickupLegs.length ?? 0;
+                        const pickedUp =
+                          groupQuery.data?.pickupLegs.filter((l) => l.pickedUpAt).length ?? 0;
+                        return total > 0 && pickedUp < total
+                          ? `Mark delivered (${pickedUp}/${total} legs picked up)`
+                          : 'Mark all delivered';
+                      })()
+                    : 'Mark delivered'
+                }
                 done={false}
                 active={checkpoint === 'AT_CUSTOMER' && order.status === 'PICKED_UP'}
                 onAdvance={() => setOtpDialogOpen(true)}
-                disabled={order.status !== 'PICKED_UP' || deliverMutation.isPending}
+                disabled={
+                  order.status !== 'PICKED_UP' ||
+                  deliverMutation.isPending ||
+                  // Block on any sibling that's not yet picked up.
+                  !!(
+                    order.orderGroupId &&
+                    groupQuery.data &&
+                    groupQuery.data.pickupLegs.some((l) => !l.pickedUpAt)
+                  )
+                }
                 loading={deliverMutation.isPending}
                 actionIcon={<PackageCheck className="h-4 w-4" />}
               />

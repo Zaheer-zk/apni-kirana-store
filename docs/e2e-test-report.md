@@ -97,8 +97,8 @@ This is **B-2**, the highest-severity bug in the audit.
 | B-1 | P3 minor | admin catalog backfill `ToastState` shape | Fixed |
 | B-2 | **P1 broken** | driver-mobile notification tap → 404 | Fixed |
 | B-3 | P3 minor | customer-mobile rollup missing rating chip | Fixed |
-| B-4 | P2 UX    | multi-store: N per-leg deliver clicks | Documented; deferred to follow-up sprint (needs UX design) |
-| B-5 | P2 UX    | multi-store: N customer-facing OTPs | Documented; deferred |
+| B-4 | P2 UX    | multi-store: N per-leg deliver clicks | Fixed |
+| B-5 | P2 UX    | multi-store: N customer-facing OTPs | Fixed |
 | B-6 | P3 race  | split-order OrderItem name/unit post-pass | Fixed |
 | B-7 | P2 UX    | checkout navigates to leg not group on split | Fixed |
 
@@ -149,37 +149,54 @@ and render the same chip pattern.
 
 **Files:** `apps/customer/app/order/group/[id].tsx`
 
-### B-4 · multi-store: N per-leg deliver clicks (P2, DEFERRED)
+### B-4 · multi-store: N per-leg deliver clicks (P2, FIXED)
 
 **Issue:** Driver does ONE physical handoff at the customer's door,
-but the driver app requires `PUT /drivers/orders/:id/deliver` to be
+but the driver app required `PUT /drivers/orders/:id/deliver` to be
 called per leg. Driver could forget a leg → it stays at PICKED_UP
 status forever.
 
-**Why deferred:** This needs a UX design decision. Options:
-- "Deliver all" button that loops the deliver endpoint, asking OTP once
-- New backend endpoint `PUT /drivers/order-groups/:id/deliver`
-  that atomically delivers every PICKED_UP leg
-- Auto-deliver siblings when the LAST leg is delivered
+**Fix:** New backend endpoint
+`PUT /api/v1/drivers/order-groups/:id/deliver { dropoffOtp }` that:
+- verifies the requester is the assigned driver
+- refuses (400) if any non-cancelled leg isn't yet PICKED_UP
+- validates the OTP once
+- atomically marks every PICKED_UP leg DELIVERED + sets
+  paymentStatus=PAID on COD legs + credits the driver the GROUP's
+  delivery fee (not per-leg, since legs carry 0)
+- rolls the group status up
+- broadcasts per-leg DELIVERED + generates per-leg invoices outside
+  the transaction
 
-Picking one without product input would be premature. Documented
-here so it's in the punch list.
+Per-leg endpoint `PUT /drivers/orders/:id/deliver` now 409s on
+grouped legs to force callers into the atomic path — driver-web
+and driver-mobile both auto-switch URLs based on `orderGroupId`.
 
-### B-5 · multi-store: N customer-facing OTPs (P2, DEFERRED)
+Driver-mobile dashboard's "Confirm Delivery" button title flips
+based on group state:
+- single-store → "Confirm Delivery"
+- group with X/Y picked up → "Pick up the remaining N leg(s) first"
+  (disabled)
+- group with all picked up → "Deliver all N legs" (active)
 
-**Issue:** Each child Order has its own `dropoffOtp`. Customer sees
-different OTPs on different legs. Driver must enter the right OTP
+Driver-web's FlowStep does the same — disabled until every sibling
+is picked up.
+
+### B-5 · multi-store: N customer-facing OTPs (P2, FIXED)
+
+**Issue:** Each child Order had its own `dropoffOtp`. Customer saw
+different OTPs on different legs. Driver had to enter the right OTP
 per leg → user confusion.
 
-**Why deferred:** Fixing properly means either:
-- Backend: copy a single OTP to every child in a group at create
-  time (drops per-leg OTP uniqueness — fine)
-- UI: customer rollup shows ONE OTP (the first leg's) marked as
-  "single delivery code"
+**Fix:** Multi-store split-create now generates ONE OTP and copies
+it to every child Order's `dropoffOtp`. Customer-web + customer-
+mobile rollup screens show a single big OTP card labelled "one code
+for the whole basket" once any leg is picked up. Driver enters the
+single OTP via the deliver-all endpoint (B-4 fix).
 
-Trivial backend change but coordinates with the B-4 fix (the
-"deliver-all" path would naturally take one OTP). Fixing both in
-the same sprint is cleaner; deferring this with B-4.
+The shared-OTP endpoint also defensively asserts the OTPs match
+across legs — if data corruption ever produced a group with
+mismatched OTPs, it 500s instead of partially delivering.
 
 ### B-6 · split-order OrderItem name/unit post-pass (P3, FIXED)
 
@@ -223,8 +240,12 @@ for single-store orders.
 | B-1 | `setToast` now includes `id: Date.now()`  | `apps/admin/app/(dashboard)/catalog/page.tsx` |
 | B-2 | Replaced `router.push('/order/${id}')` with `setActiveOrder(id) + push('/(tabs)/dashboard')` on both notification tap paths | `apps/driver/app/_layout.tsx`, `apps/driver/app/notifications/index.tsx` |
 | B-3 | `PerLeg.rating?` typed + emerald/amber chip rendered on each delivered row | `apps/customer/app/order/group/[id].tsx` |
+| B-4 | New `PUT /api/v1/drivers/order-groups/:id/deliver` endpoint, per-leg deliver 409s on grouped legs, driver UIs auto-switch URL + disable until all picked up | `backend/src/routes/drivers.routes.ts`, `apps/driver-web/app/deliveries/[id]/page.tsx`, `apps/driver/components/DropoffOtpSheet.tsx`, `apps/driver/app/(tabs)/dashboard.tsx` |
+| B-5 | Single OTP generated once at split-create + copied to every child; customer rollup (web + mobile) shows ONE big OTP card "one code for the whole basket" | `backend/src/routes/orders.routes.ts`, `apps/customer-web/app/orders/group/[id]/page.tsx`, `apps/customer/app/order/group/[id].tsx` |
 | B-6 | Pre-fetch CatalogItem display fields BEFORE the transaction; OrderItem `create` carries real name/unit/imageUrl up-front; post-pass deleted | `backend/src/routes/orders.routes.ts` |
 | B-7 | `createOrder` return type widened to surface `orderGroupId`; web + mobile success handlers branch to `/orders/group/{id}` for splits, `/orders/{id}` for single-store | `apps/customer-web/lib/orders.ts`, `apps/customer-web/app/checkout/page.tsx`, `apps/customer/app/cart.tsx` |
+
+Test coverage for the new endpoint: `__tests__/order-group-deliver.test.ts` (4 tests — happy path, partial-pickup 400, wrong-OTP 400, wrong-driver 403, per-leg 409 on grouped legs).
 
 Type-check verification per app after fixes:
 

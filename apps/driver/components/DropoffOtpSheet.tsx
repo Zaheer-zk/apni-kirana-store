@@ -17,6 +17,14 @@ import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 
 interface Props {
   orderId: string;
+  /**
+   * Set when the active order is one leg of a multi-store group. The
+   * verify mutation switches to PUT /drivers/order-groups/:id/deliver
+   * which atomically delivers every PICKED_UP leg with the SAME OTP
+   * (B-4 + B-5 in the 2026-06-04 audit — every child carries the
+   * same dropoffOtp set at split-create).
+   */
+  orderGroupId?: string | null;
   visible: boolean;
   onClose: () => void;
   onSuccess: () => void;
@@ -24,7 +32,7 @@ interface Props {
 
 const OTP_LENGTH = 4;
 
-export function DropoffOtpSheet({ orderId, visible, onClose, onSuccess }: Props) {
+export function DropoffOtpSheet({ orderId, orderGroupId, visible, onClose, onSuccess }: Props) {
   const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [error, setError] = useState<string | null>(null);
   const inputs = useRef<Array<TextInput | null>>([]);
@@ -43,12 +51,20 @@ export function DropoffOtpSheet({ orderId, visible, onClose, onSuccess }: Props)
     return undefined;
   }, [visible]);
 
-  // Backend contract: PUT /drivers/orders/:id/deliver with { dropoffOtp }
+  // Backend contract:
+  //   single store leg  → PUT /drivers/orders/:id/deliver
+  //   multi-store group → PUT /drivers/order-groups/:id/deliver
+  // Same { dropoffOtp } body. Switching at the URL level keeps the OTP
+  // UI identical between the two cases — customer sees one code, driver
+  // enters it once. The grouped path delivers every PICKED_UP leg
+  // atomically.
   const verifyMutation = useMutation({
-    mutationFn: (dropoffOtp: string) =>
-      api
-        .put(`/api/v1/drivers/orders/${orderId}/deliver`, { dropoffOtp })
-        .then((r) => r.data),
+    mutationFn: (dropoffOtp: string) => {
+      const url = orderGroupId
+        ? `/api/v1/drivers/order-groups/${orderGroupId}/deliver`
+        : `/api/v1/drivers/orders/${orderId}/deliver`;
+      return api.put(url, { dropoffOtp }).then((r) => r.data);
+    },
     onSuccess: () => {
       setError(null);
       onSuccess();

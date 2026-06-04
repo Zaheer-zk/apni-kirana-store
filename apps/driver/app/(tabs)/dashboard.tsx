@@ -564,15 +564,35 @@ export default function DashboardScreen() {
               />
             </View>
 
-            <Button
-              variant="success"
-              size="lg"
-              icon="lock-open"
-              title="Confirm Delivery"
-              fullWidth
-              onPress={() => setOtpSheetVisible(true)}
-              style={styles.actionGap}
-            />
+            {/* Multi-store: block the deliver button until every
+                sibling pickup is done. The backend's deliver-all
+                endpoint refuses with 400 otherwise; surfacing the
+                gate up here saves the driver a confusing toast.
+                Title flips so the driver sees "X/Y picked up" while
+                blocked, then "Deliver all (N legs)" once unblocked. */}
+            {(() => {
+              const isGroup = !!activeOrder.orderGroupId && !!orderGroup;
+              const total = orderGroup?.pickupLegs.length ?? 0;
+              const pickedUp = orderGroup?.pickupLegs.filter((l) => l.pickedUpAt).length ?? 0;
+              const blocked = isGroup && pickedUp < total;
+              const title = !isGroup
+                ? 'Confirm Delivery'
+                : blocked
+                  ? `Pick up the remaining ${total - pickedUp} leg(s) first`
+                  : `Deliver all ${total} legs`;
+              return (
+                <Button
+                  variant="success"
+                  size="lg"
+                  icon="lock-open"
+                  title={title}
+                  fullWidth
+                  disabled={blocked}
+                  onPress={() => setOtpSheetVisible(true)}
+                  style={styles.actionGap}
+                />
+              );
+            })()}
           </Card>
         )}
 
@@ -610,10 +630,15 @@ export default function DashboardScreen() {
       {/* Incoming Order Modal */}
       {incomingOrderId && <IncomingOrderModal orderId={incomingOrderId} />}
 
-      {/* OTP Sheet for delivery confirmation */}
+      {/* OTP Sheet for delivery confirmation. When the active order
+          is part of a multi-store group, the sheet posts to the
+          deliver-all endpoint with the SAME single OTP so every leg
+          is delivered atomically. The customer's app shows one code
+          for the whole basket. */}
       {activeOrder && (
         <DropoffOtpSheet
           orderId={activeOrder.id}
+          orderGroupId={activeOrder.orderGroupId ?? null}
           visible={otpSheetVisible}
           onClose={() => setOtpSheetVisible(false)}
           onSuccess={handleOtpSuccess}

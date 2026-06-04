@@ -543,6 +543,14 @@ router.post(
             });
             const catalogById = new Map(catalogRows.map((c) => [c.id, c]));
 
+            // ONE OTP for the whole group: the driver does a single
+            // physical handoff at the customer's door, so the customer
+            // shouldn't have to juggle N codes (one per store). Every
+            // child Order carries the same dropoffOtp; the deliver-all
+            // endpoint validates once and atomically delivers every
+            // leg. (B-5 in the 2026-06-04 audit.)
+            const groupDropoffOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
             const createdOrders = await prisma.$transaction(async (tx) => {
               const group = await createOrderGroup(tx, {
                 customerId: req.user!.id,
@@ -556,7 +564,7 @@ router.post(
               });
               const out: Array<{ id: string; storeId: string }> = [];
               for (const leg of legs) {
-                const dropoffOtp = Math.floor(1000 + Math.random() * 9000).toString();
+                const dropoffOtp = groupDropoffOtp;
                 const child = await tx.order.create({
                   data: {
                     customerId: req.user!.id,

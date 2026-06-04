@@ -2393,6 +2393,56 @@ router.put('/orders/:id/refund', async (req: Request, res: Response) => {
   }
 });
 
+// ─── Catalog image backfill ───────────────────────────────────────────────
+// Admin-triggered: fills CatalogItem.imageUrl for rows that don't have an
+// image yet (the seed list omits images so most catalog rows start blank).
+// See backend/src/services/catalog-images.service.ts for the strategy
+// (Open Food Facts → placehold.co fallback). Long-running on large
+// catalogs because we throttle requests to be polite to OFF — typical
+// run is 200 items × 250ms = ~50s. The endpoint streams the summary
+// list back so the admin UI can render per-row results.
+
+const catalogBackfillSchema = z.object({
+  force: z.boolean().optional(),
+  limit: z.number().int().min(1).max(1000).optional(),
+});
+
+router.post(
+  '/catalog/backfill-images',
+  validate(catalogBackfillSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const { backfillCatalogImages } = await import(
+        '../services/catalog-images.service'
+      );
+      const results = await backfillCatalogImages({
+        force: req.body?.force === true,
+        limit: typeof req.body?.limit === 'number' ? req.body.limit : undefined,
+      });
+      await prisma.auditLog
+        .create({
+          data: {
+            actorId: req.user?.id ?? null,
+            action: 'CATALOG_BACKFILL_IMAGES',
+            targetType: 'CatalogItem',
+            targetId: 'bulk',
+            after: {
+              count: results.length,
+              fromOff: results.filter((r) => r.source === 'openfoodfacts').length,
+              fromPlaceholder: results.filter((r) => r.source === 'placeholder').length,
+              skipped: results.filter((r) => r.source === 'skipped').length,
+            },
+          },
+        })
+        .catch(() => undefined);
+      return sendSuccess(res, { results, total: results.length });
+    } catch (err) {
+      console.error('[Admin] catalog backfill error:', err);
+      return sendError(res, 'Failed to backfill catalog images', 500);
+    }
+  },
+);
+
 // ─── Zones (delivery configuration) ───────────────────────────────────────────
 
 // Whitelist the fields admins may set on Zone. Without this, POST/PUT used

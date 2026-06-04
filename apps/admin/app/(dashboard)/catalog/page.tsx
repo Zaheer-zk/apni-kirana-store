@@ -14,6 +14,7 @@ import {
   Package,
   CheckCircle2,
   AlertCircle,
+  ImagePlus,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import DataTable, { Column } from '@/components/DataTable';
@@ -131,6 +132,41 @@ export default function CatalogPage() {
   const [toast, setToast] = useState<ToastState | null>(null);
 
   const queryClient = useQueryClient();
+
+  // Catalog image backfill — for the bulk action button in the header.
+  // The endpoint walks rows missing an imageUrl, tries Open Food Facts
+  // first, then falls back to a tinted placeholder PNG. Runtime scales
+  // linearly with `limit` × the per-row OFF throttle (~250 ms), so we
+  // keep a single in-flight mutation and surface a spinner on the
+  // button. Result counts go into the toast.
+  const backfillImagesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post<{
+        success: boolean;
+        data: {
+          total: number;
+          results: Array<{ source: string }>;
+        };
+      }>('/api/v1/admin/catalog/backfill-images', { limit: 200 });
+      return res.data.data!;
+    },
+    onSuccess: (data) => {
+      const fromOff = data.results.filter((r) => r.source === 'openfoodfacts').length;
+      const fromPlaceholder = data.results.filter((r) => r.source === 'placeholder').length;
+      queryClient.invalidateQueries({ queryKey: ['admin-catalog'] });
+      setToast({
+        type: 'success',
+        message: `Backfilled ${data.total} items (${fromOff} real photos · ${fromPlaceholder} placeholders).`,
+      });
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: { message?: string } } } };
+      setToast({
+        type: 'error',
+        message: e?.response?.data?.error?.message ?? 'Could not backfill images.',
+      });
+    },
+  });
 
   // Reset to page 1 when filters change
   useEffect(() => {
@@ -403,10 +439,26 @@ export default function CatalogPage() {
             {!isLoading && ` • ${total.toLocaleString('en-IN')} ${total === 1 ? 'item' : 'items'}`}
           </p>
         </div>
-        <button onClick={openCreateModal} className="btn-primary">
-          <Plus className="mr-1.5 h-4 w-4" />
-          Add catalog item
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => backfillImagesMutation.mutate()}
+            disabled={backfillImagesMutation.isPending}
+            className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+            title="Fill in product photos for catalog items that don't have one yet"
+          >
+            {backfillImagesMutation.isPending ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <ImagePlus className="mr-1.5 h-4 w-4" />
+            )}
+            Backfill images
+          </button>
+          <button onClick={openCreateModal} className="btn-primary">
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add catalog item
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

@@ -495,6 +495,29 @@ export default function OrderDetailPage({
         </div>
       </div>
 
+      {/* Multi-store rollup banner — this order is one leg of a basket
+          that spans multiple stores. Admin needs the group view to
+          coordinate rescue / payout / driver assignment across legs. */}
+      {(data as { orderGroupId?: string | null }).orderGroupId ? (
+        <Link
+          href={`/orders/group/${(data as { orderGroupId?: string | null }).orderGroupId}`}
+          className="card flex items-center justify-between gap-3 border-blue-200 bg-blue-50 p-4 transition hover:bg-blue-100 sm:p-5"
+        >
+          <div>
+            <p className="font-semibold text-blue-900">
+              Part of a multi-store order
+            </p>
+            <p className="mt-0.5 text-xs text-blue-800">
+              This is one leg of a basket fulfilled by multiple stores. Open
+              the group view to coordinate across all legs.
+            </p>
+          </div>
+          <span className="text-sm font-semibold text-blue-700">
+            View group →
+          </span>
+        </Link>
+      ) : null}
+
       {/* Rescue banner — shown when an order was auto-cancelled by the
           matching engine (e.g. no store accepted in time). Admin can fix it
           by manually assigning a store from the list further down. */}

@@ -22,6 +22,10 @@ interface OrderRow {
   itemCount: number;
   orderType: string;
   buyerStoreName: string | null;
+  /** Non-null when this row is one leg of a multi-store basket. Drives
+   *  the "Multi" pill in the Order ID column so ops can spot grouped
+   *  rows at a glance. */
+  orderGroupId: string | null;
 }
 
 interface OrdersResponse {
@@ -107,6 +111,7 @@ export default function OrdersPage() {
           itemCount: o._count?.items ?? o.items?.length ?? 0,
           orderType: o.orderType ?? 'CUSTOMER',
           buyerStoreName: o.buyerStore?.name ?? null,
+          orderGroupId: (o as { orderGroupId?: string | null }).orderGroupId ?? null,
         })),
         total: res.data?.data?.total ?? 0,
         pages: res.data?.data?.pages ?? 1,
@@ -130,6 +135,14 @@ export default function OrdersPage() {
           {o.orderType === 'RESTOCK' && (
             <span className="shrink-0 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
               Restock
+            </span>
+          )}
+          {o.orderGroupId && (
+            <span
+              className="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 ring-1 ring-blue-200"
+              title="One leg of a multi-store basket"
+            >
+              Multi
             </span>
           )}
         </div>

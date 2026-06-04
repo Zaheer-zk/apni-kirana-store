@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '@/components/EmptyState';
 import { Skeleton } from '@/components/Skeleton';
 import { api } from '@/lib/api';
+import { useDriverStore } from '@/store/driver.store';
 import { colors, fontSize, spacing } from '@/constants/theme';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -264,7 +265,12 @@ export default function NotificationsScreen() {
           ? (item.data.orderId as string)
           : undefined;
       if (orderId) {
-        router.push(`/order/${orderId}`);
+        // Driver mobile has no /order/[id] route — the dashboard owns
+        // the active-order surface. Flip activeOrderId in the store
+        // and navigate to /(tabs)/dashboard so the order card shows
+        // up. (B-2 in the 2026-06-04 audit.)
+        useDriverStore.getState().setActiveOrder(orderId);
+        router.push('/(tabs)/dashboard');
       }
     },
     [markReadMutation]

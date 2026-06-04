@@ -154,7 +154,10 @@ export default function CatalogPage() {
       const fromOff = data.results.filter((r) => r.source === 'openfoodfacts').length;
       const fromPlaceholder = data.results.filter((r) => r.source === 'placeholder').length;
       queryClient.invalidateQueries({ queryKey: ['admin-catalog'] });
+      // ToastState requires an id (see line 104) so the auto-dismiss
+      // timer can key off it. Date.now() matches the rest of the page.
       setToast({
+        id: Date.now(),
         type: 'success',
         message: `Backfilled ${data.total} items (${fromOff} real photos · ${fromPlaceholder} placeholders).`,
       });
@@ -162,6 +165,7 @@ export default function CatalogPage() {
     onError: (err: unknown) => {
       const e = err as { response?: { data?: { error?: { message?: string } } } };
       setToast({
+        id: Date.now(),
         type: 'error',
         message: e?.response?.data?.error?.message ?? 'Could not backfill images.',
       });

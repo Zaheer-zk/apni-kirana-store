@@ -50,6 +50,10 @@ interface PerLeg {
   pickedUpAt: string | null;
   items: Array<{ id: string; qty: number }>;
   store?: PerLegStore | null;
+  /** Per-leg rating — populated after the customer rates via
+   *  POST /orders/:id/rate. Drives the "✓ N★ / Tap to rate" chip
+   *  next to the store name on the rollup row. */
+  rating?: { id: string; storeRating: number; driverRating: number | null } | null;
 }
 
 interface GroupCancelResult {
@@ -245,6 +249,19 @@ export default function OrderGroupScreen() {
                   {leg.items.length} item{leg.items.length === 1 ? '' : 's'} ·
                   ₹{leg.subtotal.toFixed(0)}
                 </Text>
+                {/* Rating affordance per leg — mirrors customer-web. The
+                    tap-row navigation already lands on the per-leg
+                    detail page (where the existing rate form lives), so
+                    the chip is informational + a CTA hint. */}
+                {leg.status === OrderStatus.DELIVERED ? (
+                  leg.rating ? (
+                    <Text style={styles.ratingChipDone}>
+                      ✓ Rated {leg.rating.storeRating}★
+                    </Text>
+                  ) : (
+                    <Text style={styles.ratingChipTodo}>Tap to rate</Text>
+                  )
+                ) : null}
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </TouchableOpacity>
@@ -447,6 +464,18 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.textPrimary,
     marginTop: 2,
+  },
+  ratingChipDone: {
+    marginTop: 4,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.success,
+  },
+  ratingChipTodo: {
+    marginTop: 4,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.accent,
   },
   cancelBtn: {
     flexDirection: 'row',

@@ -198,9 +198,15 @@ export interface CreateOrderInput {
   recipientPhone?: string;
 }
 
-export async function createOrder(input: CreateOrderInput): Promise<CustomerOrder> {
+export async function createOrder(
+  input: CreateOrderInput,
+): Promise<CustomerOrder & { orderGroupId?: string | null }> {
   const res = await api.post('/api/v1/orders', input);
-  return unwrap<CustomerOrder>(res.data);
+  // Multi-store responses carry `orderGroupId` at the root next to
+  // `id` (= first leg's id). The widened return type lets the
+  // checkout success handler navigate to the rollup screen instead
+  // of the first leg's detail page (B-7 in the 2026-06-04 audit).
+  return unwrap<CustomerOrder & { orderGroupId?: string | null }>(res.data);
 }
 
 export async function cancelOrder(id: string, reason: string): Promise<CustomerOrder> {

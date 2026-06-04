@@ -526,6 +526,23 @@ router.post(
               }
             }
 
+            // Pre-fetch catalog display fields (name/defaultUnit/imageUrl)
+            // for every catalog id in the split BEFORE we open the
+            // transaction. Otherwise we'd create OrderItem rows with
+            // name='' / unit='' and patch them after the create — which
+            // raced with the store-side matching jobs that queue
+            // immediately after the transaction commits (B-6 in the
+            // 2026-06-04 audit). Doing it up-front means the store's
+            // "new order" notification renders with real item names.
+            const allCatalogIds = legs.flatMap((leg) =>
+              leg.items.map((l) => l.fresh.catalogItemId),
+            );
+            const catalogRows = await prisma.catalogItem.findMany({
+              where: { id: { in: allCatalogIds } },
+              select: { id: true, name: true, defaultUnit: true, imageUrl: true },
+            });
+            const catalogById = new Map(catalogRows.map((c) => [c.id, c]));
+
             const createdOrders = await prisma.$transaction(async (tx) => {
               const group = await createOrderGroup(tx, {
                 customerId: req.user!.id,
@@ -559,48 +576,25 @@ router.post(
                     recipientPhone: recipientPhone ?? null,
                     dropoffOtp,
                     items: {
-                      create: leg.items.map((l) => ({
-                        itemId: l.fresh.id,
-                        name: '', // populated below from catalogItem
-                        price: l.customerUnit,
-                        unit: '',
-                        qty: l.qty,
-                        imageUrl: null,
-                      })),
+                      create: leg.items.map((l) => {
+                        const cat = catalogById.get(l.fresh.catalogItemId);
+                        return {
+                          itemId: l.fresh.id,
+                          name: cat?.name ?? '',
+                          price: l.customerUnit,
+                          unit: cat?.defaultUnit ?? '',
+                          qty: l.qty,
+                          imageUrl: cat?.imageUrl ?? null,
+                        };
+                      }),
                     },
                   },
-                  select: { id: true, storeId: true, items: true },
+                  select: { id: true, storeId: true },
                 });
                 out.push({ id: child.id, storeId: leg.store.id });
               }
               return { group, orders: out };
             });
-
-            // Populate item name/unit/imageUrl after the create — we
-            // need the catalogItem join which is awkward inside the
-            // create. Cheap follow-up update.
-            for (const o of createdOrders.orders) {
-              const legPlan = legs.find((l) => l.store.id === o.storeId)!;
-              const orderItems = await prisma.orderItem.findMany({
-                where: { orderId: o.id },
-              });
-              for (const oi of orderItems) {
-                const match = legPlan.items.find((l) => l.fresh.id === oi.itemId);
-                if (!match) continue;
-                const cat = await prisma.catalogItem.findUnique({
-                  where: { id: match.fresh.catalogItemId },
-                  select: { name: true, defaultUnit: true, imageUrl: true },
-                });
-                await prisma.orderItem.update({
-                  where: { id: oi.id },
-                  data: {
-                    name: cat?.name ?? oi.name,
-                    unit: cat?.defaultUnit ?? oi.unit,
-                    imageUrl: cat?.imageUrl ?? null,
-                  },
-                });
-              }
-            }
 
             // Queue matching for each child independently so each store
             // accepts/rejects on its own deadline.

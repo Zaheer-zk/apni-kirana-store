@@ -89,8 +89,15 @@ function RootLayoutNav() {
           router.push(`/chat/${data.orderId}`);
           return;
         }
+        // Driver mobile has no /order/[id] route — the active order
+        // surfaces on the dashboard tab via the Zustand-backed
+        // `activeOrderId`. Pushing to a non-existent route used to
+        // hand the driver a blank screen on every offer notification
+        // tap (B-2 in the 2026-06-04 audit). Flip the active order
+        // and bounce to the dashboard instead.
         if (typeof data?.orderId === 'string') {
-          router.push(`/order/${data.orderId}`);
+          useDriverStore.getState().setActiveOrder(data.orderId);
+          router.push('/(tabs)/dashboard');
         }
       },
     });

@@ -169,7 +169,16 @@ export default function CartScreen() {
     mutationFn: placeOrderRequest,
     onSuccess: (order) => {
       clearCart();
-      router.replace(`/order/${order.id}`);
+      // Multi-store split: response carries orderGroupId. Land on the
+      // rollup so the customer sees every leg at once. Single-store
+      // orders fall through to the existing per-order detail. (B-7
+      // in the 2026-06-04 audit; mirrors customer-web.)
+      const groupId = (order as { orderGroupId?: string | null }).orderGroupId;
+      if (groupId) {
+        router.replace(`/order/group/${groupId}` as never);
+      } else {
+        router.replace(`/order/${order.id}`);
+      }
     },
     onError: (err: unknown) => {
       const message = err instanceof Error ? err.message : 'Failed to place order';

@@ -140,7 +140,16 @@ export default function CheckoutPage() {
     onSuccess: (order) => {
       clearCart();
       toast.success('Order placed!');
-      router.push(`/orders/${order.id}`);
+      // Multi-store split: response carries orderGroupId. Land on the
+      // rollup so the customer sees every leg at once — the per-leg
+      // detail at /orders/{id} only shows one slice of their basket.
+      // Single-store orders have no orderGroupId → fall through to
+      // the existing per-order detail. (B-7 in the 2026-06-04 audit.)
+      if (order.orderGroupId) {
+        router.push(`/orders/group/${order.orderGroupId}`);
+      } else {
+        router.push(`/orders/${order.id}`);
+      }
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Could not place order'),
   });

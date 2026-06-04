@@ -2,8 +2,17 @@
 
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, MapPin, Store as StoreIcon, Truck } from 'lucide-react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  ArrowLeft,
+  ArrowRight,
+  IndianRupee,
+  Loader2,
+  MapPin,
+  Store as StoreIcon,
+  Truck,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
 import type { OrderStatus } from '@aks/shared';
@@ -63,6 +72,8 @@ interface OrderGroupRollup {
 export default function AdminOrderGroupPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const queryClient = useQueryClient();
+  const [codToast, setCodToast] = useState<string | null>(null);
 
   const groupQuery = useQuery<OrderGroupRollup>({
     queryKey: ['admin-order-group', id],
@@ -74,6 +85,37 @@ export default function AdminOrderGroupPage() {
     },
     enabled: !!id,
     refetchInterval: 15_000,
+  });
+
+  // Group-level COD settlement — flips codCollected on every leg at
+  // once. The driver hands over ONE lump sum at the door for the
+  // group's full total; settling per-leg would force the admin to
+  // reconcile N times for the same cash drop. See backend handler at
+  // PUT /api/v1/admin/order-groups/:id/cod-collected.
+  const settleCodMutation = useMutation({
+    mutationFn: async (collected: boolean) => {
+      const res = await api.put<{ success: boolean; data: { settledLegs: number } }>(
+        `/api/v1/admin/order-groups/${id}/cod-collected`,
+        { collected },
+      );
+      return res.data.data;
+    },
+    onSuccess: (data, collected) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-order-group', id] });
+      setCodToast(
+        collected
+          ? `COD settled across ${data?.settledLegs ?? 0} legs.`
+          : 'COD un-settled.',
+      );
+      setTimeout(() => setCodToast(null), 3500);
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: { message?: string } } } };
+      setCodToast(
+        e?.response?.data?.error?.message ?? 'Could not update COD status.',
+      );
+      setTimeout(() => setCodToast(null), 4500);
+    },
   });
 
   if (groupQuery.isLoading) {
@@ -101,6 +143,13 @@ export default function AdminOrderGroupPage() {
 
   const group = groupQuery.data;
   const pickedUp = group.orders.filter((o) => !!o.pickedUpAt).length;
+  const isCod = group.paymentMethod === 'CASH_ON_DELIVERY';
+  const allDelivered =
+    group.orders.length > 0 &&
+    group.orders
+      .filter((o) => o.status !== 'CANCELLED')
+      .every((o) => o.status === 'DELIVERED');
+  const codSettled = isCod && group.paymentStatus === 'PAID';
 
   return (
     <div className="space-y-5">
@@ -142,6 +191,60 @@ export default function AdminOrderGroupPage() {
           icon={<Truck className="h-4 w-4 text-primary" />}
         />
       </div>
+
+      {/* COD settlement (multi-store) — one button reconciles cash across
+          every leg because the driver collected the group total as ONE
+          lump sum at the door. Disabled until every non-cancelled leg
+          is DELIVERED. Hidden for non-COD groups. */}
+      {isCod ? (
+        <div
+          className={`card flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 ${
+            codSettled
+              ? 'border-emerald-200 bg-emerald-50'
+              : allDelivered
+                ? 'border-amber-200 bg-amber-50'
+                : ''
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <IndianRupee className="mt-0.5 h-5 w-5 flex-shrink-0 text-gray-600" />
+            <div>
+              <p className="font-semibold text-gray-900">
+                Cash on delivery — group total ₹{group.total.toFixed(0)}
+              </p>
+              <p className="mt-0.5 text-xs text-gray-600">
+                {codSettled
+                  ? 'Driver has handed in the cash. Per-store payouts now include each leg.'
+                  : allDelivered
+                    ? 'Driver delivered all legs. Settle when the cash drop is reconciled.'
+                    : `Will be settleable after all ${group.orders.length} legs are delivered (${group.orders.filter((o) => o.status === 'DELIVERED').length}/${group.orders.length} done).`}
+              </p>
+              {codToast ? (
+                <p className="mt-1 text-xs font-semibold text-primary-700">
+                  {codToast}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={
+              settleCodMutation.isPending ||
+              (!codSettled && !allDelivered)
+            }
+            onClick={() => settleCodMutation.mutate(!codSettled)}
+            className="btn-primary text-sm disabled:opacity-50"
+          >
+            {settleCodMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : codSettled ? (
+              'Un-settle'
+            ) : (
+              'Mark COD settled'
+            )}
+          </button>
+        </div>
+      ) : null}
 
       {/* Recipient + dropoff */}
       <div className="card p-4 sm:p-5">

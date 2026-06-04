@@ -1053,6 +1053,86 @@ router.put('/orders/:id/cod-collected', async (req: Request, res: Response) => {
   }
 });
 
+// ─── PUT /order-groups/:id/cod-collected — group-level COD settlement ─────
+// For multi-store baskets the driver collects ONE lump sum from the
+// customer at the door (= group.total) and the platform owes each
+// participating store its own slice. This endpoint flips
+// codCollected=true on every CHILD order in the group, stamping
+// codCollectedAt on each, so the existing per-store payout query
+// (SUM of subtotal on delivered+settled orders) picks up every leg
+// uniformly. Idempotent — re-running is a no-op for already-settled
+// legs.
+router.put('/order-groups/:id/cod-collected', async (req: Request, res: Response) => {
+  try {
+    const groupId = req.params['id'] as string;
+    const collected = req.body?.collected !== false; // default true
+
+    const group = await prisma.orderGroup.findUnique({
+      where: { id: groupId },
+      include: { orders: { select: { id: true, status: true, paymentMethod: true } } },
+    });
+    if (!group) return sendError(res, 'Order group not found', 404);
+    if (group.paymentMethod !== 'CASH_ON_DELIVERY') {
+      return sendError(
+        res,
+        'COD settlement only applies to CASH_ON_DELIVERY groups',
+        400,
+      );
+    }
+    // Every child should be DELIVERED before we accept cash settlement.
+    // Cancelled children are skipped (driver never picked them up from
+    // that store, so there's no cash to attribute).
+    const live = group.orders.filter((o) => o.status !== 'CANCELLED');
+    const allDelivered = live.every((o) => o.status === 'DELIVERED');
+    if (collected && !allDelivered) {
+      return sendError(
+        res,
+        'Cannot settle COD until every leg in the group is delivered',
+        400,
+      );
+    }
+
+    const now = new Date();
+    await prisma.$transaction([
+      prisma.order.updateMany({
+        where: {
+          orderGroupId: groupId,
+          paymentMethod: 'CASH_ON_DELIVERY',
+          status: 'DELIVERED',
+        },
+        data: {
+          codCollected: collected,
+          codCollectedAt: collected ? now : null,
+        },
+      }),
+      prisma.orderGroup.update({
+        where: { id: groupId },
+        data: { paymentStatus: collected ? 'PAID' : 'PENDING' },
+      }),
+    ]);
+
+    await prisma.auditLog
+      .create({
+        data: {
+          actorId: req.user?.id ?? null,
+          action: collected ? 'GROUP_COD_SETTLED' : 'GROUP_COD_UNSETTLED',
+          targetType: 'OrderGroup',
+          targetId: groupId,
+        },
+      })
+      .catch(() => undefined);
+
+    return sendSuccess(
+      res,
+      { groupId, collected, settledLegs: live.length },
+      collected ? 'Group COD marked collected on every leg' : 'Group COD un-marked',
+    );
+  } catch (err) {
+    console.error('[Admin] group-cod-collected error:', err);
+    return sendError(res, 'Failed to update group COD status', 500);
+  }
+});
+
 // GET /drivers/:id/cod-outstanding — list of delivered COD orders this
 // driver hasn't handed cash over for yet, with totals.
 router.get('/drivers/:id/cod-outstanding', async (req: Request, res: Response) => {

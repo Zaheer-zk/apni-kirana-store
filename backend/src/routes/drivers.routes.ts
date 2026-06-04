@@ -346,9 +346,12 @@ router.get(
         return sendError(res, 'This group was not assigned to you', 403);
       }
 
-      // Order legs by proximity to the driver's current location so the
-      // sequential pickup screen reads as "nearest store first". Falls
-      // back to creation order if the driver hasn't shared a location.
+      // Order legs to minimise the driver's total trip distance. We
+      // split into picked-up (already done — stays at the front in
+      // chronological order) and remaining (route-optimised via TSP).
+      // Picked-up legs at the top let the driver glance at "what's
+      // done" without scrolling; the remaining legs are presented in
+      // the order they should actually visit.
       const legs = group.orders.map((o) => ({
         orderId: o.id,
         status: o.status,
@@ -357,26 +360,45 @@ router.get(
         itemsCount: o.items.length,
         subtotal: o.subtotal,
       }));
-      if (driver.currentLat != null && driver.currentLng != null) {
+      if (
+        driver.currentLat != null &&
+        driver.currentLng != null &&
+        group.deliveryAddress
+      ) {
+        const { optimizePickupOrder } = await import(
+          '../services/route-optimizer.service'
+        );
         const driverLat = driver.currentLat;
         const driverLng = driver.currentLng;
-        legs.sort((a, b) => {
-          if (a.pickedUpAt && !b.pickedUpAt) return 1;
-          if (!a.pickedUpAt && b.pickedUpAt) return -1;
-          const da = haversineDistance(
-            driverLat,
-            driverLng,
-            a.store?.lat ?? 0,
-            a.store?.lng ?? 0,
-          );
-          const db = haversineDistance(
-            driverLat,
-            driverLng,
-            b.store?.lat ?? 0,
-            b.store?.lng ?? 0,
-          );
-          return da - db;
+        const dropoffLat = group.deliveryAddress.lat;
+        const dropoffLng = group.deliveryAddress.lng;
+        const pickedUp = legs.filter((l) => l.pickedUpAt);
+        const remaining = legs
+          .filter((l) => !l.pickedUpAt && l.store?.lat != null && l.store?.lng != null)
+          .map((l) => ({
+            ...l,
+            lat: l.store!.lat!,
+            lng: l.store!.lng!,
+          }));
+        const { order: optimised } = optimizePickupOrder({
+          driverLat,
+          driverLng,
+          pickups: remaining.map((r) => ({ id: r.orderId, lat: r.lat, lng: r.lng })),
+          dropoffLat,
+          dropoffLng,
         });
+        // Re-map the optimised id sequence back to the rich leg rows.
+        const remainingById = new Map(remaining.map((r) => [r.orderId, r]));
+        const orderedRemaining = optimised
+          .map((p) => remainingById.get(p.id))
+          .filter((x): x is (typeof remaining)[number] => !!x)
+          // Drop the lat/lng helper fields before returning to the client.
+          .map(({ lat: _lat, lng: _lng, ...rest }) => {
+            void _lat; void _lng;
+            return rest;
+          });
+        legs.length = 0;
+        legs.push(...pickedUp, ...orderedRemaining);
       }
 
       return sendSuccess(res, {

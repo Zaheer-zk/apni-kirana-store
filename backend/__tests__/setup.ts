@@ -78,14 +78,41 @@ async function truncateAll(): Promise<void> {
   );
 }
 
+// Track whether the DB is reachable for the current worker. Some test
+// files are pure-unit (route-optimizer, etc.) and don't need Postgres
+// at all — they explicitly mock the prisma module. If those run in an
+// environment without a test DB (CI for unit-only suites, a laptop
+// without docker compose up), we should NOT crash every test with an
+// AggregateError out of execSync('prisma migrate deploy'). Soft-fail
+// here and let the per-test mocks do their job.
+let dbAvailable = true;
+
 beforeAll(async () => {
-  await applyMigrations();
-  // Establish initial connections.
-  await prisma.$connect();
+  try {
+    await applyMigrations();
+    await prisma.$connect();
+  } catch (err) {
+    dbAvailable = false;
+    // Surface once so integration-test runs without a DB still see the
+    // problem at the top of the output, but don't repeat per-test.
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[test setup] DB unavailable — integration tests will be skipped, ' +
+        'pure-unit tests will continue.',
+      (err as Error).message,
+    );
+  }
 });
 
 beforeEach(async () => {
-  await truncateAll();
+  if (dbAvailable) {
+    try {
+      await truncateAll();
+    } catch {
+      // Connection died mid-suite — flip the flag so we don't retry.
+      dbAvailable = false;
+    }
+  }
   // Flush only the configured Redis DB (we use index 1 for tests).
   try {
     await redis.flushdb();

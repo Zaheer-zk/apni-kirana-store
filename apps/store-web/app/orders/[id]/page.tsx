@@ -89,6 +89,15 @@ interface OrderDetailExtra extends OrderDetail {
   // Set when a restaurant transitions from STORE_ACCEPTED → COOKING; surfaces
   // the cooking-state badge on the order detail screen.
   cookingStartedAt?: string | null;
+  /** Multi-store group context. Set only when this order is one leg of a
+   *  multi-store basket. Counts-only by design — we don't leak sibling
+   *  store names to competitors who are in the same basket. */
+  groupContext?: {
+    orderGroupId: string;
+    totalLegs: number;
+    acceptedLegs: number;
+    deliveredLegs: number;
+  } | null;
   // The order's store is included in the join with category so we can branch
   // the UI for hotels/restaurants (cooking step, different copy).
   store?: { id: string; name: string; lat: number; lng: number; category?: string };
@@ -311,6 +320,30 @@ function OrderDetailInner() {
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <strong>New order awaiting your acceptance.</strong> You have a few minutes before it
           re-broadcasts to other stores. Review the items below and decide.
+        </div>
+      ) : null}
+
+      {/* Multi-store group context — surfaces "this is one leg of a
+          basket the customer also placed with other stores" so the
+          operator understands why their slice is smaller than the
+          customer total. Counts-only: we don't leak sibling store
+          names to competitors who happen to be in the same basket. */}
+      {order.groupContext ? (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <strong>Part of a multi-store basket</strong>{' '}
+          <span className="text-blue-700">
+            · 1 of {order.groupContext.totalLegs} stores ·{' '}
+            {order.groupContext.acceptedLegs}/{order.groupContext.totalLegs}{' '}
+            accepted ·{' '}
+            {order.groupContext.deliveredLegs}/{order.groupContext.totalLegs}{' '}
+            delivered
+          </span>
+          <p className="mt-1 text-xs text-blue-700">
+            The customer placed this order across multiple stores. One driver
+            will pick up from each store and deliver everything together —
+            your slice is independent of the others, so accept or reject
+            based on YOUR inventory only.
+          </p>
         </div>
       ) : null}
 

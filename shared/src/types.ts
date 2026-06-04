@@ -382,6 +382,19 @@ export interface OrderDetail {
   store?: { id: string; name: string; lat: number; lng: number } | null;
   createdAt: string;
   statusTimeline?: OrderStatusEvent[];
+  /**
+   * Multi-store basket context — populated only when this order is one
+   * leg of an OrderGroup. Counts-only (no sibling store names) by
+   * design: we don't leak competitors to a store that happens to be
+   * in the same basket. Store-portal / store-web render a "1 of N
+   * stores" banner so the operator understands their slice context.
+   */
+  groupContext?: {
+    orderGroupId: string;
+    totalLegs: number;
+    acceptedLegs: number;
+    deliveredLegs: number;
+  } | null;
 }
 
 /**

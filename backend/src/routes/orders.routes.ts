@@ -1425,7 +1425,33 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
       });
     }
 
-    return sendSuccess(res, orderWithEta);
+    // Group context for multi-store baskets — surfaces "you're one of 3
+    // legs" on store-portal / store-web without leaking sibling store
+    // names. Counts only; the store owner doesn't need to know which
+    // competitors are in the same basket. Customer + admin already see
+    // the full rollup via /orders/group/:id.
+    let groupContext: {
+      orderGroupId: string;
+      totalLegs: number;
+      acceptedLegs: number;
+      deliveredLegs: number;
+    } | null = null;
+    if (order.orderGroupId) {
+      const siblings = await prisma.order.findMany({
+        where: { orderGroupId: order.orderGroupId },
+        select: { status: true },
+      });
+      groupContext = {
+        orderGroupId: order.orderGroupId,
+        totalLegs: siblings.length,
+        acceptedLegs: siblings.filter((s) =>
+          ['STORE_ACCEPTED', 'COOKING', 'DRIVER_ASSIGNED', 'PICKED_UP', 'DELIVERED'].includes(s.status),
+        ).length,
+        deliveredLegs: siblings.filter((s) => s.status === 'DELIVERED').length,
+      };
+    }
+
+    return sendSuccess(res, { ...orderWithEta, groupContext });
   } catch (err) {
     console.error('[Orders] get error:', err);
     return sendError(res, 'Failed to fetch order', 500);

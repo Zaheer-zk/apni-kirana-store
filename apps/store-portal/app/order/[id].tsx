@@ -227,6 +227,27 @@ export default function OrderDetailScreen() {
         </Text>
       </View>
 
+      {/* Multi-store basket context — surfaces "you're one of N stores
+          fulfilling this customer's basket". Counts-only on purpose;
+          competitor store names aren't disclosed. */}
+      {order.groupContext ? (
+        <View style={styles.groupBanner}>
+          <Text style={styles.groupBannerTitle}>
+            Part of a multi-store basket · 1 of {order.groupContext.totalLegs} stores
+          </Text>
+          <Text style={styles.groupBannerMeta}>
+            {order.groupContext.acceptedLegs}/{order.groupContext.totalLegs} accepted
+            {' · '}
+            {order.groupContext.deliveredLegs}/{order.groupContext.totalLegs} delivered
+          </Text>
+          <Text style={styles.groupBannerCopy}>
+            One driver picks up from each store and delivers everything to the
+            customer together. Decide on YOUR slice based on your inventory —
+            the other legs are independent.
+          </Text>
+        </View>
+      ) : null}
+
       {/* Items */}
       <Text style={styles.sectionTitle}>Items</Text>
       <Card padding={spacing.lg} style={{ marginBottom: spacing.lg }}>
@@ -597,6 +618,31 @@ const styles = StyleSheet.create({
   errorText: { color: colors.error, fontSize: fontSize.md, marginTop: spacing.md, fontWeight: '600' },
 
   orderHeader: { marginBottom: spacing.lg, gap: spacing.sm },
+  groupBanner: {
+    backgroundColor: colors.primary + '12', // soft tint of primary
+    borderColor: colors.primary + '33',
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    gap: 4,
+  },
+  groupBannerTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  groupBannerMeta: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  groupBannerCopy: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 4,
+    lineHeight: 16,
+  },
   orderHeaderTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',

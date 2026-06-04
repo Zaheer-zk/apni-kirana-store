@@ -74,6 +74,32 @@ interface DriverOrder {
   deliveryFee?: number;
   paymentMethod: string;
   paymentStatus?: string;
+  /** Set when this is one leg of a multi-store basket. Triggers the
+   *  multi-pickup leg list panel — same data model + UI idiom as
+   *  driver-web. */
+  orderGroupId?: string | null;
+}
+
+interface PickupLeg {
+  orderId: string;
+  status: string;
+  pickedUpAt: string | null;
+  subtotal: number;
+  itemsCount: number;
+  store?: {
+    id?: string;
+    name?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+    city?: string | null;
+    street?: string | null;
+  } | null;
+}
+
+interface OrderGroupDetail {
+  id: string;
+  status: string;
+  pickupLegs: PickupLeg[];
 }
 
 interface ApiEnvelope<T> {
@@ -129,6 +155,24 @@ export default function DashboardScreen() {
       return (r.data?.data ?? (r.data as unknown)) as DriverOrder;
     },
     enabled: !!activeOrderId,
+    refetchInterval: 15_000,
+  });
+
+  // Multi-store sibling fetch — only fired when the active order is one
+  // leg of a group. Surfaces the full pickup sequence so the driver
+  // knows every store they need to visit before the single delivery.
+  // Refetches on the same cadence as the active order so "X/Y done"
+  // tracks as siblings flip status.
+  const groupId = activeOrder?.orderGroupId ?? null;
+  const { data: orderGroup } = useQuery<OrderGroupDetail>({
+    queryKey: ['driver-active-group', groupId],
+    enabled: !!groupId,
+    queryFn: async () => {
+      const r = await api.get<ApiEnvelope<OrderGroupDetail>>(
+        `/api/v1/drivers/order-group/${groupId}`,
+      );
+      return (r.data?.data ?? (r.data as unknown)) as OrderGroupDetail;
+    },
     refetchInterval: 15_000,
   });
 
@@ -301,6 +345,76 @@ export default function DashboardScreen() {
             </Text>
           </Card>
         )}
+
+        {/* Multi-store pickup list — only when the active order is one
+            leg of a group. Sits above the per-leg cards so the driver
+            sees the full sequence first. Each row links via setActiveOrder
+            so tapping a sibling makes that the focused leg without
+            navigating away from the dashboard. */}
+        {orderGroup && orderGroup.pickupLegs.length > 1 ? (
+          <Card style={styles.activeCard}>
+            <View style={styles.activeHeader}>
+              <Badge
+                variant="primary"
+                text={`MULTI-PICKUP · ${orderGroup.pickupLegs.filter((l) => l.pickedUpAt).length}/${orderGroup.pickupLegs.length} DONE`}
+              />
+            </View>
+            {orderGroup.pickupLegs.map((leg, idx) => {
+              const isCurrent = leg.orderId === activeOrder?.id;
+              const isDone = !!leg.pickedUpAt;
+              return (
+                <TouchableOpacity
+                  key={leg.orderId}
+                  activeOpacity={0.7}
+                  disabled={isCurrent}
+                  onPress={() => setActiveOrder(leg.orderId)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: spacing.sm,
+                    borderTopWidth: idx === 0 ? 0 : 1,
+                    borderTopColor: colors.border,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: fontSize.md,
+                      fontWeight: '700',
+                      color: isCurrent ? colors.primary : colors.textPrimary,
+                      width: 24,
+                    }}
+                  >
+                    {idx + 1}.
+                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: fontSize.md,
+                        fontWeight: '600',
+                        color: isCurrent ? colors.primary : colors.textPrimary,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {leg.store?.name ?? 'Store'}
+                      {isCurrent ? '  • You\'re here' : ''}
+                    </Text>
+                    <Text style={styles.legMeta}>
+                      {leg.itemsCount} item{leg.itemsCount === 1 ? '' : 's'} · {leg.store?.city ?? '—'}
+                    </Text>
+                  </View>
+                  {isDone ? (
+                    <Text style={styles.legDone}>✓ Picked up</Text>
+                  ) : !isCurrent ? (
+                    <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+            <Text style={styles.legFooter}>
+              Pick up from each store, then deliver everything in one go.
+            </Text>
+          </Card>
+        ) : null}
 
         {/* Active delivery — DRIVER_ASSIGNED (go to store) */}
         {activeOrder && isAtStore && (
@@ -618,6 +732,21 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     fontWeight: '800',
     color: colors.textPrimary,
+  },
+  legMeta: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  legDone: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.success,
+  },
+  legFooter: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
   },
 
   addrBlock: {

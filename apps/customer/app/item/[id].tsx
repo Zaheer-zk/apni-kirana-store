@@ -21,6 +21,8 @@ import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 import {
   ItemCategory,
   ItemCategoryLabels,
+  estimateOrderEta,
+  formatEtaWindow,
   type InventoryItem,
   type StoreProfile,
 } from '@aks/shared';
@@ -196,7 +198,17 @@ export default function ItemDetailScreen() {
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
               <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.metaText}>20-30 min</Text>
+              {/* Pre-assignment estimate using the shared ETA helper.
+                  When a driver is later assigned, the order detail
+                  screen swaps to the order's exact etaMinutes (which
+                  accounts for the driver's vehicle + pickup leg). */}
+              <Text style={styles.metaText}>
+                {typeof distanceKm === 'number'
+                  ? formatEtaWindow(
+                      estimateOrderEta({ deliveryKm: distanceKm }).totalMinutes,
+                    )
+                  : '20-30 min'}
+              </Text>
             </View>
             <View style={styles.metaItem}>
               <Ionicons name="star" size={16} color={colors.accent} />

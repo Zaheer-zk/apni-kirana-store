@@ -15,10 +15,20 @@ export function distance(km?: number | null): string | null {
   return `${km.toFixed(1)} km`;
 }
 
-/** ETA window from a distance estimate. Returns "20-30 min" style string. */
+import { estimateOrderEta, formatEtaWindow } from '@aks/shared';
+
+/**
+ * Pre-assignment ETA window from a delivery distance. Returns
+ * "20-30 min" style string. Driver vehicle is unknown at discovery
+ * time, so the shared estimator falls back to SCOOTER + 5min slack
+ * (see shared/src/eta.ts).
+ *
+ * Post-assignment (order detail screen) should use the order's own
+ * `etaMinutes` field — that's computed against the real driver's
+ * vehicle and current location.
+ */
 export function etaWindow(km?: number | null): string {
   if (km == null || !isFinite(km)) return '20-30 min';
-  // 12 km/h average city scooter speed → minutes = km * 5; +10 min prep.
-  const base = Math.max(10, Math.round(km * 5));
-  return `${base}-${base + 10} min`;
+  const eta = estimateOrderEta({ deliveryKm: km });
+  return formatEtaWindow(eta.totalMinutes);
 }

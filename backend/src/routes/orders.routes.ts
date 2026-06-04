@@ -1061,13 +1061,56 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
         items: true,
         store: { select: { id: true, name: true, lat: true, lng: true } },
         customer: { select: { id: true, name: true, phone: true } },
-        driver: { include: { user: { select: { name: true, phone: true } } } },
+        // vehicleType is needed for the ETA estimate below.
+        driver: {
+          include: {
+            user: { select: { name: true, phone: true } },
+          },
+        },
         deliveryAddress: true,
         rating: true,
       },
     });
 
     if (!order) return sendError(res, 'Order not found', 404);
+
+    // ── ETA estimate (single source of truth: shared/src/eta.ts) ─────────
+    // Pre-assignment: only the delivery leg is known → pre-assignment
+    // window (default SCOOTER + 5min slack).
+    // Post-assignment: driver lat/lng + vehicle are known → tight 3-leg
+    // total (pickup + prep + delivery, vehicle-aware).
+    // DELIVERED orders surface 0 — keeps the UI from showing a stale
+    // "≈ 20 min" once the order is on the customer's table.
+    const { estimateOrderEta } = await import('@aks/shared');
+    let etaMinutes: number | null = null;
+    if (order.status !== 'DELIVERED' && order.status !== 'CANCELLED' && order.store) {
+      const deliveryKm = order.deliveryAddress
+        ? haversineDistance(
+            order.store.lat,
+            order.store.lng,
+            order.deliveryAddress.lat,
+            order.deliveryAddress.lng,
+          )
+        : 0;
+      let pickupKm: number | null = null;
+      let vehicle: 'BIKE' | 'SCOOTER' | 'CAR' | 'BICYCLE' | 'ON_FOOT' | null = null;
+      if (order.driver?.currentLat != null && order.driver?.currentLng != null) {
+        pickupKm = haversineDistance(
+          order.driver.currentLat,
+          order.driver.currentLng,
+          order.store.lat,
+          order.store.lng,
+        );
+        vehicle = order.driver.vehicleType as typeof vehicle;
+      }
+      const eta = estimateOrderEta({
+        pickupKm,
+        deliveryKm,
+        driverVehicle: vehicle,
+      });
+      etaMinutes = eta.totalMinutes;
+    }
+    const orderWithEta = { ...order, etaMinutes };
 
     // Verify access
     const { id: userId, role } = req.user!;
@@ -1085,7 +1128,7 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
     // Privacy: drivers must NOT see customer name/phone or driver-side dropoffOtp.
     // They see: pickup store + items + dropoff coords + total + payment method.
     if (role === 'DRIVER') {
-      const { customer, dropoffOtp: _hidden, ...rest } = order as unknown as Record<string, unknown> & {
+      const { customer, dropoffOtp: _hidden, ...rest } = orderWithEta as unknown as Record<string, unknown> & {
         customer?: unknown;
         dropoffOtp?: unknown;
       };
@@ -1106,7 +1149,7 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
       });
     }
 
-    return sendSuccess(res, order);
+    return sendSuccess(res, orderWithEta);
   } catch (err) {
     console.error('[Orders] get error:', err);
     return sendError(res, 'Failed to fetch order', 500);

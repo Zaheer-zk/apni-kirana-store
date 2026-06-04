@@ -163,4 +163,60 @@ router.put('/me/preferences', authenticate, async (req: Request, res: Response) 
   }
 });
 
+// ─── GET /recipient-lookup ────────────────────────────────────────────────
+// Used by the "order for someone else" cart flow: the customer enters the
+// recipient's phone, and we tell the UI whether that number already has a
+// Quick Easy Mart account so the cart can either offer to deliver to one
+// of the recipient's saved addresses (if they're already a user and have
+// consented to that — see below), or fall through to collecting a one-off
+// address inline.
+//
+// Privacy guardrails
+// ------------------
+// We deliberately DO NOT return any saved address rows for the recipient,
+// even when they exist. Two reasons:
+//   1. The recipient may not want their home address exposed to anyone
+//      who knows their phone number — that's a doxxing vector.
+//   2. The cart flow works fine without it: the sender can confirm the
+//      address with the recipient out-of-band and enter it themselves.
+//
+// So this endpoint returns ONLY a boolean "exists" + the recipient's name
+// (so the UI can show "Sending to Ramesh" instead of just the phone).
+// Name is already considered low-sensitivity (it's printed on every
+// invoice). If we later add an "address-sharing opt-in" toggle to user
+// preferences, we can expand this response — but the default must stay
+// closed.
+
+const recipientLookupSchema = z.object({
+  phone: z.string().regex(/^\d{10}$/, 'Phone must be a 10-digit number'),
+});
+
+router.get('/recipient-lookup', authenticate, async (req: Request, res: Response) => {
+  try {
+    const parsed = recipientLookupSchema.safeParse({ phone: req.query['phone'] });
+    if (!parsed.success) {
+      return sendError(res, parsed.error.issues[0]?.message ?? 'Invalid phone', 400);
+    }
+    const { phone } = parsed.data;
+    // Don't allow looking up your own phone — that's just self-checkout,
+    // not "for someone else". Saves the UI from a degenerate case.
+    if (req.user?.phone === phone) {
+      return sendSuccess(res, { exists: false, isSelf: true, name: null });
+    }
+    const found = await prisma.user.findFirst({
+      where: { phone, role: 'CUSTOMER' },
+      select: { name: true },
+    });
+    return sendSuccess(res, {
+      exists: !!found,
+      isSelf: false,
+      // Name is the only PII we expose — see header comment.
+      name: found?.name ?? null,
+    });
+  } catch (err) {
+    console.error('[Users] recipient-lookup error:', err);
+    return sendError(res, 'Failed to look up recipient', 500);
+  }
+});
+
 export default router;

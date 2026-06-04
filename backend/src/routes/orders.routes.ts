@@ -41,7 +41,23 @@ const createOrderSchema = z.object({
       }),
     )
     .min(1),
-  deliveryAddressId: z.string().cuid(),
+  // Either `deliveryAddressId` (existing address owned by the customer)
+  // or `recipientAddress` (inline one-off address for "order for someone
+  // else") must be provided. We auto-create the Address row when an
+  // inline payload arrives so the order's deliveryAddressId FK stays
+  // consistent — see the handler below.
+  deliveryAddressId: z.string().cuid().optional(),
+  recipientAddress: z
+    .object({
+      label: z.string().trim().min(1).max(50),
+      street: z.string().trim().min(1).max(200),
+      city: z.string().trim().min(1).max(80),
+      state: z.string().trim().min(1).max(80),
+      pincode: z.string().regex(/^\d{6}$/, 'Pincode must be 6 digits'),
+      lat: z.number().min(-90).max(90),
+      lng: z.number().min(-180).max(180),
+    })
+    .optional(),
   paymentMethod: z.nativeEnum(PaymentMethod),
   notes: z.string().max(500).optional(),
   promoCode: z.string().optional(),
@@ -73,6 +89,28 @@ const createRestockSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+// Cart-side preview: "given THIS dropoff lat/lng, can we fulfill THIS
+// cart, which store would handle it, and what's the ETA + fees?" Used by
+// the customer-web cart screen the moment the recipient address is set,
+// so we can warn the user about unavailable items / out-of-zone delivery
+// BEFORE the checkout button is hit.
+const previewOrderSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        // Either storeItemId (mode 1) OR catalogItemId (mode 2). Same shape
+        // as createOrderSchema so the cart payload can be reused verbatim.
+        storeItemId: z.string().cuid().optional(),
+        catalogItemId: z.string().cuid().optional(),
+        qty: z.number().int().positive(),
+      }),
+    )
+    .min(1),
+  // Recipient pickup point — drives zone lookup, store selection and ETA.
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
+
 const rejectOrderSchema = z.object({
   reason: z.string().min(1).max(500),
 });
@@ -97,15 +135,63 @@ router.post(
   validate(createOrderSchema),
   async (req: Request, res: Response) => {
     try {
-      const { items, deliveryAddressId, paymentMethod, notes, recipientName, recipientPhone } = req.body as z.infer<
-        typeof createOrderSchema
-      >;
+      const {
+        items,
+        deliveryAddressId,
+        recipientAddress: recipientAddressPayload,
+        paymentMethod,
+        notes,
+        recipientName,
+        recipientPhone,
+      } = req.body as z.infer<typeof createOrderSchema>;
 
-      // Validate delivery address belongs to user
-      const address = await prisma.address.findFirst({
-        where: { id: deliveryAddressId, userId: req.user!.id },
-      });
-      if (!address) return sendError(res, 'Delivery address not found', 404);
+      // Exactly one of (deliveryAddressId, recipientAddress) must be set.
+      // - deliveryAddressId → existing self/saved address path.
+      // - recipientAddress  → "order for someone else" inline path:
+      //   we auto-create an Address row owned by the buying customer
+      //   (so the Order.deliveryAddressId FK is consistent) labelled
+      //   "For <recipientName>" if available. Address is NOT marked
+      //   default — the customer's own default stays untouched.
+      if (deliveryAddressId && recipientAddressPayload) {
+        return sendError(
+          res,
+          'Provide either deliveryAddressId OR recipientAddress, not both',
+          400,
+        );
+      }
+      let address: { id: string; lat: number; lng: number } | null = null;
+      if (deliveryAddressId) {
+        address = await prisma.address.findFirst({
+          where: { id: deliveryAddressId, userId: req.user!.id },
+          select: { id: true, lat: true, lng: true },
+        });
+        if (!address) return sendError(res, 'Delivery address not found', 404);
+      } else if (recipientAddressPayload) {
+        const recipientLabel = recipientName
+          ? `For ${recipientName.slice(0, 40)}`
+          : recipientAddressPayload.label;
+        const created = await prisma.address.create({
+          data: {
+            userId: req.user!.id,
+            label: recipientLabel,
+            street: recipientAddressPayload.street,
+            city: recipientAddressPayload.city,
+            state: recipientAddressPayload.state,
+            pincode: recipientAddressPayload.pincode,
+            lat: recipientAddressPayload.lat,
+            lng: recipientAddressPayload.lng,
+            isDefault: false,
+          },
+          select: { id: true, lat: true, lng: true },
+        });
+        address = created;
+      } else {
+        return sendError(
+          res,
+          'Provide deliveryAddressId or recipientAddress',
+          400,
+        );
+      }
 
       // Resolve items to StoreItem records.
       // Mode 1 (store-direct): items have storeItemId — fetch them directly
@@ -484,7 +570,9 @@ router.post(
             total,
             paymentMethod,
             paymentStatus: 'PENDING',
-            deliveryAddressId,
+            // Either the customer's saved address id, or the freshly-created
+            // recipient address id from the "for someone else" inline path.
+            deliveryAddressId: address.id,
             notes,
             recipientName: recipientName ?? null,
             recipientPhone: recipientPhone ?? null,
@@ -555,6 +643,185 @@ router.post(
     } catch (err) {
       console.error('[Orders] create error:', err);
       return sendError(res, 'Failed to place order', 500);
+    }
+  },
+);
+
+// ─── POST /preview ────────────────────────────────────────────────────────────
+// Cart-side "can this be delivered?" check. The customer-web cart hits this
+// the moment the recipient address is set (especially for the "order for
+// someone else" flow where the recipient lives in a different zone than
+// the items the customer browsed). The handler runs the same store-pick
+// logic as POST /orders but stops short of mutating anything — purely
+// read-only. Returns:
+//   { availableAtStoreId, storeName, distanceKm, etaMinutes,
+//     deliveryFee, freeDeliveryUnlocked, missing: [catalogItemId] }
+// The UI uses `missing` to grey out items + invites the customer to remove
+// them; `freeDeliveryUnlocked` drives the "🎉 free delivery!" banner.
+// 422 when the recipient is outside every active zone (we don't serve
+// there). 200 with `missing.length > 0` when SOME items aren't carried.
+
+router.post(
+  '/preview',
+  authenticate,
+  authorize('CUSTOMER'),
+  validate(previewOrderSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const { items, lat, lng } = req.body as z.infer<typeof previewOrderSchema>;
+
+      // Resolve cart's catalog item ids (irrespective of mode 1 or 2).
+      const storeItemIds = items
+        .map((i) => i.storeItemId)
+        .filter((x): x is string => !!x);
+      const catalogItemIdsFromStoreItems =
+        storeItemIds.length > 0
+          ? (await prisma.storeItem.findMany({
+              where: { id: { in: storeItemIds } },
+              select: { catalogItemId: true },
+            })).map((r) => r.catalogItemId)
+          : [];
+      const catalogItemIdsDirect = items
+        .map((i) => i.catalogItemId)
+        .filter((x): x is string => !!x);
+      const cartCatalogIds = [
+        ...new Set([...catalogItemIdsFromStoreItems, ...catalogItemIdsDirect]),
+      ];
+      if (cartCatalogIds.length === 0) {
+        return sendError(res, 'Cart is empty', 400);
+      }
+
+      const dropoffZones = await findZonesForPoint(lat, lng);
+      if (dropoffZones.length === 0) {
+        return sendError(
+          res,
+          "We don't deliver to this area yet. Try a different recipient address.",
+          422,
+        );
+      }
+
+      // Find in-zone stores carrying any of the items. We then pick the
+      // closest store that carries ALL of them; if no such store exists
+      // we surface `missing` so the cart UI can guide the customer.
+      const allLats = dropoffZones.flatMap((z) => [
+        z.centerLat - z.radiusKm / 110,
+        z.centerLat + z.radiusKm / 110,
+      ]);
+      const allLngs = dropoffZones.flatMap((z) => [
+        z.centerLng - z.radiusKm / 110,
+        z.centerLng + z.radiusKm / 110,
+      ]);
+      const candidates = await prisma.store.findMany({
+        where: {
+          status: 'ACTIVE',
+          isOpen: true,
+          isWholesaler: false,
+          lat: { gte: Math.min(...allLats), lte: Math.max(...allLats) },
+          lng: { gte: Math.min(...allLngs), lte: Math.max(...allLngs) },
+          items: {
+            some: {
+              catalogItemId: { in: cartCatalogIds },
+              isAvailable: true,
+              stockQty: { gt: 0 },
+            },
+          },
+        },
+        include: {
+          items: {
+            where: {
+              catalogItemId: { in: cartCatalogIds },
+              isAvailable: true,
+              stockQty: { gt: 0 },
+            },
+            select: { catalogItemId: true, price: true, adminMargin: true },
+          },
+        },
+      });
+      const inZone = candidates.filter((s) =>
+        dropoffZones.some(
+          (z) => haversineDistance(s.lat, s.lng, z.centerLat, z.centerLng) <= z.radiusKm,
+        ),
+      );
+      // Rank: stores carrying ALL items first (full match), then partial.
+      const ranked = inZone
+        .map((s) => {
+          const carried = new Set(s.items.map((i) => i.catalogItemId));
+          const missing = cartCatalogIds.filter((cid) => !carried.has(cid));
+          return {
+            store: s,
+            missing,
+            distanceKm: haversineDistance(s.lat, s.lng, lat, lng),
+          };
+        })
+        .sort((a, b) => {
+          // Fewer missing items wins; ties broken by distance.
+          if (a.missing.length !== b.missing.length) {
+            return a.missing.length - b.missing.length;
+          }
+          return a.distanceKm - b.distanceKm;
+        });
+
+      if (ranked.length === 0) {
+        return sendSuccess(res, {
+          availableAtStoreId: null,
+          storeName: null,
+          distanceKm: null,
+          etaMinutes: null,
+          deliveryFee: null,
+          freeDeliveryUnlocked: false,
+          missing: cartCatalogIds,
+        });
+      }
+
+      const best = ranked[0]!;
+      const settings = await getSettings();
+      const zone = await findZoneForPoint(best.store.lat, best.store.lng);
+      const effectiveBaseFee = zone?.baseDeliveryFee ?? settings.baseDeliveryFee;
+      const effectivePerKmFee = zone?.perKmFee ?? settings.perKmFee;
+      let deliveryFee = parseFloat(
+        (effectiveBaseFee + effectivePerKmFee * best.distanceKm).toFixed(2),
+      );
+      // Subtotal at customer-facing prices so the free-delivery threshold
+      // compares against what the customer actually pays.
+      const subtotal = best.store.items
+        .filter((it) => items.some((c) =>
+          c.catalogItemId === it.catalogItemId ||
+          // mode-1 lookup: match via the storeItemIds we resolved earlier
+          storeItemIds.length > 0,
+        ))
+        .reduce((sum, it) => {
+          const qty =
+            items.find((c) => c.catalogItemId === it.catalogItemId)?.qty ?? 0;
+          return sum + (it.price + (it.adminMargin ?? 0)) * qty;
+        }, 0);
+      const freeDeliveryUnlocked = !!(
+        zone?.freeDeliveryThreshold &&
+        zone.freeDeliveryThreshold > 0 &&
+        subtotal >= zone.freeDeliveryThreshold
+      );
+      if (freeDeliveryUnlocked) deliveryFee = 0;
+
+      // ETA estimate — pre-assignment (no driver yet), so use default
+      // SCOOTER speed with slack. The customer-web cart shows this as a
+      // window via formatEtaWindow().
+      const { estimateOrderEta } = await import('@aks/shared');
+      const eta = estimateOrderEta({
+        deliveryKm: best.distanceKm,
+      });
+
+      return sendSuccess(res, {
+        availableAtStoreId: best.store.id,
+        storeName: best.store.name,
+        distanceKm: Number(best.distanceKm.toFixed(2)),
+        etaMinutes: eta.totalMinutes,
+        deliveryFee,
+        freeDeliveryUnlocked,
+        freeDeliveryThreshold: zone?.freeDeliveryThreshold ?? 0,
+        missing: best.missing,
+      });
+    } catch (err) {
+      console.error('[Orders] preview error:', err);
+      return sendError(res, 'Failed to preview order', 500);
     }
   },
 );

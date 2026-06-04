@@ -97,8 +97,8 @@ This is **B-2**, the highest-severity bug in the audit.
 | B-1 | P3 minor | admin catalog backfill `ToastState` shape | Fixed |
 | B-2 | **P1 broken** | driver-mobile notification tap → 404 | Fixed |
 | B-3 | P3 minor | customer-mobile rollup missing rating chip | Fixed |
-| B-4 | P2 UX    | multi-store: N per-leg deliver clicks | Fixed |
-| B-5 | P2 UX    | multi-store: N customer-facing OTPs | Fixed |
+| B-4 | P2 UX    | multi-store: N per-leg deliver clicks | Fixed (commit cb3ffcb) |
+| B-5 | P2 UX    | multi-store: N customer-facing OTPs | Fixed (commit cb3ffcb) |
 | B-6 | P3 race  | split-order OrderItem name/unit post-pass | Fixed |
 | B-7 | P2 UX    | checkout navigates to leg not group on split | Fixed |
 

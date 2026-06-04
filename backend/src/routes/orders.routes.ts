@@ -20,6 +20,10 @@ import {
   InsufficientStockError,
   statusHadStockDecrement,
 } from '../services/inventory.service';
+import {
+  planSplit,
+  createOrderGroup,
+} from '../services/order-group.service';
 
 const router = Router();
 
@@ -388,18 +392,252 @@ router.post(
             (z) => haversineDistance(s.lat, s.lng, z.centerLat, z.centerLng) <= z.radiusKm,
           ),
         );
-        // Must carry every catalog item in the cart — we don't split orders.
+        // First try single-store coverage — simpler downstream flow.
         const fullMatches = inZone.filter((s) => {
           const carriedIds = new Set(s.items.map((i) => i.catalogItemId));
           return cartCatalogIds.every((cid) => carriedIds.has(cid));
         });
         if (fullMatches.length === 0) {
-          return sendError(
-            res,
-            "No store in the recipient's delivery zone carries all of these items right now. " +
-              'Try a different recipient address or remove items.',
-            422,
+          // No single in-zone store covers the cart — try multi-store
+          // splitting. The catalog-first cart model says the customer
+          // shouldn't care which stores fulfil; the engine groups the
+          // legs and assigns one driver to do sequential pickups.
+          const split = planSplit(
+            cartCatalogIds,
+            inZone.map((s) => ({
+              id: s.id,
+              lat: s.lat,
+              lng: s.lng,
+              items: s.items.map((it) => ({
+                id: it.id,
+                catalogItemId: it.catalogItemId,
+                price: it.price,
+                adminMargin: it.adminMargin ?? 0,
+                stockQty: it.stockQty,
+              })),
+            })),
+            { lat: address.lat, lng: address.lng },
           );
+          if (!split || split.length === 0) {
+            return sendError(
+              res,
+              "No combination of stores in the recipient's delivery zone " +
+                'covers these items right now. Try a different recipient ' +
+                'address or remove items.',
+              422,
+            );
+          }
+          // Single-leg split → keep the single-store fast path (no group).
+          if (split.length === 1) {
+            const onlyStore = inZone.find((s) => s.id === split[0]!.storeId)!;
+            const fakeFullMatches = [onlyStore];
+            // Fall through to the swap path below by mutating fullMatches.
+            // (We don't actually mutate fullMatches; we just reuse the swap
+            // block via an explicit assignment.)
+            fullMatches.push(...fakeFullMatches);
+          } else {
+            // Multi-leg split — build OrderGroup + N child Orders, then
+            // return early. The single-store path further down is
+            // bypassed entirely.
+            const settings = await getSettings();
+            // The driver does ONE delivery (after all pickups), so the
+            // group's deliveryFee is computed once against the dropoff,
+            // not per leg. Per-leg deliveryFee on each child Order is 0.
+            // We use distance from the FIRST pickup to the dropoff as a
+            // reasonable approximation — future improvement: TSP-ish
+            // route optimisation. For thin urban networks the difference
+            // is negligible.
+            const firstStore = inZone.find((s) => s.id === split[0]!.storeId)!;
+            const zone = await findZoneForPoint(firstStore.lat, firstStore.lng);
+            const effectiveBaseFee = zone?.baseDeliveryFee ?? settings.baseDeliveryFee;
+            const effectivePerKmFee = zone?.perKmFee ?? settings.perKmFee;
+            const distanceKm = haversineDistance(
+              firstStore.lat,
+              firstStore.lng,
+              address.lat,
+              address.lng,
+            );
+            let groupDeliveryFee = parseFloat(
+              (effectiveBaseFee + effectivePerKmFee * distanceKm).toFixed(2),
+            );
+
+            // Resolve each leg's lines + per-leg subtotal/commission.
+            const legs = split.map((leg) => {
+              const store = inZone.find((s) => s.id === leg.storeId)!;
+              const legItems = leg.catalogItemIds.map((cid) => {
+                const fresh = store.items.find((i) => i.catalogItemId === cid)!;
+                const cartLine = items.find((i) => i.catalogItemId === cid);
+                const qty = cartLine?.qty ?? 1;
+                const customerUnit = fresh.price + (fresh.adminMargin ?? 0);
+                return {
+                  fresh,
+                  qty,
+                  customerUnit,
+                  lineSubtotal: customerUnit * qty,
+                  lineCommission: (fresh.adminMargin ?? 0) * qty,
+                };
+              });
+              const legSubtotal = parseFloat(
+                legItems.reduce((s, l) => s + l.lineSubtotal, 0).toFixed(2),
+              );
+              const legCommissionMargins = legItems.reduce(
+                (s, l) => s + l.lineCommission,
+                0,
+              );
+              const effectiveCommissionFraction =
+                zone?.commissionRate ?? settings.commissionPercent / 100;
+              const legCommission = parseFloat(
+                (legCommissionMargins > 0
+                  ? legCommissionMargins
+                  : legSubtotal * effectiveCommissionFraction
+                ).toFixed(2),
+              );
+              return { store, items: legItems, legSubtotal, legCommission };
+            });
+            const totalSubtotal = parseFloat(
+              legs.reduce((s, l) => s + l.legSubtotal, 0).toFixed(2),
+            );
+
+            // Free-delivery threshold — zone-level, same rules as single
+            // orders, evaluated against the GROUP subtotal so adding a
+            // cross-store item helps the customer cross the line.
+            if (
+              zone?.freeDeliveryThreshold &&
+              zone.freeDeliveryThreshold > 0 &&
+              totalSubtotal >= zone.freeDeliveryThreshold
+            ) {
+              groupDeliveryFee = 0;
+            }
+            const groupTotal = parseFloat(
+              (totalSubtotal + groupDeliveryFee).toFixed(2),
+            );
+
+            // Stock validation BEFORE we open the transaction so a
+            // partial-stock failure doesn't leave orphan group rows.
+            for (const leg of legs) {
+              for (const l of leg.items) {
+                if (l.fresh.stockQty < l.qty) {
+                  return sendError(
+                    res,
+                    `Insufficient stock at ${leg.store.name} for one or more items.`,
+                    400,
+                  );
+                }
+              }
+            }
+
+            const createdOrders = await prisma.$transaction(async (tx) => {
+              const group = await createOrderGroup(tx, {
+                customerId: req.user!.id,
+                deliveryAddressId: address.id,
+                subtotal: totalSubtotal,
+                deliveryFee: groupDeliveryFee,
+                total: groupTotal,
+                paymentMethod,
+                recipientName: recipientName ?? null,
+                recipientPhone: recipientPhone ?? null,
+              });
+              const out: Array<{ id: string; storeId: string }> = [];
+              for (const leg of legs) {
+                const dropoffOtp = Math.floor(1000 + Math.random() * 9000).toString();
+                const child = await tx.order.create({
+                  data: {
+                    customerId: req.user!.id,
+                    storeId: leg.store.id,
+                    orderGroupId: group.id,
+                    status: 'PENDING',
+                    subtotal: leg.legSubtotal,
+                    // Single delivery fee on the GROUP — children carry 0.
+                    deliveryFee: 0,
+                    commission: leg.legCommission,
+                    // Per-leg total = subtotal (no per-leg delivery).
+                    total: leg.legSubtotal,
+                    paymentMethod,
+                    paymentStatus: 'PENDING',
+                    deliveryAddressId: address.id,
+                    recipientName: recipientName ?? null,
+                    recipientPhone: recipientPhone ?? null,
+                    dropoffOtp,
+                    items: {
+                      create: leg.items.map((l) => ({
+                        itemId: l.fresh.id,
+                        name: '', // populated below from catalogItem
+                        price: l.customerUnit,
+                        unit: '',
+                        qty: l.qty,
+                        imageUrl: null,
+                      })),
+                    },
+                  },
+                  select: { id: true, storeId: true, items: true },
+                });
+                out.push({ id: child.id, storeId: leg.store.id });
+              }
+              return { group, orders: out };
+            });
+
+            // Populate item name/unit/imageUrl after the create — we
+            // need the catalogItem join which is awkward inside the
+            // create. Cheap follow-up update.
+            for (const o of createdOrders.orders) {
+              const legPlan = legs.find((l) => l.store.id === o.storeId)!;
+              const orderItems = await prisma.orderItem.findMany({
+                where: { orderId: o.id },
+              });
+              for (const oi of orderItems) {
+                const match = legPlan.items.find((l) => l.fresh.id === oi.itemId);
+                if (!match) continue;
+                const cat = await prisma.catalogItem.findUnique({
+                  where: { id: match.fresh.catalogItemId },
+                  select: { name: true, defaultUnit: true, imageUrl: true },
+                });
+                await prisma.orderItem.update({
+                  where: { id: oi.id },
+                  data: {
+                    name: cat?.name ?? oi.name,
+                    unit: cat?.defaultUnit ?? oi.unit,
+                    imageUrl: cat?.imageUrl ?? null,
+                  },
+                });
+              }
+            }
+
+            // Queue matching for each child independently so each store
+            // accepts/rejects on its own deadline.
+            for (const o of createdOrders.orders) {
+              await matchingQueue.add('match-store', {
+                orderId: o.id,
+                excludeStoreIds: [],
+              });
+            }
+
+            // Notify the customer once for the whole group.
+            notify('ORDER_PLACED', req.user!.id, {
+              orderShort: createdOrders.group.id.slice(-6),
+              orderId: createdOrders.orders[0]!.id,
+            }).catch((e) => console.error('[Orders] split notify error:', e));
+
+            return sendSuccess(
+              res,
+              {
+                orderGroup: {
+                  id: createdOrders.group.id,
+                  subtotal: totalSubtotal,
+                  deliveryFee: groupDeliveryFee,
+                  total: groupTotal,
+                  paymentMethod,
+                  orders: createdOrders.orders,
+                },
+                // First child returned at root so back-compat clients can
+                // still read .data.id and navigate to the first leg.
+                id: createdOrders.orders[0]!.id,
+                orderGroupId: createdOrders.group.id,
+                status: 'PENDING',
+              },
+              'Order placed across multiple stores',
+              201,
+            );
+          }
         }
         fullMatches.sort(
           (a, b) =>

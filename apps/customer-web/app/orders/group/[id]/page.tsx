@@ -2,14 +2,29 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, ChevronLeft, MapPin, Store as StoreIcon } from 'lucide-react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowRight, ChevronLeft, Loader2, MapPin, Store as StoreIcon, XCircle } from 'lucide-react';
+import { Button } from '@aks/ui/components/button';
 import { Card, CardContent } from '@aks/ui/components/card';
 import { Separator } from '@aks/ui/components/separator';
+import { toast } from '@aks/ui/components/sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@aks/ui/components/dialog';
 import { AppHeader } from '@/components/AppHeader';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { ErrorPanel, PageLoader } from '@/components/StatePanels';
-import { fetchOrderGroup, type OrderGroupRollup } from '@/lib/orders';
+import {
+  cancelOrderGroup,
+  fetchOrderGroup,
+  type OrderGroupRollup,
+} from '@/lib/orders';
 import { rupees } from '@/lib/format';
 import { useUser } from '@/lib/use-user';
 
@@ -32,12 +47,41 @@ export default function OrderGroupPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const { mounted, user } = useUser({ redirectTo: `/orders/group/${id}` });
+  const queryClient = useQueryClient();
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
 
   const { data, isLoading, isError, refetch } = useQuery<OrderGroupRollup>({
     queryKey: ['order-group', id],
     queryFn: () => fetchOrderGroup(id),
     enabled: !!id && !!user,
     refetchInterval: 15_000,
+  });
+
+  // Cancel-all mutation. The backend cancels every leg that's still
+  // cancellable (pre-pickup) AND refunds the proportional slice of the
+  // group's single deliveryFee to the customer's wallet. Already-
+  // picked-up / delivered legs are skipped — we surface that in the
+  // success toast so the customer isn't confused if N legs were live
+  // but only K got cancelled.
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelOrderGroup(id, cancelReason.trim() || 'Cancelled by customer'),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['order-group', id] });
+      setCancelOpen(false);
+      setCancelReason('');
+      const refundCopy =
+        result.refundRupees > 0
+          ? ` ₹${result.refundRupees.toFixed(0)} credited to your wallet.`
+          : '';
+      toast.success(
+        `Cancelled ${result.cancelledLegs.length} of ${data?.orders.length ?? 0} legs.${refundCopy}`,
+      );
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: { message?: string } } } };
+      toast.error(e?.response?.data?.error?.message ?? 'Could not cancel the group.');
+    },
   });
 
   if (!mounted || !user) {
@@ -76,6 +120,17 @@ export default function OrderGroupPage() {
     );
   }
 
+  // Cancel-all is offered when at least one leg is still cancellable
+  // (PENDING / STORE_ACCEPTED / DRIVER_ASSIGNED-not-yet-picked-up).
+  // Picked-up or delivered legs are past the point of no return.
+  const anyCancellable = data.orders.some(
+    (o) =>
+      o.status === 'PENDING' ||
+      o.status === 'STORE_ACCEPTED' ||
+      o.status === 'COOKING' ||
+      (o.status === 'DRIVER_ASSIGNED' && !o.pickedUpAt),
+  );
+
   return (
     <>
       <AppHeader showSearch={false} />
@@ -88,18 +143,32 @@ export default function OrderGroupPage() {
           All orders
         </Link>
 
-        <header className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Your order across {data.orders.length} store
-            {data.orders.length === 1 ? '' : 's'}
-          </h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
-            <span>#{data.id.slice(-8).toUpperCase()}</span>
-            <span aria-hidden>·</span>
-            <span>{rupees(data.total)} total · single delivery</span>
-            <span aria-hidden>·</span>
-            <OrderStatusBadge status={data.status as Parameters<typeof OrderStatusBadge>[0]['status']} />
+        <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Your order across {data.orders.length} store
+              {data.orders.length === 1 ? '' : 's'}
+            </h1>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500">
+              <span>#{data.id.slice(-8).toUpperCase()}</span>
+              <span aria-hidden>·</span>
+              <span>{rupees(data.total)} total · single delivery</span>
+              <span aria-hidden>·</span>
+              <OrderStatusBadge status={data.status as Parameters<typeof OrderStatusBadge>[0]['status']} />
+            </div>
           </div>
+          {anyCancellable ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCancelOpen(true)}
+              disabled={cancelMutation.isPending}
+              className="text-destructive hover:bg-destructive/5"
+            >
+              <XCircle className="h-4 w-4" />
+              Cancel order
+            </Button>
+          ) : null}
         </header>
 
         {/* Aggregate summary card — what the customer is actually paying. */}
@@ -159,6 +228,55 @@ export default function OrderGroupPage() {
           ))}
         </div>
       </main>
+
+      {/* Cancel-all confirmation. We surface the leg-by-leg breakdown
+          so the customer knows exactly how many pickups will be aborted
+          and how much they'll be refunded — picked-up / delivered legs
+          are explicitly excluded. */}
+      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel this multi-store order?</DialogTitle>
+            <DialogDescription>
+              We'll cancel every leg that hasn't been picked up yet. The
+              proportional share of your delivery fee will be refunded to
+              your wallet. Legs that have already been picked up can't be
+              cancelled — contact support if you need help with those.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Reason (optional)"
+              rows={2}
+              maxLength={500}
+              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCancelOpen(false)}
+              disabled={cancelMutation.isPending}
+            >
+              Keep order
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending}
+            >
+              {cancelMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <XCircle className="h-4 w-4" />
+              )}
+              Cancel order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

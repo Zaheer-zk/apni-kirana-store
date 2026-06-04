@@ -76,6 +76,7 @@ export interface CustomerOrder {
   createdAt: string;
   updatedAt: string;
   storeAcceptedAt?: string | null;
+  pickedUpAt?: string | null;
   deliveredAt?: string | null;
 
   items: OrderItemRow[];
@@ -144,6 +145,28 @@ export interface OrderGroupRollup {
 export async function fetchOrderGroup(id: string): Promise<OrderGroupRollup> {
   const res = await api.get(`/api/v1/orders/group/${id}`);
   return unwrap<OrderGroupRollup>(res.data);
+}
+
+/**
+ * Customer-initiated group cancel. Cancels every leg that's still
+ * cancellable (pre-pickup). Returns the cancelled leg ids + the
+ * rupee refund credited to the customer's wallet (0 if the group was
+ * COD / paid-on-delivery and nothing was paid yet).
+ */
+export interface GroupCancelResult {
+  groupId: string;
+  cancelledLegs: string[];
+  refundRupees: number;
+}
+
+export async function cancelOrderGroup(
+  groupId: string,
+  reason: string,
+): Promise<GroupCancelResult> {
+  const res = await api.put(`/api/v1/orders/group/${groupId}/cancel`, {
+    reason,
+  });
+  return unwrap<GroupCancelResult>(res.data);
 }
 
 export interface CreateOrderInput {

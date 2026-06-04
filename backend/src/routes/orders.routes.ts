@@ -1691,6 +1691,135 @@ router.put(
   },
 );
 
+// ─── PUT /group/:id/cancel ────────────────────────────────────────────────
+// Customer-initiated cancel for a whole multi-store basket. Cancels
+// every leg that's still cancellable (PENDING / STORE_ACCEPTED /
+// DRIVER_ASSIGNED-but-not-picked-up); legs already PICKED_UP or
+// DELIVERED are skipped (they're past the point of no return).
+//
+// Refund + stock revert rules mirror the per-order handler:
+//   * PAID legs get a wallet refund for (subtotal + their share of the
+//     group's deliveryFee — split proportional to subtotal).
+//   * Legs whose status was past PENDING get their stock incremented
+//     back (statusHadStockDecrement check, same as the per-order path).
+//   * Customers can't cancel if NO leg is cancellable — 400 in that
+//     case so the UI surfaces a clear "too late, contact support".
+
+router.put(
+  '/group/:id/cancel',
+  authenticate,
+  authorize('CUSTOMER'),
+  validate(cancelOrderSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const groupId = req.params['id'] as string;
+      const reason = (req.body?.reason as string).trim();
+
+      const group = await prisma.orderGroup.findUnique({
+        where: { id: groupId },
+        include: { orders: true },
+      });
+      if (!group) return sendError(res, 'Order group not found', 404);
+      if (group.customerId !== req.user!.id) {
+        return sendError(res, 'Unauthorized', 403);
+      }
+
+      // Bucket legs by whether they're cancellable. Same predicate as
+      // PUT /:id/cancel: anything before the driver has physically
+      // picked it up.
+      const cancellable = group.orders.filter(
+        (o) =>
+          o.status === 'PENDING' ||
+          o.status === 'STORE_ACCEPTED' ||
+          o.status === 'COOKING' ||
+          (o.status === 'DRIVER_ASSIGNED' && o.pickedUpAt === null),
+      );
+      if (cancellable.length === 0) {
+        return sendError(
+          res,
+          'No legs in this group can be cancelled. Contact support if you need a refund.',
+          400,
+        );
+      }
+
+      // Proportional refund split for the group's single deliveryFee.
+      // If only SOME legs are cancellable (others delivered), refund
+      // just those legs' share — the delivered ones keep their slice
+      // of the delivery fee.
+      const cancellableSubtotal = cancellable.reduce((s, o) => s + o.subtotal, 0);
+      const groupSubtotal = group.orders.reduce((s, o) => s + o.subtotal, 0);
+      const refundDeliveryShare =
+        groupSubtotal > 0
+          ? Math.round((group.deliveryFee * cancellableSubtotal) / groupSubtotal * 100) / 100
+          : 0;
+      const shouldRefund = group.paymentStatus === 'PAID';
+      const totalRefundPaise = shouldRefund
+        ? Math.round(cancellableSubtotal * 100) + Math.round(refundDeliveryShare * 100)
+        : 0;
+
+      // Walk legs in a transaction so partial failure leaves nothing
+      // half-cancelled.
+      const cancelledLegs: string[] = [];
+      await prisma.$transaction(async (tx) => {
+        for (const leg of cancellable) {
+          if (statusHadStockDecrement(leg.status)) {
+            await incrementStockForOrder(tx, leg.id);
+          }
+          await tx.order.update({
+            where: { id: leg.id },
+            data: {
+              status: 'CANCELLED',
+              cancelReason: reason,
+              paymentStatus: shouldRefund ? 'REFUNDED' : leg.paymentStatus,
+            },
+          });
+          cancelledLegs.push(leg.id);
+        }
+        const { rollUpGroupStatus } = await import(
+          '../services/order-group.service'
+        );
+        await rollUpGroupStatus(tx, groupId);
+      });
+
+      // Refund + notify outside the transaction so a wallet-service
+      // hiccup doesn't roll back the cancellation (the orders are
+      // already cancelled — the customer just needs the credit).
+      if (totalRefundPaise > 0) {
+        try {
+          await creditWallet({
+            userId: group.customerId,
+            amount: totalRefundPaise,
+            kind: 'REFUND',
+            // Reference the FIRST cancelled leg for the wallet txn link.
+            orderId: cancelledLegs[0]!,
+            note: `Refund for cancelled multi-store order #${groupId.slice(-6)}`,
+          });
+        } catch (refundErr) {
+          console.error('[Orders] group cancel refund error:', refundErr);
+        }
+      }
+
+      // Broadcast per-leg status so per-store screens update too.
+      for (const id of cancelledLegs) {
+        await broadcastOrderStatus(id, 'CANCELLED', { reason });
+      }
+
+      return sendSuccess(
+        res,
+        {
+          groupId,
+          cancelledLegs,
+          refundRupees: totalRefundPaise / 100,
+        },
+        'Group cancelled',
+      );
+    } catch (err) {
+      console.error('[Orders] group cancel error:', err);
+      return sendError(res, 'Failed to cancel order group', 500);
+    }
+  },
+);
+
 // ─── PUT /:id/cancel ──────────────────────────────────────────────────────────
 
 router.put(

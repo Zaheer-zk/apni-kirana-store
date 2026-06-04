@@ -4,26 +4,39 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 /**
- * Single-store cart for the customer web app.
+ * Catalog-first cart for the customer web app.
  *
- * Why single-store: customers order from ONE store at a time. The matching
- * engine assumes every line item belongs to the same store; mixing stores
- * would break delivery routing. If the customer adds an item from a
- * different store, the UI prompts "Switch store?" and `replaceStore()`
- * clears the cart before adding.
+ * Why catalog-first (and not store-first as the v1/v2 schema was):
+ *   The user doesn't think in terms of stores when they shop — they
+ *   think "Aloo Bhujia, 5-Star, sugar 1kg". Two stores can carry the
+ *   same Aloo Bhujia at different prices, and forcing the customer to
+ *   pick "T-and-J or Divine Gems" before they add the item just makes
+ *   them work harder and limits cross-store baskets.
  *
- * Why persist: refreshing the page or coming back tomorrow shouldn't lose
- * the cart. `zustand/middleware/persist` writes to localStorage under
- * `aks-customer-cart` and rehydrates on mount.
+ *   So the cart is keyed by `catalogItemId`. The matching engine picks
+ *   which store(s) fulfil the order at submit time (the cross-zone
+ *   re-match in POST /orders + the `/orders/preview` endpoint).
+ *
+ *   `storeItemId` is still stored on each line as a HINT — the
+ *   StoreItem row that was the best offer when the customer tapped
+ *   Add. Used for the back-link "more from this store" UX and for the
+ *   price/image snapshot. Order creation IGNORES it and sends
+ *   `catalogItemId + qty` so the engine is free to re-route.
+ *
+ * Why persist: refreshing the page or coming back tomorrow shouldn't
+ * lose the cart. `zustand/middleware/persist` writes to localStorage
+ * under `aks-customer-cart` and rehydrates on mount.
  */
 export interface CartLine {
-  /** StoreItem.id — what gets POSTed to `/orders`. */
-  storeItemId: string;
-  /** Catalog item id (for product-detail navigation). */
+  /** CatalogItem.id — the cart's primary key. */
   catalogItemId: string;
+  /** Best-offer StoreItem.id at add time. Snapshot only — engine may
+   *  re-route to a different store at order time. */
+  storeItemId?: string;
   /** Display name from CatalogItem.name. */
   name: string;
-  /** Selling price in rupees (from StoreItem.price). */
+  /** Customer-facing price snapshot in rupees (= storeItem.price +
+   *  adminMargin). Backend recomputes canonical totals at order time. */
   price: number;
   /** Pack size text — "1 kg", "500 g", "1 L". */
   unit: string;
@@ -31,16 +44,9 @@ export interface CartLine {
   imageUrl?: string | null;
   /** Quantity (whole units). */
   qty: number;
-  /** Max stock the store has — guard rail for the qty + button. */
-  maxStock: number;
-}
-
-export interface CartStoreContext {
-  storeId: string;
-  storeName: string;
-  storeImageUrl?: string | null;
-  /** Optional delivery estimate (minutes). */
-  etaMinutes?: number;
+  /** Best-offer stock at add time. Soft guard rail — engine re-validates
+   *  on order submit. Set to 0 / undefined for catalog-only adds. */
+  maxStock?: number;
 }
 
 /**
@@ -73,7 +79,6 @@ export interface CartRecipient {
 }
 
 interface CartState {
-  store: CartStoreContext | null;
   items: CartLine[];
   /** Cart-level recipient — see {@link CartRecipient}. Defaults to self. */
   recipient: CartRecipient;
@@ -84,32 +89,23 @@ interface CartState {
   /** Subtotal in rupees (no delivery / discount). */
   subtotal: () => number;
 
-  /** Try to add an item. Returns the action the UI should take:
-   *  - `added` — item was added (same store or empty cart)
-   *  - `bumped` — already in cart, qty was incremented
-   *  - `conflict` — a different store's cart is active; UI must prompt
+  /**
+   * Add an item to the cart. Deduplicates by `catalogItemId` — adding
+   * the "same product from a different store" just bumps the qty on
+   * the existing line and keeps the original storeItemId/price snapshot.
+   * Returns 'added' on first add, 'bumped' if the qty was incremented.
    */
-  add: (
-    store: CartStoreContext,
-    line: Omit<CartLine, 'qty'> & { qty?: number },
-  ) => 'added' | 'bumped' | 'conflict';
+  add: (line: Omit<CartLine, 'qty'> & { qty?: number }) => 'added' | 'bumped';
 
-  /** Force-replace the active store + first line. Use after a confirmed
-   *  "Switch store" prompt. */
-  replaceStore: (
-    store: CartStoreContext,
-    line: Omit<CartLine, 'qty'> & { qty?: number },
-  ) => void;
-
-  setQty: (storeItemId: string, qty: number) => void;
-  remove: (storeItemId: string) => void;
+  /** Adjust quantity for a catalog item. qty<=0 removes the line. */
+  setQty: (catalogItemId: string, qty: number) => void;
+  remove: (catalogItemId: string) => void;
   clear: () => void;
 }
 
 export const useCart = create<CartState>()(
   persist(
     (set, get) => ({
-      store: null,
       items: [],
       // Default to self so existing checkout flows keep working without
       // surfacing the "for someone else" choice unless the customer flips it.
@@ -119,80 +115,84 @@ export const useCart = create<CartState>()(
       itemCount: () => get().items.reduce((sum, l) => sum + l.qty, 0),
       subtotal: () => get().items.reduce((sum, l) => sum + l.price * l.qty, 0),
 
-      add: (store, line) => {
+      add: (line) => {
         const state = get();
         const desiredQty = Math.max(1, line.qty ?? 1);
-
-        // Different store + non-empty cart → caller must confirm.
-        if (state.store && state.store.storeId !== store.storeId && state.items.length > 0) {
-          return 'conflict';
-        }
-
-        const existing = state.items.find((l) => l.storeItemId === line.storeItemId);
+        const existing = state.items.find(
+          (l) => l.catalogItemId === line.catalogItemId,
+        );
         if (existing) {
-          const nextQty = Math.min(existing.qty + desiredQty, line.maxStock || existing.qty + desiredQty);
+          const cap = line.maxStock ?? existing.maxStock;
+          const nextQty = cap
+            ? Math.min(existing.qty + desiredQty, cap)
+            : existing.qty + desiredQty;
           set({
-            store: state.store ?? store,
             items: state.items.map((l) =>
-              l.storeItemId === line.storeItemId ? { ...l, qty: nextQty } : l,
+              l.catalogItemId === line.catalogItemId
+                ? { ...l, qty: nextQty }
+                : l,
             ),
           });
           return 'bumped';
         }
-
-        set({
-          store: state.store ?? store,
-          items: [...state.items, { ...line, qty: desiredQty }],
-        });
+        set({ items: [...state.items, { ...line, qty: desiredQty }] });
         return 'added';
       },
 
-      replaceStore: (store, line) => {
-        const desiredQty = Math.max(1, line.qty ?? 1);
-        set({
-          store,
-          items: [{ ...line, qty: desiredQty }],
-        });
-      },
-
-      setQty: (storeItemId, qty) => {
+      setQty: (catalogItemId, qty) => {
         if (qty <= 0) {
-          get().remove(storeItemId);
+          get().remove(catalogItemId);
           return;
         }
         set((state) => ({
           items: state.items.map((l) =>
-            l.storeItemId === storeItemId
-              ? { ...l, qty: Math.min(qty, l.maxStock || qty) }
+            l.catalogItemId === catalogItemId
+              ? { ...l, qty: l.maxStock ? Math.min(qty, l.maxStock) : qty }
               : l,
           ),
         }));
       },
 
-      remove: (storeItemId) => {
-        set((state) => {
-          const next = state.items.filter((l) => l.storeItemId !== storeItemId);
-          return {
-            items: next,
-            store: next.length === 0 ? null : state.store,
-          };
-        });
+      remove: (catalogItemId) => {
+        set((state) => ({
+          items: state.items.filter((l) => l.catalogItemId !== catalogItemId),
+        }));
       },
 
-      clear: () => set({ store: null, items: [], recipient: { mode: 'self' } }),
+      clear: () => set({ items: [], recipient: { mode: 'self' } }),
     }),
     {
       name: 'aks-customer-cart',
       storage: createJSONStorage(() => localStorage),
-      // v2 added the recipient field; legacy v1 carts hydrate without it,
-      // so migration coerces missing recipient → { mode: 'self' }.
-      version: 2,
+      // v3 dropped the single-store constraint and re-keyed lines by
+      // catalogItemId. v1 → v3 migration:
+      //   * adds recipient: { mode: 'self' } (v2 change)
+      //   * dedupes any line with no catalogItemId out of the cart
+      //   * drops the legacy `store` field
+      // Old v1 carts that still have storeItemId-only lines without a
+      // catalogItemId hint can't be migrated — those lines are dropped
+      // (the user can re-add). Acceptable; the legacy field was always
+      // populated alongside storeItemId so this is rare in practice.
+      version: 3,
       migrate: (persisted, version) => {
         if (!persisted || typeof persisted !== 'object') return persisted;
+        const next = persisted as {
+          items?: Array<Partial<CartLine>>;
+          recipient?: CartRecipient;
+          store?: unknown;
+        };
         if (version < 2) {
-          (persisted as { recipient?: CartRecipient }).recipient = { mode: 'self' };
+          next.recipient = { mode: 'self' };
         }
-        return persisted;
+        if (version < 3) {
+          // Drop the legacy single-store anchor.
+          delete next.store;
+          // Drop lines that pre-date the catalogItemId field.
+          if (Array.isArray(next.items)) {
+            next.items = next.items.filter((l) => !!l.catalogItemId);
+          }
+        }
+        return next;
       },
     },
   ),

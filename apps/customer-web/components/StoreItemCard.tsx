@@ -1,14 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
 import { Clock, MapPin, Star } from 'lucide-react';
 import { Badge } from '@aks/ui/components/badge';
 import { Button } from '@aks/ui/components/button';
 import { toast } from '@aks/ui/components/sonner';
-import { useCart, type CartStoreContext } from '@/lib/cart';
+import { useCart } from '@/lib/cart';
 import { distance as fmtDistance, etaWindow, rupees } from '@/lib/format';
-import { SwitchStoreDialog } from './SwitchStoreDialog';
 
 /**
  * The cross-store search result returned by `GET /api/v1/items/search`.
@@ -37,6 +35,12 @@ export interface StoreSearchHit {
     distanceKm: number | null;
     isOpen: boolean;
   };
+  /** Number of in-zone stores carrying this catalog item (server-deduped). */
+  offerCount?: number;
+  /** Min customer-facing price across all stores (rupees). */
+  minCustomerPrice?: number;
+  /** Max customer-facing price across all stores (rupees). */
+  maxCustomerPrice?: number;
 }
 
 interface StoreItemCardProps {
@@ -46,11 +50,9 @@ interface StoreItemCardProps {
 }
 
 export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
-  const { add, replaceStore, store } = useCart();
-  const [pendingStore, setPendingStore] = useState<{
-    store: CartStoreContext;
-    line: Parameters<typeof add>[1];
-  } | null>(null);
+  // Catalog-keyed cart: no single-store conflict path. The engine picks
+  // the fulfilling store at order time (cross-zone re-match in POST /orders).
+  const add = useCart((s) => s.add);
 
   // Customer-facing price = store payout + admin margin. Backend serves it
   // as `customerPrice`; fall back to plain `price` for legacy responses.
@@ -58,39 +60,25 @@ export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
     (hit as { customerPrice?: number; price: number }).customerPrice ?? hit.price;
 
   function handleAdd(): void {
-    const ctx: CartStoreContext = {
-      storeId: hit.store.id,
-      storeName: hit.store.name,
-      etaMinutes: hit.store.distanceKm != null ? Math.max(15, Math.round(hit.store.distanceKm * 5) + 5) : undefined,
-    };
-    const line = {
-      storeItemId: hit.storeItemId,
+    if (hit.stockQty <= 0) {
+      toast.error('This item is out of stock');
+      return;
+    }
+    const result = add({
       catalogItemId: hit.catalogItemId,
+      // storeItemId is a snapshot hint — engine ignores at order time.
+      storeItemId: hit.storeItemId,
       name: hit.name,
       price: displayPrice,
       unit: hit.unit,
       imageUrl: hit.imageUrl ?? null,
       maxStock: hit.stockQty,
-    };
-
-    if (hit.stockQty <= 0) {
-      toast.error('This item is out of stock');
-      return;
-    }
-
-    const result = add(ctx, line);
-    if (result === 'conflict') {
-      setPendingStore({ store: ctx, line });
-      return;
-    }
-    toast.success(result === 'bumped' ? `Added another ${hit.name}` : `${hit.name} added to cart`);
-  }
-
-  function confirmReplace(): void {
-    if (!pendingStore) return;
-    replaceStore(pendingStore.store, pendingStore.line);
-    toast.success(`Cart switched to ${pendingStore.store.storeName}`);
-    setPendingStore(null);
+    });
+    toast.success(
+      result === 'bumped'
+        ? `Added another ${hit.name}`
+        : `${hit.name} added to cart`,
+    );
   }
 
   const distLabel = fmtDistance(hit.store.distanceKm);
@@ -117,15 +105,11 @@ export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
             {outOfStock ? 'Out' : 'Add'}
           </Button>
         </div>
-        <p className="mt-1 truncate text-[11px] font-medium text-gray-500">{hit.store.name}</p>
-
-        <SwitchStoreDialog
-          open={!!pendingStore}
-          currentStore={store?.storeName ?? null}
-          newStore={pendingStore?.store.storeName ?? null}
-          onCancel={() => setPendingStore(null)}
-          onConfirm={confirmReplace}
-        />
+        <p className="mt-1 truncate text-[11px] font-medium text-gray-500">
+          {hit.offerCount && hit.offerCount > 1
+            ? `${hit.offerCount} stores nearby`
+            : hit.store.name}
+        </p>
       </div>
     );
   }
@@ -175,7 +159,19 @@ export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
       </div>
 
       <div className="flex flex-col items-end justify-between gap-2">
-        <span className="text-base font-bold text-gray-900 sm:text-lg">{rupees(displayPrice)}</span>
+        <div className="flex flex-col items-end">
+          <span className="text-base font-bold text-gray-900 sm:text-lg">
+            {rupees(displayPrice)}
+          </span>
+          {hit.offerCount &&
+          hit.offerCount > 1 &&
+          hit.minCustomerPrice != null &&
+          hit.minCustomerPrice < displayPrice ? (
+            <span className="text-[10px] text-gray-500">
+              from {rupees(hit.minCustomerPrice)}
+            </span>
+          ) : null}
+        </div>
         <Button
           variant={outOfStock ? 'outline' : 'default'}
           size="sm"
@@ -185,14 +181,6 @@ export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
           {outOfStock ? 'Out of stock' : 'Add'}
         </Button>
       </div>
-
-      <SwitchStoreDialog
-        open={!!pendingStore}
-        currentStore={store?.storeName ?? null}
-        newStore={pendingStore?.store.storeName ?? null}
-        onCancel={() => setPendingStore(null)}
-        onConfirm={confirmReplace}
-      />
     </article>
   );
 }

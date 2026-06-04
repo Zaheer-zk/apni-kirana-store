@@ -11,10 +11,9 @@ import { Skeleton } from '@aks/ui/components/skeleton';
 import { Separator } from '@aks/ui/components/separator';
 import { toast } from '@aks/ui/components/sonner';
 import { AppHeader } from '@/components/AppHeader';
-import { SwitchStoreDialog } from '@/components/SwitchStoreDialog';
 import { EmptyPanel, ErrorPanel } from '@/components/StatePanels';
 import { api, unwrap } from '@/lib/api';
-import { useCart, type CartStoreContext } from '@/lib/cart';
+import { useCart } from '@/lib/cart';
 import { distance as fmtDistance, etaWindow, rupees } from '@/lib/format';
 
 interface ItemDetail {
@@ -47,11 +46,9 @@ export default function ItemDetailPage() {
   const id = params.storeItemId;
 
   const [qty, setQty] = useState(1);
-  const { add, replaceStore, store: cartStore } = useCart();
-  const [pending, setPending] = useState<{
-    store: CartStoreContext;
-    line: Parameters<typeof add>[1];
-  } | null>(null);
+  // Catalog-keyed add: no more single-store conflict path. Engine picks
+  // the fulfilling store at order time.
+  const add = useCart((s) => s.add);
 
   const itemQuery = useQuery({
     queryKey: ['item-detail', id],
@@ -62,50 +59,23 @@ export default function ItemDetailPage() {
     enabled: !!id,
   });
 
-  function buildLine() {
-    if (!itemQuery.data) return null;
-    const { storeItem, catalogItem, store } = itemQuery.data;
-    const ctx: CartStoreContext = {
-      storeId: store.id,
-      storeName: store.name,
-      etaMinutes:
-        store.distanceKm != null ? Math.max(15, Math.round(store.distanceKm * 5) + 5) : undefined,
-    };
-    // Use the customer-facing price (= store payout + admin margin) so cart
-    // math matches what the user sees on the product page. Backend always
-    // recomputes canonical totals at order creation.
+  function handleAdd() {
+    if (!itemQuery.data) return;
+    const { storeItem, catalogItem } = itemQuery.data;
     const customerUnit =
       (storeItem as { customerPrice?: number }).customerPrice ?? storeItem.price;
-    const line = {
-      storeItemId: storeItem.id,
+    add({
       catalogItemId: catalogItem.id,
+      // storeItemId is a hint — the engine may re-route at order time.
+      storeItemId: storeItem.id,
       name: catalogItem.name,
       price: customerUnit,
       unit: catalogItem.defaultUnit ?? '1 unit',
       imageUrl: catalogItem.imageUrl ?? null,
       maxStock: storeItem.stockQty,
       qty,
-    };
-    return { ctx, line };
-  }
-
-  function handleAdd() {
-    const built = buildLine();
-    if (!built) return;
-    const { ctx, line } = built;
-    const result = add(ctx, line);
-    if (result === 'conflict') {
-      setPending({ store: ctx, line });
-      return;
-    }
-    toast.success(`${line.name} added to cart`);
-  }
-
-  function confirmReplace() {
-    if (!pending) return;
-    replaceStore(pending.store, pending.line);
-    toast.success(`Cart switched to ${pending.store.storeName}`);
-    setPending(null);
+    });
+    toast.success(`${catalogItem.name} added to cart`);
   }
 
   return (
@@ -157,13 +127,6 @@ export default function ItemDetailPage() {
         )}
       </main>
 
-      <SwitchStoreDialog
-        open={!!pending}
-        currentStore={cartStore?.storeName ?? null}
-        newStore={pending?.store.storeName ?? null}
-        onCancel={() => setPending(null)}
-        onConfirm={confirmReplace}
-      />
     </>
   );
 }

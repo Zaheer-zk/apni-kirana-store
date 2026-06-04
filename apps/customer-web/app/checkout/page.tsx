@@ -45,7 +45,6 @@ export default function CheckoutPage() {
   const { user, mounted } = useUser({ redirectTo: '/checkout' });
 
   const items = useCart((s) => s.items);
-  const store = useCart((s) => s.store);
   const subtotal = useCart((s) => s.subtotal());
   const itemCount = useCart((s) => s.itemCount());
   const clearCart = useCart((s) => s.clear);
@@ -88,7 +87,6 @@ export default function CheckoutPage() {
 
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
-      if (!store) throw new Error('Cart is empty');
       if (items.length === 0) throw new Error('Cart is empty');
 
       // Two delivery-address modes:
@@ -127,14 +125,15 @@ export default function CheckoutPage() {
       }
 
       return createOrder({
-        // storeId is a hint — the backend cross-zone re-match will swap
-        // to a store in the recipient's zone when needed.
-        storeId: store.storeId,
+        // Catalog-only payload — the backend's catalog matching (mode 2)
+        // picks the best in-zone store at order time. No client-side
+        // storeId hint, so the customer is never tied to whichever store's
+        // listing they happened to tap on the home/search page.
         ...(isInlineRecipient
           ? { recipientAddress: cartRecipient.address! }
           : { deliveryAddressId: selectedAddressId! }),
         paymentMethod,
-        items: items.map((line) => ({ storeItemId: line.storeItemId, qty: line.qty })),
+        items: items.map((line) => ({ catalogItemId: line.catalogItemId, qty: line.qty })),
         ...recipientFields,
       });
     },
@@ -211,7 +210,7 @@ export default function CheckoutPage() {
         <header className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Checkout</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {itemCount} item{itemCount === 1 ? '' : 's'} from {store?.storeName ?? 'your store'}
+            {itemCount} item{itemCount === 1 ? '' : 's'} · store picked at order time
           </p>
         </header>
 
@@ -334,7 +333,7 @@ export default function CheckoutPage() {
                 <CardContent className="p-0">
                   <ul className="divide-y divide-gray-100">
                     {items.map((line) => (
-                      <li key={line.storeItemId} className="flex items-center gap-3 p-3 sm:p-4">
+                      <li key={line.catalogItemId} className="flex items-center gap-3 p-3 sm:p-4">
                         <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-md bg-gray-100">
                           {line.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element

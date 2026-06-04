@@ -34,7 +34,6 @@ interface OrderPreview {
 export default function CartPage() {
   const router = useRouter();
   const items = useCart((s) => s.items);
-  const store = useCart((s) => s.store);
   const subtotal = useCart((s) => s.subtotal());
   const itemCount = useCart((s) => s.itemCount());
   const setQty = useCart((s) => s.setQty);
@@ -58,11 +57,12 @@ export default function CartPage() {
   const previewLat = recipient.mode === 'someone_else' ? recipient.address?.lat : null;
   const previewLng = recipient.mode === 'someone_else' ? recipient.address?.lng : null;
   const preview = useQuery<OrderPreview | null>({
-    queryKey: ['order-preview', previewLat, previewLng, items.map((i) => `${i.storeItemId}:${i.qty}`).join(',')],
+    queryKey: ['order-preview', previewLat, previewLng, items.map((i) => `${i.catalogItemId}:${i.qty}`).join(',')],
     queryFn: async () => {
       if (previewLat == null || previewLng == null || items.length === 0) return null;
       const res = await api.post('/api/v1/orders/preview', {
-        items: items.map((l) => ({ storeItemId: l.storeItemId, qty: l.qty })),
+        // Catalog-only payload — backend re-resolves to in-zone storeItems.
+        items: items.map((l) => ({ catalogItemId: l.catalogItemId, qty: l.qty })),
         lat: previewLat,
         lng: previewLng,
       });
@@ -88,8 +88,8 @@ export default function CartPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Your cart</h1>
             <p className="mt-1 text-sm text-gray-500">
-              {mounted && store
-                ? `${itemCount} item${itemCount === 1 ? '' : 's'} from ${store.storeName}`
+              {mounted && items.length > 0
+                ? `${itemCount} item${itemCount === 1 ? '' : 's'} · we'll pick the best store at checkout`
                 : 'Review your items before checking out'}
             </p>
           </div>
@@ -129,11 +129,11 @@ export default function CartPage() {
             <section className="space-y-3">
               {items.map((line) => (
                 <CartRow
-                  key={line.storeItemId}
+                  key={line.catalogItemId}
                   line={line}
-                  onIncrement={() => setQty(line.storeItemId, line.qty + 1)}
-                  onDecrement={() => setQty(line.storeItemId, line.qty - 1)}
-                  onRemove={() => remove(line.storeItemId)}
+                  onIncrement={() => setQty(line.catalogItemId, line.qty + 1)}
+                  onDecrement={() => setQty(line.catalogItemId, line.qty - 1)}
+                  onRemove={() => remove(line.catalogItemId)}
                 />
               ))}
             </section>
@@ -276,26 +276,11 @@ export default function CartPage() {
                 </CardContent>
               </Card>
 
-              {store ? (
-                <Card>
-                  <CardContent className="flex items-start gap-3 p-4">
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-700">
-                      <ShoppingBag className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Ordering from
-                      </p>
-                      <p className="text-sm font-semibold text-gray-900">{store.storeName}</p>
-                      {store.etaMinutes ? (
-                        <p className="text-xs text-gray-500">
-                          ≈ {store.etaMinutes} min delivery once accepted
-                        </p>
-                      ) : null}
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
+              {/* The legacy "Ordering from {store}" card has been removed —
+                  under catalog-first browsing the cart isn't bound to a
+                  store. The fulfilling store is shown in the preview block
+                  above once a recipient is picked, and finalised at order
+                  submit by the cross-zone re-match. */}
             </aside>
           </div>
         )}
@@ -362,7 +347,7 @@ function CartRow({
             type="button"
             className="flex h-full w-9 items-center justify-center text-gray-700 hover:bg-gray-50 disabled:opacity-40"
             onClick={onIncrement}
-            disabled={line.qty >= line.maxStock && line.maxStock > 0}
+            disabled={!!line.maxStock && line.qty >= line.maxStock}
             aria-label="Increase quantity"
           >
             <Plus className="h-3.5 w-3.5" />

@@ -231,10 +231,59 @@ async function searchWithLocation(
     scored.sort((a, b) => b.score - a.score);
   }
 
-  const items = scored.slice(0, opts.limit).map((s) => {
+  // ── Catalog-first deduplication ──────────────────────────────────────
+  // Multiple stores can carry the same CatalogItem (e.g. "Aloo Bhujia
+  // 200g" stocked by T-and-J at ₹40 and Divine Gems at ₹50). The legacy
+  // shape returned one row per StoreItem so the customer saw the same
+  // product duplicated. That conflicts with the catalog-first browsing
+  // model — the customer shouldn't have to pick a store; they just add
+  // the item and the matching engine decides at order time.
+  //
+  // We now keep ONLY the best-scoring StoreItem per catalogItemId, and
+  // attach summary stats so the UI can render a "from ₹X · N stores"
+  // hint or open a per-store comparison sheet on tap. `bestOffer`
+  // duplicates the legacy flat fields for back-compat with older clients
+  // that haven't been updated yet.
+  const byCatalogId = new Map<string, typeof scored>();
+  for (const s of scored) {
+    const arr = byCatalogId.get(s.row.catalogItemId) ?? [];
+    arr.push(s);
+    byCatalogId.set(s.row.catalogItemId, arr);
+  }
+
+  const deduped: Array<{
+    best: (typeof scored)[number];
+    offers: typeof scored;
+  }> = [];
+  for (const [, offers] of byCatalogId) {
+    deduped.push({ best: offers[0]!, offers });
+  }
+  // Re-apply the active sort across the deduplicated list — picking
+  // first-by-catalog above could put cheaper-elsewhere items below
+  // more-expensive-here items otherwise.
+  if (opts.sort === 'cheapest') {
+    deduped.sort((a, b) => a.best.row.price - b.best.row.price);
+  } else if (opts.sort === 'nearest') {
+    deduped.sort((a, b) => a.best.distanceKm - b.best.distanceKm);
+  } else {
+    deduped.sort((a, b) => b.best.score - a.best.score);
+  }
+
+  const items = deduped.slice(0, opts.limit).map(({ best: s, offers }) => {
     const adminMargin = (s.row as unknown as { adminMargin?: number }).adminMargin ?? 0;
+    const customerPrice = s.row.price + adminMargin;
+    // Cross-store stats — surfaced as "from ₹X · 3 stores" on the card,
+    // and as an in-app comparison sheet when the customer taps the
+    // product. The list is small (capped at the search radius) so we
+    // don't paginate it here.
+    const allCustomerPrices = offers.map((o) => {
+      const am = (o.row as unknown as { adminMargin?: number }).adminMargin ?? 0;
+      return o.row.price + am;
+    });
+    const minCustomerPrice = Math.min(...allCustomerPrices);
+    const maxCustomerPrice = Math.max(...allCustomerPrices);
     return {
-      // Flatten so the client doesn't need to dig into nested objects.
+      // ── Legacy flat fields (kept for back-compat with pre-dedup clients) ──
       storeItemId: s.row.id,
       catalogItemId: s.row.catalogItemId,
       name: s.row.catalogItem.name,
@@ -242,12 +291,9 @@ async function searchWithLocation(
       imageUrl: s.row.catalogItem.imageUrl,
       unit: s.row.catalogItem.defaultUnit,
       category: s.row.catalogItem.category,
-      // `price` is the store owner's payout. `adminMargin` is admin's
-      // commission per unit. Customer-facing price = price + adminMargin
-      // (also surfaced as `customerPrice` so apps don't recompute).
       price: s.row.price,
       adminMargin,
-      customerPrice: s.row.price + adminMargin,
+      customerPrice,
       stockQty: s.row.stockQty,
       rating: s.row.store.rating ?? 0,
       score: Number(s.score.toFixed(4)),
@@ -257,6 +303,13 @@ async function searchWithLocation(
         isOpen: s.row.store.isOpen,
         distanceKm: Number(s.distanceKm.toFixed(2)),
       },
+      // ── New catalog-first fields ─────────────────────────────────────
+      /** Number of in-zone stores that carry this catalog item. */
+      offerCount: offers.length,
+      /** Min customer-facing price across all offers (rupees). */
+      minCustomerPrice,
+      /** Max customer-facing price across all offers (rupees). */
+      maxCustomerPrice,
     };
   });
 

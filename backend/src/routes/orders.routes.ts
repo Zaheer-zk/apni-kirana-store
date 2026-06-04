@@ -1246,6 +1246,44 @@ router.get('/restock', authenticate, authorize('STORE_OWNER'), async (req: Reque
   }
 });
 
+// ─── GET /group/:id — multi-store rollup ──────────────────────────────────
+// Returns the OrderGroup row + its child Orders so the customer-web /
+// customer-mobile order timeline can render one "card" for a cross-store
+// basket. Per-store accept / reject / pickup state lives on each child;
+// the group's aggregate status, delivery fee, and recipient sit at the
+// parent level.
+//
+// Access is customer-scoped (group.customerId === requester) or admin.
+// Drivers see this via GET /:id on a child order; they don't need the
+// rollup yet (the multi-pickup screen is a separate sprint).
+
+router.get('/group/:id', authenticate, async (req: Request, res: Response) => {
+  try {
+    const group = await prisma.orderGroup.findUnique({
+      where: { id: req.params['id'] },
+      include: {
+        deliveryAddress: true,
+        orders: {
+          include: {
+            items: true,
+            store: { select: { id: true, name: true, lat: true, lng: true, street: true, city: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!group) return sendError(res, 'Order group not found', 404);
+    const { id: userId, role } = req.user!;
+    if (role !== 'ADMIN' && group.customerId !== userId) {
+      return sendError(res, 'Access denied', 403);
+    }
+    return sendSuccess(res, group);
+  } catch (err) {
+    console.error('[Orders] group detail error:', err);
+    return sendError(res, 'Failed to fetch order group', 500);
+  }
+});
+
 // ─── GET / ────────────────────────────────────────────────────────────────────
 
 router.get('/', authenticate, async (req: Request, res: Response) => {

@@ -263,6 +263,25 @@ export default function OrderTrackingPage() {
           <OrderStatusBadge status={status} />
         </header>
 
+        {/* Multi-store group banner — this Order is one leg of a bigger
+            basket. Surface a link to the rollup screen so the customer
+            can see every leg's status without bouncing between order
+            cards. Hidden for single-store orders (the common case). */}
+        {order.orderGroupId ? (
+          <Link
+            href={`/orders/group/${order.orderGroupId}`}
+            className="-mt-1 flex items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm transition hover:bg-primary/10"
+          >
+            <span className="text-gray-700">
+              <span className="font-semibold text-primary">
+                Part of a multi-store order.
+              </span>{' '}
+              See all stores + single delivery rollup.
+            </span>
+            <span className="font-semibold text-primary">View all →</span>
+          </Link>
+        ) : null}
+
         <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
           <section className="space-y-5">
             <StatusTimeline status={status} storeCategory={order.store?.category ?? null} />

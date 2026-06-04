@@ -68,6 +68,11 @@ export interface CustomerOrder {
   dropoffOtp?: string | null;
   cancelReason?: string | null;
   rejectionReason?: string | null;
+  /** Set when this Order is one leg of a multi-store basket (POST /orders
+   *  splits cross-store carts into N children linked by an OrderGroup
+   *  parent). UI uses it to surface a "this is part of a bigger order"
+   *  banner that deep-links to /orders/group/{orderGroupId}. */
+  orderGroupId?: string | null;
   createdAt: string;
   updatedAt: string;
   storeAcceptedAt?: string | null;
@@ -108,6 +113,37 @@ export async function fetchOrdersPage(page: number, limit = 20): Promise<OrdersP
 export async function fetchOrder(id: string): Promise<CustomerOrder> {
   const res = await api.get(`/api/v1/orders/${id}`);
   return unwrap<CustomerOrder>(res.data);
+}
+
+/**
+ * Multi-store rollup. The order-detail screen calls this when a
+ * single Order carries an `orderGroupId` — so we can show the customer
+ * "this basket spans 3 stores, here's per-store status".
+ */
+export interface OrderGroupRollup {
+  id: string;
+  customerId: string;
+  status: string;
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  paymentMethod: PaymentMethod;
+  paymentStatus: string;
+  driverId: string | null;
+  recipientName: string | null;
+  recipientPhone: string | null;
+  createdAt: string;
+  deliveryAddress: AddressEmbed | null;
+  orders: Array<
+    CustomerOrder & {
+      store: { id: string; name: string; lat: number; lng: number; street?: string | null; city?: string | null };
+    }
+  >;
+}
+
+export async function fetchOrderGroup(id: string): Promise<OrderGroupRollup> {
+  const res = await api.get(`/api/v1/orders/group/${id}`);
+  return unwrap<OrderGroupRollup>(res.data);
 }
 
 export interface CreateOrderInput {

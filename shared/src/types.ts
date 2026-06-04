@@ -110,6 +110,11 @@ export interface Order {
   driverId: string | null;
   orderType: OrderType;
   buyerStoreId: string | null;
+  /** Set when this Order is one leg of a multi-store basket — the
+   *  matching engine splits cross-store carts into N children linked
+   *  by an OrderGroup parent. UI uses it to surface a "part of a
+   *  bigger order" banner pointing at /orders/group/{id}. */
+  orderGroupId?: string | null;
   items: OrderItem[];
   status: OrderStatus;
   subtotal: number;

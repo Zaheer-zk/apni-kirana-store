@@ -478,6 +478,32 @@ export default function OrderDetailScreen() {
           ) : null}
         </View>
 
+        {/* Multi-store rollup banner — mirrors customer-web. Surfaces a
+            "this order is one leg of a bigger basket" entry point so the
+            customer can see every store's status without bouncing between
+            order cards. Hidden for single-store orders. */}
+        {order.orderGroupId ? (
+          <View style={styles.section}>
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() =>
+                router.push(`/order/group/${order.orderGroupId}` as never)
+              }
+              style={styles.groupBanner}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.groupBannerTitle}>
+                  Part of a multi-store order
+                </Text>
+                <Text style={styles.groupBannerSubtitle}>
+                  Tap to see all stores + single delivery rollup
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* Delivery OTP — shown to customer once driver has picked up the order */}
         {showDropoffOtp ? (
           <View style={styles.section}>
@@ -776,6 +802,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderWidth: 1,
     borderColor: colors.success,
+  },
+  groupBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary + '14', // ~8% alpha tint of primary
+    borderColor: colors.primary + '33',
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  groupBannerTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  groupBannerSubtitle: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   etaLabel: {
     fontSize: fontSize.sm,

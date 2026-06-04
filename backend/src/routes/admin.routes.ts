@@ -1866,6 +1866,128 @@ router.put('/orders/:id/assign-driver', async (req: Request, res: Response) => {
   }
 });
 
+// ─── PUT /order-groups/:id/assign-driver — group-level driver assignment ─────
+// For multi-store baskets the SAME driver should handle every pickup leg
+// (sequential pickups → one delivery). Per-leg assign-driver on one
+// child would leave siblings on a different driver — defeats the point.
+// This endpoint resolves the driver, validates against the dropoff's
+// zone(s), then fans the assignment across every leg via
+// order-group.service.ts:assignDriverToGroup.
+router.put(
+  '/order-groups/:id/assign-driver',
+  async (req: Request, res: Response) => {
+    try {
+      const groupId = req.params['id'] as string;
+      const driverId = req.body?.driverId as string | undefined;
+      const force = req.body?.force === true;
+      if (!driverId) return sendError(res, 'driverId required', 400);
+
+      const [group, driver] = await Promise.all([
+        prisma.orderGroup.findUnique({
+          where: { id: groupId },
+          include: {
+            deliveryAddress: { select: { lat: true, lng: true } },
+            orders: { select: { id: true, status: true } },
+          },
+        }),
+        prisma.driver.findUnique({
+          where: { id: driverId },
+          include: { user: true, zones: { select: { zoneId: true } } },
+        }),
+      ]);
+      if (!group) return sendError(res, 'Order group not found', 404);
+      if (!driver) return sendError(res, 'Driver not found', 404);
+
+      // Refuse on terminal groups so a stale tab can't quietly clobber
+      // an in-flight assignment.
+      const liveLegs = group.orders.filter((o) => o.status !== 'CANCELLED');
+      if (liveLegs.every((o) => o.status === 'DELIVERED')) {
+        return sendError(res, 'Cannot reassign a fully-delivered group', 400);
+      }
+      if (liveLegs.length === 0) {
+        return sendError(res, 'All legs in this group are cancelled', 400);
+      }
+
+      // Zone validation — mirrors the per-order endpoint. We use the
+      // dropoff's zone for groups (every leg shares the dropoff) rather
+      // than per-store zones, which could otherwise force `{force:true}`
+      // even when the driver covers the destination.
+      if (!force && group.deliveryAddress) {
+        const dropoffZones = await findZonesForPoint(
+          group.deliveryAddress.lat,
+          group.deliveryAddress.lng,
+        );
+        if (dropoffZones.length > 0) {
+          const driverZoneIds = new Set(driver.zones.map((z) => z.zoneId));
+          const overlaps = dropoffZones.some((z) => driverZoneIds.has(z.zoneId));
+          if (!overlaps) {
+            return sendError(
+              res,
+              "Driver doesn't serve this group's delivery zone. Pass { force: true } to override.",
+              409,
+            );
+          }
+        }
+      }
+
+      const { assignDriverToGroup, rollUpGroupStatus } = await import(
+        '../services/order-group.service'
+      );
+      // Use any live (non-cancelled) leg as the seed — assignDriverToGroup
+      // walks ALL siblings via orderGroupId from the seed, so the choice
+      // doesn't matter as long as it's in the same group.
+      const seedLeg = liveLegs.find((o) => o.status !== 'DELIVERED') ?? liveLegs[0]!;
+      await prisma.$transaction(async (tx) => {
+        await assignDriverToGroup(tx, seedLeg.id, driverId);
+        await rollUpGroupStatus(tx, groupId);
+      });
+
+      // Broadcast on every newly-assigned leg so per-store screens
+      // refresh in real time.
+      for (const leg of liveLegs) {
+        if (leg.status === 'STORE_ACCEPTED' || leg.status === 'COOKING' || leg.status === 'DRIVER_ASSIGNED') {
+          await broadcastOrderStatus(leg.id, 'DRIVER_ASSIGNED', {
+            byAdmin: true,
+            driverId,
+          });
+        }
+      }
+
+      // Notify the new driver with one push for the group (using the
+      // seed leg's id so the existing /deliveries/new offer flow works).
+      await notify('DRIVER_NEW_DELIVERY', driver.user.id, {
+        orderShort: groupId.slice(-6),
+        distanceKm: '?',
+        earning: 50, // TODO: real per-group estimate
+        orderId: seedLeg.id,
+      });
+
+      await prisma.auditLog
+        .create({
+          data: {
+            actorId: req.user!.id,
+            action: 'ORDER_GROUP_ASSIGN_DRIVER',
+            targetType: 'OrderGroup',
+            targetId: groupId,
+            before: {},
+            after: { driverId, legs: liveLegs.length },
+            reason: req.body?.reason ?? null,
+          },
+        })
+        .catch(() => undefined);
+
+      return sendSuccess(
+        res,
+        { groupId, driverId, fannedToLegs: liveLegs.length },
+        'Driver assigned to group',
+      );
+    } catch (err) {
+      console.error('[Admin] group assign-driver error:', err);
+      return sendError(res, 'Failed to assign driver to group', 500);
+    }
+  },
+);
+
 // ─── GET /analytics ───────────────────────────────────────────────────────────
 
 // ─── /settings — global platform config (singleton row, cached read) ──────────

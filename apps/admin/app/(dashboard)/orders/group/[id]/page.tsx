@@ -281,6 +281,11 @@ export default function AdminOrderGroupPage() {
             matching kicks in.
           </p>
         )}
+        <GroupDriverAssignBlock
+          groupId={group.id}
+          seedLegId={group.orders[0]?.id ?? null}
+          currentDriverId={group.driverId}
+        />
       </div>
 
       {/* Per-store legs — admin drills into each leg's existing detail
@@ -353,6 +358,152 @@ function SummaryCard({
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+interface EligibleDriver {
+  id: string;
+  user: { id: string; name: string | null; phone: string };
+  vehicleType?: string | null;
+  vehicleNumber?: string | null;
+  rating: number;
+  distanceKm: number | null;
+  inZone?: boolean;
+  zoneRank?: number | null;
+}
+
+/**
+ * Group-level driver assign / reassign. We reuse the per-leg
+ * GET /admin/orders/:id/eligible-drivers endpoint with the FIRST leg as
+ * the seed (eligibility is computed against each store's pickup point;
+ * using the first leg is a reasonable proxy for ranking — admin can
+ * still see the full list and pick). On submit we hit the new
+ * PUT /admin/order-groups/:id/assign-driver which fans the chosen
+ * driver across every sibling leg + the parent group via
+ * order-group.service.ts:assignDriverToGroup.
+ */
+function GroupDriverAssignBlock({
+  groupId,
+  seedLegId,
+  currentDriverId,
+}: {
+  groupId: string;
+  seedLegId: string | null;
+  currentDriverId: string | null;
+}) {
+  const queryClient = useQueryClient();
+  const [toast, setToast] = useState<string | null>(null);
+
+  const eligibleQuery = useQuery<EligibleDriver[]>({
+    queryKey: ['admin-group-eligible-drivers', seedLegId],
+    enabled: !!seedLegId,
+    queryFn: async () => {
+      const res = await api.get<{ success: boolean; data: EligibleDriver[] }>(
+        `/api/v1/admin/orders/${seedLegId}/eligible-drivers`,
+      );
+      return res.data.data ?? [];
+    },
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: async (args: { driverId: string; force?: boolean }) => {
+      const res = await api.put<{
+        success: boolean;
+        data: { fannedToLegs: number };
+      }>(`/api/v1/admin/order-groups/${groupId}/assign-driver`, args);
+      return res.data.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-order-group', groupId] });
+      setToast(
+        `Driver fanned across ${data?.fannedToLegs ?? 0} legs.`,
+      );
+      setTimeout(() => setToast(null), 3500);
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: { message?: string } } } };
+      setToast(e?.response?.data?.error?.message ?? 'Could not assign driver.');
+      setTimeout(() => setToast(null), 4500);
+    },
+  });
+
+  function handleAssign(d: EligibleDriver) {
+    const outOfZone = d.zoneRank === null || d.inZone === false;
+    if (
+      outOfZone &&
+      !window.confirm(
+        "This driver doesn't serve the group's delivery zone. Assign anyway?",
+      )
+    ) {
+      return;
+    }
+    assignMutation.mutate({ driverId: d.id, force: outOfZone });
+  }
+
+  const drivers = (eligibleQuery.data ?? []).slice(0, 8);
+  if (!seedLegId) return null;
+
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          {currentDriverId ? 'Reassign driver' : 'Assign driver'}
+        </p>
+        {toast ? (
+          <span className="text-xs text-primary-700">{toast}</span>
+        ) : null}
+      </div>
+      {eligibleQuery.isLoading ? (
+        <p className="mt-2 text-xs text-gray-400">Loading drivers…</p>
+      ) : drivers.length === 0 ? (
+        <p className="mt-2 text-xs text-gray-400">
+          No online drivers right now.
+        </p>
+      ) : (
+        <ul className="mt-2 space-y-1.5">
+          {drivers.map((d) => (
+            <li
+              key={d.id}
+              className="flex items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50/60 px-3 py-2 text-sm"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium text-gray-900">
+                  {d.user.name ?? 'Driver'}{' '}
+                  <span className="text-xs text-gray-500">
+                    · {d.vehicleType ?? '—'}
+                  </span>
+                </p>
+                <p className="text-[11px] text-gray-500">
+                  {d.distanceKm != null ? `${d.distanceKm} km` : '—'} ·{' '}
+                  {d.zoneRank === 0
+                    ? 'In zone'
+                    : d.zoneRank == null
+                      ? 'Out of zone'
+                      : `Fallback zone #${d.zoneRank}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleAssign(d)}
+                disabled={assignMutation.isPending || d.id === currentDriverId}
+                className="rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                {assignMutation.isPending &&
+                assignMutation.variables?.driverId === d.id ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : d.id === currentDriverId ? (
+                  'Current'
+                ) : currentDriverId ? (
+                  'Switch'
+                ) : (
+                  'Assign'
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

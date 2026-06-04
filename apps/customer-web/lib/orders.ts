@@ -138,6 +138,11 @@ export interface OrderGroupRollup {
   orders: Array<
     CustomerOrder & {
       store: { id: string; name: string; lat: number; lng: number; street?: string | null; city?: string | null };
+      /** Customer's rating for this leg, populated only after the
+       *  customer submits ratings via POST /orders/:id/rate. UI uses
+       *  the presence to render "✓ Rated · 5 stars" instead of a
+       *  "Rate this store" CTA. */
+      rating?: { id: string; storeRating: number; driverRating: number | null } | null;
     }
   >;
 }

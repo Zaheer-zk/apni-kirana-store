@@ -1267,6 +1267,13 @@ router.get('/group/:id', authenticate, async (req: Request, res: Response) => {
           include: {
             items: true,
             store: { select: { id: true, name: true, lat: true, lng: true, street: true, city: true } },
+            // Pull the rating row so the rollup UI can show "✓ Rated"
+            // per leg without an extra fetch per child. We don't need
+            // the full comment text on the rollup — UI shows a star
+            // count + "Tap to edit" if it needs the full form.
+            rating: {
+              select: { id: true, storeRating: true, driverRating: true },
+            },
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -1979,6 +1986,28 @@ router.post(
         typeof rateOrderSchema
       >;
 
+      // Multi-store group: the SAME driver carries every leg, so if the
+      // customer rates leg #1 with a driverRating and then rates leg #2,
+      // applying the driverRating again would double-count the same
+      // delivery trip. Detect "driver already got a rating via a sibling
+      // in this group" and skip the aggregate update on subsequent legs.
+      // Per-leg storeRating remains independent (each store gets its
+      // own sample as expected).
+      let suppressDriverAggregate = false;
+      if (order.orderGroupId && order.driverId && driverRating !== undefined) {
+        const siblingRated = await prisma.orderRating.count({
+          where: {
+            order: {
+              orderGroupId: order.orderGroupId,
+              id: { not: order.id },
+              driverId: order.driverId,
+            },
+            driverRating: { not: null },
+          },
+        });
+        suppressDriverAggregate = siblingRated > 0;
+      }
+
       const ratingRecord = await prisma.$transaction(async (tx) => {
         const created = await tx.orderRating.create({
           data: {
@@ -2005,8 +2034,14 @@ router.post(
           });
         }
 
-        // Update driver aggregate rating
-        if (order.driverId && driverRating !== undefined) {
+        // Update driver aggregate rating — skipped for sibling-leg
+        // re-ratings (see suppressDriverAggregate above) so one delivery
+        // trip contributes one driver rating sample, not N.
+        if (
+          order.driverId &&
+          driverRating !== undefined &&
+          !suppressDriverAggregate
+        ) {
           const driver = await tx.driver.findUnique({
             where: { id: order.driverId },
             select: { rating: true, totalRatings: true },

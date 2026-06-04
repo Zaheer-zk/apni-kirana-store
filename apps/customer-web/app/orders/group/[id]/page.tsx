@@ -210,6 +210,21 @@ export default function OrderGroupPage() {
                       <OrderStatusBadge
                         status={leg.status as Parameters<typeof OrderStatusBadge>[0]['status']}
                       />
+                      {/* Rating affordance per leg. Tapping the row
+                          already deep-links to the per-leg detail
+                          where the existing rate form lives, so the
+                          chip is informational + a CTA hint. */}
+                      {leg.status === 'DELIVERED' ? (
+                        leg.rating ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                            ✓ {leg.rating.storeRating}★
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                            Tap to rate
+                          </span>
+                        )
+                      ) : null}
                     </div>
                     <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
                       <MapPin className="h-3 w-3" />

@@ -72,9 +72,11 @@ export enum StoreCategory {
 }
 
 export enum VehicleType {
-  BIKE = 'BIKE',
-  SCOOTER = 'SCOOTER',
+  BIKE = 'BIKE',         // motorcycle / motorbike (default)
+  SCOOTER = 'SCOOTER',   // gearless 2-wheeler
   CAR = 'CAR',
+  BICYCLE = 'BICYCLE',   // pedal bicycle
+  ON_FOOT = 'ON_FOOT',   // pedestrian
 }
 
 export enum DiscountType {

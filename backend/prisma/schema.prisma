@@ -76,9 +76,11 @@ enum PaymentStatus {
 }
 
 enum VehicleType {
-  BIKE
-  SCOOTER
+  BIKE       // motorcycle / motorbike (the default for the Indian "delivery bike")
+  SCOOTER    // gearless 2-wheeler (Activa-class)
   CAR
+  BICYCLE    // pedal bicycle — slower legs, no fuel cost
+  ON_FOOT    // pedestrian — used for short hyperlocal hops in tight markets
 }
 
 enum DriverStatus {

@@ -182,6 +182,8 @@ export default function CatalogDetailScreen() {
     const si = selected.storeItem as { id: string; price: number; customerPrice?: number };
     addItem({
       itemId: si.id,
+      // item is the CatalogItem here — its id is the canonical catalogItemId.
+      catalogItemId: item.id,
       name: item.name,
       price: si.customerPrice ?? si.price,
       unit: item.defaultUnit,

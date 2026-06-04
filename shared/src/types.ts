@@ -64,6 +64,10 @@ export interface StoreProfile {
 export interface InventoryItem {
   id: string;
   storeId: string;
+  // Catalog item id — primary key for the catalog-first cart so the
+  // matching engine can re-route to a different store at order time.
+  // Optional because legacy /stores/:id/items responses don't include it.
+  catalogItemId?: string;
   name: string;
   category: ItemCategory;
   // `price` is the store owner's payout per unit (their input, what they

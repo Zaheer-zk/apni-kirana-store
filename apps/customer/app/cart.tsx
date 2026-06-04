@@ -38,8 +38,20 @@ async function fetchAddresses(): Promise<Address[]> {
 }
 
 async function placeOrderRequest(payload: {
-  items: Array<{ storeItemId: string; qty: number }>;
-  deliveryAddressId: string;
+  // Catalog-first: send catalogItemId; the matching engine picks the
+  // fulfilling store at submit time. storeItemId stays accepted for
+  // back-compat with the old store-locked flow.
+  items: Array<{ catalogItemId?: string; storeItemId?: string; qty: number }>;
+  deliveryAddressId?: string;
+  recipientAddress?: {
+    label: string;
+    street: string;
+    city: string;
+    state: string;
+    pincode: string;
+    lat: number;
+    lng: number;
+  };
   paymentMethod: PaymentMethod;
   promoCode?: string;
   recipientName?: string;
@@ -227,8 +239,16 @@ export default function CartScreen() {
       recipPhoneTrimmed = p;
     }
     orderMutation.mutate({
-      // Cart's `itemId` is the StoreItem id (the customer added it from a specific store).
-      items: items.map((i) => ({ storeItemId: i.itemId, qty: i.qty })),
+      // Catalog-first payload — fall back to storeItemId when an older
+      // cart line doesn't yet carry a catalogItemId snapshot (legacy
+      // adds prior to the v2 migration). Backend handles both modes.
+      items: items.map((i) => ({
+        catalogItemId: (i as { catalogItemId?: string }).catalogItemId,
+        ...((i as { catalogItemId?: string }).catalogItemId
+          ? {}
+          : { storeItemId: i.itemId }),
+        qty: i.qty,
+      })),
       deliveryAddressId: defaultAddress.id,
       paymentMethod,
       promoCode: appliedPromo ?? undefined,

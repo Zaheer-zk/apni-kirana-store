@@ -129,7 +129,12 @@ export default function ItemDetailScreen() {
       updateQty(inCart.itemId, inCart.qty + qty);
     } else {
       addItem({
+        // itemId stays as the StoreItem snapshot (back-compat with older
+        // callers); catalogItemId is what the backend really uses to
+        // re-resolve at order time.
         itemId: item.id,
+        catalogItemId: item.catalogItemId,
+        maxStock: item.stockQty,
         name: item.name,
         // Store the customer-facing price in the cart so all downstream
         // math (subtotal, place-order display) shows what the user actually

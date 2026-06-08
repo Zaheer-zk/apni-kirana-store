@@ -170,6 +170,9 @@ async function searchWithLocation(
           name: true,
           lat: true,
           lng: true,
+          // zoneId enables the indexed zone-match path in
+          // filterStoresByCustomerZone (preferred over haversine).
+          zoneId: true,
           isOpen: true,
           rating: true,
           isPreferred: true,
@@ -191,7 +194,12 @@ async function searchWithLocation(
   // as their location. Falls back to the haversine-only list if no zones
   // are configured (dev / early deployments).
   const zonedStores = await filterStoresByCustomerZone(
-    enrichedAll.map((e) => ({ lat: e.row.store.lat, lng: e.row.store.lng, _e: e })),
+    enrichedAll.map((e) => ({
+      lat: e.row.store.lat,
+      lng: e.row.store.lng,
+      zoneId: e.row.store.zoneId,
+      _e: e,
+    })),
     opts.lat,
     opts.lng,
   );
@@ -336,6 +344,9 @@ router.get('/:id', async (req: Request, res: Response) => {
             name: true,
             lat: true,
             lng: true,
+            // zoneId so the per-store zone gate below uses the
+            // indexed match path.
+            zoneId: true,
             isOpen: true,
             rating: true,
             status: true,
@@ -362,7 +373,13 @@ router.get('/:id', async (req: Request, res: Response) => {
         const anyZones = (await prisma.zone.count({ where: { isActive: true } })) > 0;
         if (anyZones) {
           const allowed = await filterStoresByCustomerZone(
-            [{ lat: storeItem.store.lat, lng: storeItem.store.lng }],
+            [
+              {
+                lat: storeItem.store.lat,
+                lng: storeItem.store.lng,
+                zoneId: storeItem.store.zoneId,
+              },
+            ],
             lat,
             lng,
           );

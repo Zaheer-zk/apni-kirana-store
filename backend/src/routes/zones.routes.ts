@@ -1,19 +1,21 @@
-// Public-ish zones endpoint for authenticated users. Drivers read this to
-// populate their "Serving zones" multi-select picker; store-web could use
-// it for the same purpose later. Admin-only zone CRUD lives in
-// admin.routes.ts — this router is read-only.
+// Public zones endpoint. Drivers + store owners populate their zone
+// picker from this list at registration time (before any token exists).
+// Admin-only zone CRUD lives in admin.routes.ts — this router is
+// read-only and returns only safe fields (no commission / fee data).
 
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../config/prisma';
-import { authenticate } from '../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../utils/response';
 import { haversineDistance } from '../utils/geo';
 
 const router = Router();
 
 // GET /zones — list every ACTIVE zone. Returns only safe fields (no
-// commission/fee data — those are admin-only).
-router.get('/', authenticate, async (_req: Request, res: Response) => {
+// commission/fee data — those are admin-only). Public on purpose: the
+// store-portal + driver-app registration screens populate a zone
+// picker BEFORE the user has a token (so they can self-onboard into
+// the right zone in one step).
+router.get('/', async (_req: Request, res: Response) => {
   try {
     const zones = await prisma.zone.findMany({
       where: { isActive: true },

@@ -97,6 +97,9 @@ router.get('/:id', async (req: Request, res: Response) => {
       const enriched = candidates
         .map((s) => ({
           id: s.id, name: s.name, lat: s.lat, lng: s.lng, rating: s.rating, isOpen: s.isOpen,
+          // zoneId routes filterStoresByCustomerZone through the
+          // indexed match path instead of haversine fallback.
+          zoneId: (s as { zoneId?: string | null }).zoneId ?? null,
           storeItem: {
             id: s.items[0]!.id, price: s.items[0]!.price,
             adminMargin: s.items[0]!.adminMargin ?? 0,

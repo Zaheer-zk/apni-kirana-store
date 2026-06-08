@@ -26,6 +26,13 @@ const registerStoreSchema = z.object({
   city: z.string().min(2),
   state: z.string().min(2),
   pincode: z.string().regex(/^\d{6}$/),
+  // Optional zone the store serves. When set, the matching engine uses
+  // an indexed FK lookup instead of haversine — see
+  // backend/src/services/zone.service.ts:filterStoresByCustomerZone.
+  // Optional for back-compat with older clients that don't show the
+  // picker; new registrations from store-portal / admin should always
+  // include it.
+  zoneId: z.string().cuid().optional(),
   openTime: z.string().regex(/^\d{2}:\d{2}$/),
   closeTime: z.string().regex(/^\d{2}:\d{2}$/),
 });

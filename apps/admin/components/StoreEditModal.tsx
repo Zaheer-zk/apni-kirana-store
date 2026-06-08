@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import dynamic from 'next/dynamic';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { ApiResponse } from '@aks/shared';
@@ -29,8 +29,18 @@ export interface EditableStore {
   city?: string | null;
   state?: string | null;
   pincode?: string | null;
+  /** Optional FK to Zone — controls which customers can see this store
+   *  in matching (zoneId match preferred over haversine fallback). */
+  zoneId?: string | null;
   openTime?: string | null;
   closeTime?: string | null;
+}
+
+interface ZoneRow {
+  id: string;
+  name: string;
+  city: string;
+  isActive: boolean;
 }
 
 const CATEGORIES = [
@@ -60,7 +70,24 @@ export default function StoreEditModal({ store, onClose }: Props) {
   const [pincode, setPincode] = useState(store.pincode ?? '');
   const [openTime, setOpenTime] = useState(store.openTime ?? '');
   const [closeTime, setCloseTime] = useState(store.closeTime ?? '');
+  // Zone assignment. Empty string = no zone (FK is nullable). Admin
+  // can re-assign at any time; the matching engine immediately starts
+  // using the new zone on the next customer query (no cache to bust).
+  const [zoneId, setZoneId] = useState(store.zoneId ?? '');
   const [error, setError] = useState<string | null>(null);
+
+  // Load active zones once for the dropdown. We always fetch from
+  // /admin/zones (read-only — no auth difference) and use a short stale
+  // window since the list is small and changes rarely.
+  const zonesQuery = useQuery<ZoneRow[]>({
+    queryKey: ['admin-zones-active'],
+    queryFn: async () => {
+      const res = await api.get<ApiResponse<ZoneRow[]>>('/api/v1/admin/zones');
+      const all = (res.data as { data?: ZoneRow[] }).data ?? [];
+      return all.filter((z) => z.isActive);
+    },
+    staleTime: 5 * 60_000,
+  });
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -78,6 +105,11 @@ export default function StoreEditModal({ store, onClose }: Props) {
       if (pincode.trim()) body.pincode = pincode.trim();
       if (openTime.trim()) body.openTime = openTime.trim();
       if (closeTime.trim()) body.closeTime = closeTime.trim();
+      // Zone — explicit null on un-assignment so the backend nulls the
+      // FK (vs. "didn't touch it"). Trimmed-string falsy → null.
+      if (zoneId !== (store.zoneId ?? '')) {
+        body.zoneId = zoneId.trim() === '' ? null : zoneId.trim();
+      }
 
       const { data } = await api.put<ApiResponse<unknown>>(
         `/api/v1/admin/stores/${store.id}`,
@@ -193,6 +225,27 @@ export default function StoreEditModal({ store, onClose }: Props) {
             onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
             placeholder="6-digit pincode"
           />
+        </Field>
+
+        <Field label="Delivery zone">
+          <select
+            className="input"
+            value={zoneId}
+            onChange={(e) => setZoneId(e.target.value)}
+          >
+            <option value="">— No zone (legacy geographic match) —</option>
+            {(zonesQuery.data ?? []).map((z) => (
+              <option key={z.id} value={z.id}>
+                {z.name} · {z.city}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-gray-500">
+            Stores with a zone are matched via indexed FK lookup.
+            Customers in this zone see this store; customers outside
+            don't. Without a zone, the engine falls back to a
+            geographic radius check against the store's lat/lng.
+          </p>
         </Field>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

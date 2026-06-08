@@ -176,15 +176,32 @@ export async function nearestZonesForPoint(
  * the customer's position. If the customer is outside every zone, returns
  * an empty list — there's no fallback because the whole point of the zone
  * model is "we don't deliver outside our serving area".
+ *
+ * Per-store match logic (in order of preference):
+ *   1. EXPLICIT — `store.zoneId` matches one of the customer's zone ids.
+ *      This is the right answer for stores onboarded with the zone-picker
+ *      UI (admin or store-portal registration) and is an indexed lookup,
+ *      not a haversine loop.
+ *   2. GEOGRAPHIC fallback — when `store.zoneId` is null (legacy stores
+ *      created before the zone field existed), fall back to the
+ *      lat/lng-in-radius check so they don't silently disappear from
+ *      discovery during the migration window.
+ *
+ * Once every store has been assigned a zone via the new UI, the geographic
+ * fallback becomes dead code and can be removed.
  */
 export async function filterStoresByCustomerZone<
-  T extends { lat: number; lng: number },
+  T extends { lat: number; lng: number; zoneId?: string | null },
 >(stores: T[], customerLat: number, customerLng: number): Promise<T[]> {
   const customerZones = await findZonesForPoint(customerLat, customerLng);
   if (customerZones.length === 0) return [];
-  return stores.filter((s) =>
-    customerZones.some(
+  const customerZoneIds = new Set(customerZones.map((z) => z.zoneId));
+  return stores.filter((s) => {
+    // Preferred path: explicit zone match.
+    if (s.zoneId) return customerZoneIds.has(s.zoneId);
+    // Back-compat: geographic radius for stores without an assigned zone.
+    return customerZones.some(
       (z) => haversineDistance(s.lat, s.lng, z.centerLat, z.centerLng) <= z.radiusKm,
-    ),
-  );
+    );
+  });
 }

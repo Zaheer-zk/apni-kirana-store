@@ -336,6 +336,9 @@ export default function StoreDetailPage({ params }: { params: Promise<{ id: stri
             city: store.city,
             state: store.state,
             pincode: store.pincode,
+            // zoneId surfaced so the modal's dropdown pre-selects the
+            // store's current zone (or "no zone" for legacy stores).
+            zoneId: (store as { zoneId?: string | null }).zoneId ?? null,
             openTime: store.openTime,
             closeTime: store.closeTime,
           }}

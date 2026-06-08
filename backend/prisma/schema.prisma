@@ -205,6 +205,14 @@ model Store {
   status       StoreStatus   @default(PENDING_APPROVAL)
   isWholesaler Boolean       @default(false) // true = a wholesaler/workshop that retail stores restock from
   isPreferred  Boolean       @default(false) // admin-flagged; gets a scoring boost in the matching engine
+  // Explicit zone the store belongs to. Nullable so legacy stores (pre-
+  // zone-field) still resolve via the lat/lng geographic filter. Once set,
+  // the matching engine prefers `zoneId` over the haversine radius check —
+  // see backend/src/services/zone.service.ts:filterStoresByCustomerZone.
+  // Driver→zone uses a many-to-many (DriverZone) because drivers serve
+  // multiple zones; stores are anchored to ONE physical address so a
+  // single-zone FK is the right fit.
+  zoneId       String?
   openTime     String
   closeTime    String
   rating       Float         @default(0)
@@ -214,6 +222,7 @@ model Store {
   updatedAt    DateTime      @updatedAt
 
   owner       User        @relation(fields: [ownerId], references: [id])
+  zone        Zone?       @relation(fields: [zoneId], references: [id], onDelete: SetNull)
   items            StoreItem[]
   orders           Order[]              @relation("StoreOrders") // orders this store received (as seller)
   buyerOrders      Order[]              @relation("BuyerStoreOrders") // restock orders this store placed (as buyer)
@@ -221,6 +230,7 @@ model Store {
 
   @@index([lat, lng])
   @@index([isWholesaler])
+  @@index([zoneId])
 }
 
 // Master product catalog managed by ADMIN.
@@ -787,6 +797,7 @@ model Zone {
   updatedAt       DateTime @updatedAt
 
   drivers DriverZone[]
+  stores  Store[]
 
   @@index([city])
   @@index([isActive])

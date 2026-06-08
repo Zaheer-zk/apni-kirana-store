@@ -123,7 +123,34 @@ export default function StoreRegisterScreen() {
   const [pincode, setPincode] = useState('');
   const [openTime, setOpenTime] = useState('09:00');
   const [closeTime, setCloseTime] = useState('21:00');
+  // Zone the store will serve — drives matching for customers in this
+  // zone. Optional during registration; admin can re-assign later.
+  const [zoneId, setZoneId] = useState<string>('');
   const [submitted, setSubmitted] = useState(false);
+
+  // Active zones list for the picker. Public endpoint (no auth) so a
+  // user can pick during registration before any token exists.
+  const [zones, setZones] = useState<Array<{ id: string; name: string; city: string }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadZones() {
+      try {
+        const r = await api.get<{ data?: Array<{ id: string; name: string; city: string; isActive: boolean }> }>(
+          '/api/v1/zones',
+        );
+        if (cancelled) return;
+        const all = r.data?.data ?? [];
+        setZones(all.filter((z) => z.isActive).map((z) => ({ id: z.id, name: z.name, city: z.city })));
+      } catch {
+        // Non-fatal — registration still works without a zone (admin
+        // can assign later from /admin/stores/[id]).
+      }
+    }
+    loadZones();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Map picker
   const [region, setRegion] = useState<Region>(DEFAULT_REGION);
@@ -322,6 +349,9 @@ export default function StoreRegisterScreen() {
       pincode: pincode.trim(),
       openTime: openTime.trim(),
       closeTime: closeTime.trim(),
+      // Optional at registration — store goes into PENDING_APPROVAL
+      // regardless, and admin can re-assign zone on approval.
+      ...(zoneId.trim() ? { zoneId: zoneId.trim() } : {}),
     });
   };
 
@@ -590,6 +620,35 @@ export default function StoreRegisterScreen() {
             onChangeText={setPincode}
           />
 
+          {/* Delivery zone — required for customers in that zone to find
+              this store. Optional during onboarding; admin can re-assign
+              on approval if the owner picked the wrong one. */}
+          {zones.length > 0 ? (
+            <>
+              <Text style={styles.label}>Delivery zone</Text>
+              <View style={styles.zoneList}>
+                {zones.map((z) => {
+                  const selected = zoneId === z.id;
+                  return (
+                    <TouchableOpacity
+                      key={z.id}
+                      onPress={() => setZoneId(selected ? '' : z.id)}
+                      style={[styles.zoneChip, selected && styles.zoneChipActive]}
+                    >
+                      <Text style={[styles.zoneChipText, selected && styles.zoneChipTextActive]}>
+                        {z.name} · {z.city}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={styles.zoneHelper}>
+                Customers ordering in this zone will see your store. If you
+                leave it blank, admin will assign one on approval.
+              </Text>
+            </>
+          ) : null}
+
           {/* Operating Hours */}
           <Text style={styles.sectionHeader}>Operating Hours</Text>
 
@@ -657,6 +716,32 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   textArea: { height: 80, paddingTop: 12, textAlignVertical: 'top' },
+  zoneList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  zoneChip: {
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+  },
+  zoneChipActive: {
+    borderColor: '#16A34A',
+    backgroundColor: '#ECFDF5',
+  },
+  zoneChipText: { fontSize: 13, color: '#374151', fontWeight: '500' },
+  zoneChipTextActive: { color: '#16A34A', fontWeight: '700' },
+  zoneHelper: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 16,
+    lineHeight: 16,
+  },
   categoryScroll: { marginBottom: 16 },
   categoryChip: {
     borderWidth: 1.5,

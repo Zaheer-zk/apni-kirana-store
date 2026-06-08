@@ -707,6 +707,10 @@ const adminUpdateStoreSchema = z
     city: z.string().min(2),
     state: z.string().min(2),
     pincode: z.string().regex(/^\d{6}$/, 'Pincode must be 6 digits'),
+    // Admin can (re)assign the zone explicitly. nullable so admin can
+    // un-assign and fall back to the geographic filter. Validated as a
+    // cuid string elsewhere; here we accept either a cuid or null.
+    zoneId: z.union([z.string().cuid(), z.null()]),
     openTime: z.string().regex(/^\d{2}:\d{2}$/, 'Use HH:MM'),
     closeTime: z.string().regex(/^\d{2}:\d{2}$/, 'Use HH:MM'),
   })

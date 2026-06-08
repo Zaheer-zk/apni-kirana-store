@@ -16,7 +16,8 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "db:seed-catalog": "tsx prisma/seed-catalog.ts"
+    "db:seed-catalog": "tsx prisma/seed-catalog.ts",
+    "db:seed-khandela": "tsx prisma/seed-khandela.ts"
   },
   "dependencies": {
     "@aks/shared": "*",

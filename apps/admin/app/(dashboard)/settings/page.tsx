@@ -28,6 +28,11 @@ interface PlatformSettings {
   driverAcceptTimeoutSeconds: number;
   storeMatchingMode: MatchingMode;
   driverMatchingMode: MatchingMode;
+  // Engine limits (2026-06-08): expose the previously-hardcoded
+  // broadcast cap + the new retry-cap to admin so they can tune
+  // matching aggressiveness without a code change.
+  matchingMaxRetries: number;
+  broadcastFanout: number;
 }
 
 const DEFAULTS: PlatformSettings = {
@@ -39,6 +44,8 @@ const DEFAULTS: PlatformSettings = {
   driverAcceptTimeoutSeconds: 60,
   storeMatchingMode: 'BROADCAST',
   driverMatchingMode: 'BROADCAST',
+  matchingMaxRetries: 5,
+  broadcastFanout: 30,
 };
 
 // parseFloat('') is NaN, which React treats as undefined and flips a
@@ -307,9 +314,101 @@ export default function SettingsPage() {
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <SectionCard
-            title="Pricing"
+            title="Timeouts"
+            icon={<Clock className="h-4 w-4 text-primary" />}
+            description="How long stores and drivers have to accept an offer before we retry. Platform-wide."
+          >
+            <NumberField
+              id="storeAcceptTimeoutMinutes"
+              label="Store accept window"
+              hint="If no candidate accepts within this window, the order falls back to a wider set or admin rescue."
+              value={form.storeAcceptTimeoutMinutes}
+              onChange={(v) => setField('storeAcceptTimeoutMinutes', Math.round(v))}
+              min={1}
+              max={60}
+              step={1}
+              suffix="min"
+            />
+            <NumberField
+              id="driverAcceptTimeoutSeconds"
+              label="Driver accept window"
+              hint="Per-driver window in cascade mode; doubled before re-broadcasting in broadcast mode."
+              value={form.driverAcceptTimeoutSeconds}
+              onChange={(v) => setField('driverAcceptTimeoutSeconds', Math.round(v))}
+              min={15}
+              max={600}
+              step={5}
+              suffix="sec"
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="Matching mode"
+            icon={<Truck className="h-4 w-4 text-primary" />}
+            description="Broadcast offers to many in parallel, or cascade to the best one at a time. Platform-wide."
+          >
+            <ModeRadio
+              label="Stores"
+              hint="Broadcast is faster but more disruptive. Cascade preserves first-priority for the top match."
+              value={form.storeMatchingMode}
+              onChange={(m) => setField('storeMatchingMode', m)}
+            />
+            <ModeRadio
+              label="Drivers"
+              hint="Same trade-off as stores. Most operators run both in broadcast for speed."
+              value={form.driverMatchingMode}
+              onChange={(m) => setField('driverMatchingMode', m)}
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="Engine limits"
+            icon={<Workflow className="h-4 w-4 text-primary" />}
+            description="Safety caps on how aggressively the matching engine retries or fans out. Platform-wide."
+          >
+            <NumberField
+              id="matchingMaxRetries"
+              label="Max retries before admin rescue"
+              hint="After this many failed match attempts (no store / no driver), the order auto-cancels and every admin gets a notification so they can manually rescue or refund. Without a cap the queue would self-re-enqueue forever."
+              value={form.matchingMaxRetries}
+              onChange={(v) => setField('matchingMaxRetries', Math.round(v))}
+              min={1}
+              max={20}
+              step={1}
+            />
+            <NumberField
+              id="broadcastFanout"
+              label="Broadcast fanout cap"
+              hint="Hard ceiling on how many stores or drivers receive a single broadcast offer. Above this we log and skip; raise it for thin markets that need more candidates per round."
+              value={form.broadcastFanout}
+              onChange={(v) => setField('broadcastFanout', Math.round(v))}
+              min={1}
+              max={200}
+              step={1}
+            />
+          </SectionCard>
+
+          {/* Global fallback pricing/coverage card spans both columns
+              with a clear banner — each Zone overrides these for
+              orders inside it, so admin almost never tweaks them in a
+              zoned deployment. */}
+          <div className="lg:col-span-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="font-semibold">Fallback pricing &amp; coverage</p>
+            <p className="mt-1">
+              The fields below are <strong>global fallbacks</strong> — they only
+              apply when an order can&apos;t be matched to any active
+              Zone (e.g. a fresh install with no zones configured). For
+              everyday tuning use the per-zone editor at{' '}
+              <a href="/zones" className="underline">/zones</a>, where each
+              zone has its own delivery fee, per-km rate, commission,
+              and search radius.
+            </p>
+          </div>
+
+          <SectionCard
+            title="Fallback pricing"
             icon={<Coins className="h-4 w-4 text-primary" />}
-            description="Used to compute the delivery fee and commission on every new order."
+            description="Used only when an order isn't inside any active Zone. Zone-specific values override these."
           >
             <NumberField
               id="baseDeliveryFee"
@@ -347,68 +446,20 @@ export default function SettingsPage() {
           </SectionCard>
 
           <SectionCard
-            title="Coverage"
+            title="Fallback search radius"
             icon={<MapIcon className="h-4 w-4 text-primary" />}
-            description="How far we search when matching a store to an order."
+            description="Used only when no Zone applies. The matching engine widens to the largest active zone's radius automatically."
           >
             <NumberField
               id="deliveryRadiusKm"
               label="Delivery radius"
-              hint="Initial search radius. If no store within radius carries the items, we fall back city-wide."
+              hint="Initial bbox prefilter when no zone radius is available. If no store within radius carries the items, we fall back city-wide."
               value={form.deliveryRadiusKm}
               onChange={(v) => setField('deliveryRadiusKm', v)}
               min={0.5}
               max={50}
               step={0.5}
               suffix="km"
-            />
-          </SectionCard>
-
-          <SectionCard
-            title="Timeouts"
-            icon={<Clock className="h-4 w-4 text-primary" />}
-            description="How long stores and drivers have to accept an offer before we retry."
-          >
-            <NumberField
-              id="storeAcceptTimeoutMinutes"
-              label="Store accept window"
-              hint="If no candidate accepts within this window, the order falls back to a wider set or admin rescue."
-              value={form.storeAcceptTimeoutMinutes}
-              onChange={(v) => setField('storeAcceptTimeoutMinutes', Math.round(v))}
-              min={1}
-              max={60}
-              step={1}
-              suffix="min"
-            />
-            <NumberField
-              id="driverAcceptTimeoutSeconds"
-              label="Driver accept window"
-              hint="Per-driver window in cascade mode; doubled before re-broadcasting in broadcast mode."
-              value={form.driverAcceptTimeoutSeconds}
-              onChange={(v) => setField('driverAcceptTimeoutSeconds', Math.round(v))}
-              min={15}
-              max={600}
-              step={5}
-              suffix="sec"
-            />
-          </SectionCard>
-
-          <SectionCard
-            title="Matching mode"
-            icon={<Truck className="h-4 w-4 text-primary" />}
-            description="Broadcast offers to many in parallel, or cascade to the best one at a time."
-          >
-            <ModeRadio
-              label="Stores"
-              hint="Broadcast is faster but more disruptive. Cascade preserves first-priority for the top match."
-              value={form.storeMatchingMode}
-              onChange={(m) => setField('storeMatchingMode', m)}
-            />
-            <ModeRadio
-              label="Drivers"
-              hint="Same trade-off as stores. Most operators run both in broadcast for speed."
-              value={form.driverMatchingMode}
-              onChange={(m) => setField('driverMatchingMode', m)}
             />
           </SectionCard>
         </div>

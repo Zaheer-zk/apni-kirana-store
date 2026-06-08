@@ -45,6 +45,8 @@ export type SettingsPatch = Partial<
     | 'driverAcceptTimeoutSeconds'
     | 'storeMatchingMode'
     | 'driverMatchingMode'
+    | 'matchingMaxRetries'
+    | 'broadcastFanout'
   >
 >;
 

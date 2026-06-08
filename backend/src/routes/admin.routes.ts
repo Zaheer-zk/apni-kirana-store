@@ -2008,6 +2008,9 @@ const settingsUpdateSchema = z
     driverAcceptTimeoutSeconds: z.number().int().min(15).max(600),
     storeMatchingMode: matchingModeEnum,
     driverMatchingMode: matchingModeEnum,
+    // Engine limits exposed to admin from 2026-06-08.
+    matchingMaxRetries: z.number().int().min(1).max(20),
+    broadcastFanout: z.number().int().min(1).max(200),
   })
   .partial();
 

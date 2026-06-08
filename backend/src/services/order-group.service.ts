@@ -26,6 +26,13 @@ interface ZoneCandidate {
   id: string;
   lat: number;
   lng: number;
+  /** Customer-facing average rating, 0..5. Used as a tiebreak in
+   *  planSplit so a 4.8★ store is preferred over a 3.2★ store when
+   *  they cover the same number of cart items. Defaults to 0. */
+  rating?: number;
+  /** Admin-flagged "preferred" store — gets a small score bump in
+   *  planSplit so promoted stores rank above equivalent stores. */
+  isPreferred?: boolean;
   items: Array<{
     id: string;
     catalogItemId: string;
@@ -46,11 +53,19 @@ export interface SplitPlanLeg {
  * stock), return the smallest list of stores that collectively carry
  * every item, or null if no combination covers the cart.
  *
- * Picks the store that adds the most new items first, ties broken by
- * proximity to the dropoff. NP-hard in the general case but the cart
- * sizes we deal with (a dozen items, ~10 candidate stores) make a
- * greedy heuristic plenty good and easy to reason about.
+ * Scoring (all higher = better — applied in tie-breaks AFTER coverage):
+ *   1. coverage    — number of currently-uncovered cart items the
+ *                    store can fulfil (primary; coverage is everything)
+ *   2. preferred   — admin-flagged stores bump 0.15
+ *   3. rating      — 0..1 normalised from 0..5
+ *   4. proximity   — closer to dropoff wins (final tiebreak)
+ *
+ * NP-hard in the general case but cart sizes we deal with (a dozen
+ * items, ~10 candidate stores) make greedy plenty good.
  */
+const PREFERRED_BOOST = 0.15;
+const SPLIT_PROXIMITY_KM_NORM = 10; // 1 km closer ≈ 0.1 score
+
 export function planSplit(
   cartCatalogIds: string[],
   candidates: ZoneCandidate[],
@@ -68,21 +83,15 @@ export function planSplit(
   }));
   while (remaining.size > 0) {
     stillAvailable.sort((a, b) => {
+      // Coverage is THE primary criterion — a store covering 4 items
+      // wins over one covering 1 every time, regardless of rating.
       const dx = b.carriedRemaining.size - a.carriedRemaining.size;
       if (dx !== 0) return dx;
-      const da = haversineDistance(
-        a.store.lat,
-        a.store.lng,
-        dropoff.lat,
-        dropoff.lng,
-      );
-      const db = haversineDistance(
-        b.store.lat,
-        b.store.lng,
-        dropoff.lat,
-        dropoff.lng,
-      );
-      return da - db;
+      // Same coverage → score by rating + preferred + proximity.
+      // Higher score wins, so we sort B - A.
+      const scoreA = scoreSplitCandidate(a.store, dropoff);
+      const scoreB = scoreSplitCandidate(b.store, dropoff);
+      return scoreB - scoreA;
     });
     const best = stillAvailable[0];
     if (!best || best.carriedRemaining.size === 0) {
@@ -100,6 +109,19 @@ export function planSplit(
     stillAvailable.shift();
   }
   return plan;
+}
+
+/** Composite tie-break score for two candidates that cover the same
+ *  number of remaining items. Higher = better. */
+function scoreSplitCandidate(
+  store: ZoneCandidate,
+  dropoff: { lat: number; lng: number },
+): number {
+  const ratingScore = (store.rating ?? 0) / 5;
+  const dist = haversineDistance(store.lat, store.lng, dropoff.lat, dropoff.lng);
+  const proximityScore = Math.max(0, 1 - dist / SPLIT_PROXIMITY_KM_NORM);
+  const preferredBoost = store.isPreferred ? PREFERRED_BOOST : 0;
+  return ratingScore * 0.4 + proximityScore * 0.45 + preferredBoost;
 }
 
 /**

@@ -32,7 +32,7 @@
 
 import { prisma } from '../config/prisma';
 import { haversineDistance, getBoundingBox } from '../utils/geo';
-import { sendNotification, notify } from './notification.service';
+import { sendNotification, notify, notifyAdmins } from './notification.service';
 import { driverQueue } from '../queues/queues';
 import { io } from '../socket';
 import { getSettings } from './settings.service';
@@ -46,15 +46,19 @@ import { getSettings } from './settings.service';
 // drop on the far edge of the zone). The prefilter no longer rejects
 // anyone — `inZone` below is the only relevance check.
 const DRIVER_SEARCH_RADIUS_KM = 25;
-// Broadcast cap. Per product spec we notify EVERY driver whose selected
-// zones contain the order's store OR drop-off, not just the top 3 scored.
-// First to accept wins. The number here is a hard safety ceiling for
-// dense cities — in practice the eligible set is usually under 10
-// (zone filter + 5km radius + ONLINE status all narrow it heavily).
-const TOP_N_BROADCAST = 30;
+// Broadcast cap (admin-tunable via PlatformSetting.broadcastFanout).
+// Eligible drivers above this number are LOGGED, not silently dropped.
 // Driver accept timeout, retry delay, and matching mode are now read from
 // PlatformSetting via getSettings() — see settings.service.ts. Cached
 // in-process for ~5s so admin tweaks propagate without a backend restart.
+
+// Hours since the driver's last delivery at which freshness saturates
+// at 1.0. A driver who hasn't completed a delivery in this many hours
+// is "fully fresh" — the engine prefers them to spread load. Drivers
+// who JUST delivered get a low score (close to 0.4 floor) so the queue
+// doesn't pick the same driver back-to-back when alternatives exist.
+const FRESHNESS_SATURATION_HOURS = 2;
+const FRESHNESS_FLOOR = 0.4;
 
 interface ScoredDriver {
   driverId: string;
@@ -62,6 +66,26 @@ interface ScoredDriver {
   score: number;
   distanceKm: number;
   rating: number;
+}
+
+/** Earning estimate for a single driver leg = base + per-km × distance.
+ *  Used in the broadcast/cascade notification body so the driver sees a
+ *  real ₹ amount instead of the previous placeholder 0. Falls back to the
+ *  zone's deliveryFee when one is set; otherwise the global default. */
+async function estimateDriverEarning(args: {
+  storeLat: number;
+  storeLng: number;
+  dropLat: number;
+  dropLng: number;
+}): Promise<number> {
+  const { storeLat, storeLng, dropLat, dropLng } = args;
+  const settings = await getSettings();
+  const { findZoneForPoint } = await import('./zone.service');
+  const zone = await findZoneForPoint(storeLat, storeLng);
+  const baseFee = zone?.baseDeliveryFee ?? settings.baseDeliveryFee;
+  const perKm = zone?.perKmFee ?? settings.perKmFee;
+  const dist = haversineDistance(storeLat, storeLng, dropLat, dropLng);
+  return Math.round(baseFee + perKm * dist);
 }
 
 async function rankDrivers(
@@ -112,6 +136,11 @@ async function rankDrivers(
       },
     },
   });
+  // Snapshot the request time once so every freshness calc uses the
+  // same `now` — keeps the score deterministic within a single rank.
+  // Avoids `new Date()` inside the loop which would let two drivers
+  // with the same lastDeliveryAt score differently.
+  const now = Date.now();
 
   const scored: ScoredDriver[] = [];
   const dropReasons: Record<string, number> = {};
@@ -151,8 +180,20 @@ async function rankDrivers(
 
     const proximityScore = Math.max(0, 1 - distanceKm / DRIVER_SEARCH_RADIUS_KM);
     const ratingScore = (d.rating ?? 0) / 5;
-    // Freshness placeholder — could be based on last delivery timestamp; default 1
-    const freshnessScore = 1;
+    // Freshness: 0..1 ramp from FRESHNESS_FLOOR (driver just delivered)
+    // up to 1.0 (idle ≥ FRESHNESS_SATURATION_HOURS). Drivers with no
+    // delivery history (never delivered) get 1.0 — they need the work
+    // to build a track record. Driver.lastDeliveryAt is stamped by the
+    // deliver endpoint (single + group).
+    const lastDeliveryAt = (d as { lastDeliveryAt?: Date | null }).lastDeliveryAt;
+    const freshnessScore = lastDeliveryAt
+      ? Math.min(
+          1,
+          FRESHNESS_FLOOR +
+            (1 - FRESHNESS_FLOOR) *
+              Math.min(1, (now - lastDeliveryAt.getTime()) / (FRESHNESS_SATURATION_HOURS * 3_600_000)),
+        )
+      : 1;
     const score = proximityScore * 0.6 + ratingScore * 0.3 + freshnessScore * 0.1;
 
     scored.push({ driverId: d.id, userId: d.user.id, score, distanceKm, rating: d.rating ?? 0 });
@@ -172,41 +213,56 @@ async function rankDrivers(
 async function broadcastToDrivers(orderId: string, scored: ScoredDriver[]): Promise<void> {
   const settings = await getSettings();
   const DRIVER_ACCEPT_TIMEOUT_MS = settings.driverAcceptTimeoutSeconds * 1000;
-  // Notify EVERY zone-matched driver (no top-N slice). Zones already
-  // narrow the eligible set; capping at N here would silently drop
-  // qualifying drivers in dense zones. The 30 ceiling is kept only as a
-  // safety net against truly pathological cases (e.g. an admin creates
-  // a 100km zone with 200 online drivers); under normal operation the
-  // eligible set is well below 30.
-  const top = scored.slice(0, TOP_N_BROADCAST);
+  // Admin-tunable fanout cap. Above this we LOG (audit gap #5 — was
+  // a silent slice).
+  const fanout = (settings as { broadcastFanout?: number }).broadcastFanout ?? 30;
+  const top = scored.slice(0, fanout);
+  if (scored.length > fanout) {
+    console.log(
+      `[Driver] Capped broadcast fanout for order ${orderId}: ${scored.length} eligible → ${fanout} notified (PlatformSetting.broadcastFanout)`,
+    );
+  }
   console.log(
     `[Driver] Broadcasting order ${orderId} to ${top.length} drivers: ` +
       top.map((d) => `${d.driverId.slice(-6)}(score=${d.score.toFixed(2)}, ${d.distanceKm.toFixed(1)}km)`).join(', '),
   );
 
-  // Stash the broadcast set on the order so the accept endpoint can validate first-accept-wins
-  // Reuse a free text field pattern (could be its own column later)
-  const order = await prisma.order.findUnique({ where: { id: orderId } });
-  const existingNotes = order?.notes ?? '';
+  // Stash the broadcast set in the dedicated driverBroadcast column
+  // (replaced the [DRIVER_BROADCAST:...] regex stash in Order.notes
+  // which collided with the customer notes field and was error-prone
+  // to parse).
   await prisma.order.update({
     where: { id: orderId },
-    data: { notes: `${existingNotes}\n[DRIVER_BROADCAST:${top.map((d) => d.driverId).join(',')}]`.trim() },
+    data: { driverBroadcast: top.map((d) => d.driverId) },
   });
+
+  // Compute the real earning estimate once per order — every driver
+  // sees the same number for the same offer (audit gap #4: was
+  // placeholder 0).
+  const orderForFee = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      store: { select: { lat: true, lng: true } },
+      deliveryAddress: { select: { lat: true, lng: true } },
+    },
+  });
+  const earning =
+    orderForFee?.store && orderForFee.deliveryAddress
+      ? await estimateDriverEarning({
+          storeLat: orderForFee.store.lat,
+          storeLng: orderForFee.store.lng,
+          dropLat: orderForFee.deliveryAddress.lat,
+          dropLng: orderForFee.deliveryAddress.lng,
+        })
+      : 0;
 
   await Promise.all(
     top.map(async (d) => {
-      // Use the templated notify() so the persisted notification.data.url
-      // points to the driver's offer screen (/deliveries/new?orderId=...).
-      // Previous sendNotification() left data.url unset, which made the
-      // bell row a dead button — driver could see "new offer" but had no
-      // way to act on it once the socket dialog was dismissed/missed.
       await notify('DRIVER_NEW_DELIVERY', d.userId, {
         orderId,
         orderShort: orderId.slice(-6),
         distanceKm: d.distanceKm.toFixed(1),
-        // Driver fee not yet computed at broadcast time — placeholder until
-        // the matching engine threads through the per-order earnings.
-        earning: 0,
+        earning,
       });
       io?.to(`user:${d.userId}`).emit('order:assigned', {
         orderId, distanceKm: d.distanceKm, score: d.score,
@@ -239,14 +295,29 @@ async function cascadeToBestDriver(
   // single-store orders (helper checks `orderGroupId` itself).
   const { assignDriverToGroup } = await import('./order-group.service');
   await assignDriverToGroup(prisma, orderId, best.driverId);
-  // Cascade mode = single assignment, not broadcast. Use the templated
-  // notify() so the bell row links to /deliveries/new?orderId=... (the
-  // accept dialog), same as broadcast.
+  // Cascade mode = single assignment. Same earning-estimate path as
+  // broadcast so the driver sees a real ₹ amount, not 0.
+  const orderForFee = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      store: { select: { lat: true, lng: true } },
+      deliveryAddress: { select: { lat: true, lng: true } },
+    },
+  });
+  const earning =
+    orderForFee?.store && orderForFee.deliveryAddress
+      ? await estimateDriverEarning({
+          storeLat: orderForFee.store.lat,
+          storeLng: orderForFee.store.lng,
+          dropLat: orderForFee.deliveryAddress.lat,
+          dropLng: orderForFee.deliveryAddress.lng,
+        })
+      : 0;
   await notify('DRIVER_NEW_DELIVERY', best.userId, {
     orderId,
     orderShort: orderId.slice(-6),
     distanceKm: best.distanceKm.toFixed(1),
-    earning: 0,
+    earning,
   });
   io?.to(`user:${best.userId}`).emit('order:assigned', { orderId });
   await driverQueue.add(
@@ -265,8 +336,42 @@ export async function assignDriverForOrder(
   const { scored, customerId } = ranked;
 
   const settings = await getSettings();
+  const maxRetries =
+    (settings as { matchingMaxRetries?: number }).matchingMaxRetries ?? 5;
 
   if (scored.length === 0) {
+    // Retry cap: previously this branch self-re-enqueued forever +
+    // pinged the customer every loop with no eventual resolution.
+    // Now we increment a counter; once it crosses maxRetries we
+    // notify admin so they can rescue (manually assign a driver
+    // from the order-detail page) and stop the auto-retry loop.
+    const orderRow = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { matchingRetryCount: true },
+    });
+    const nextRetryCount = (orderRow?.matchingRetryCount ?? 0) + 1;
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { matchingRetryCount: nextRetryCount },
+    });
+    if (nextRetryCount >= maxRetries) {
+      console.log(
+        `[Driver] Retry cap reached for order ${orderId} (${nextRetryCount}/${maxRetries}); notifying admin, no further auto-retries.`,
+      );
+      // One-time customer note + admin fan-out.
+      await sendNotification(
+        customerId,
+        'Driver search exhausted',
+        'No driver picked up your order. Our team has been notified and will reach out.',
+        { orderId },
+      );
+      await notifyAdmins('ADMIN_ORDER_PLACED', {
+        orderShort: orderId.slice(-6),
+        orderId,
+        attempts: nextRetryCount,
+      }).catch((err) => console.warn('[Driver] admin notify failed:', err));
+      return;
+    }
     await sendNotification(
       customerId,
       'Finding a driver',
@@ -276,7 +381,6 @@ export async function assignDriverForOrder(
     await driverQueue.add(
       'retry-driver-assignment',
       { orderId, excludeDriverIds },
-      // Re-search after twice the per-driver accept window
       { delay: settings.driverAcceptTimeoutSeconds * 2 * 1000 },
     );
     return;
@@ -291,15 +395,30 @@ export async function assignDriverForOrder(
 
 /** Notify other broadcast recipients that the order has been taken. */
 export async function rescindDriverBroadcast(orderId: string, acceptedByDriverId: string): Promise<void> {
-  const order = await prisma.order.findUnique({ where: { id: orderId } });
-  const match = order?.notes?.match(/\[DRIVER_BROADCAST:([^\]]+)\]/);
-  if (!match) return;
-  const broadcastIds = match[1]!.split(',');
+  // Read from the dedicated driverBroadcast column (was a regex on
+  // free-text Order.notes pre-2026-06-08, which corrupted customer
+  // notes and broke on parse errors).
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { driverBroadcast: true, notes: true },
+  });
+  const broadcastIds = order?.driverBroadcast ?? [];
+  if (broadcastIds.length === 0) return;
   const rescinded = broadcastIds.filter((id) => id && id !== acceptedByDriverId);
 
+  // Clear the dedicated column so a re-broadcast can repopulate. Also
+  // scrub any legacy [DRIVER_BROADCAST:...] string left in
+  // Order.notes from before the column existed — best-effort, never
+  // fails the rescind on a notes-write error.
+  const cleanedNotes = order?.notes
+    ? order.notes.replace(/\n?\[DRIVER_BROADCAST:[^\]]+\]/, '').trim()
+    : null;
   await prisma.order.update({
     where: { id: orderId },
-    data: { notes: order!.notes!.replace(/\n?\[DRIVER_BROADCAST:[^\]]+\]/, '').trim() },
+    data: {
+      driverBroadcast: [],
+      ...(cleanedNotes !== order?.notes ? { notes: cleanedNotes } : {}),
+    },
   });
   if (rescinded.length === 0) return;
 

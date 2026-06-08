@@ -328,25 +328,50 @@ router.post(
       //      can prompt the customer to pick a different recipient address
       //      or trim items.
       //
-      // We skip this when the dropoff address sits outside every active
-      // zone — that case is handled by the legacy fallback further down
-      // (orders still get created so existing flows keep working until
-      // every region is zoned).
-      const chosenStore0 = await prisma.store.findUnique({
-        where: { id: resolvedItems[0]!.storeItem.storeId },
-        select: { lat: true, lng: true, name: true },
-      });
+      // Zone-zero guard (audit gap #10): when the dropoff sits outside
+      // every active zone and the platform has any zones configured,
+      // we refuse the order with 422 instead of silently falling
+      // through. The previous "legacy fallback" path let out-of-zone
+      // dropoffs match arbitrary stores. Only skip the guard entirely
+      // when there are ZERO zones in the DB (pre-zone-setup dev).
       const dropoffZones = await findZonesForPoint(address.lat, address.lng);
-      const chosenStoreInDropoffZone =
-        !chosenStore0 || dropoffZones.length === 0
-          ? true
-          : dropoffZones.some(
-              (z) =>
-                haversineDistance(chosenStore0.lat, chosenStore0.lng, z.centerLat, z.centerLng) <=
-                z.radiusKm,
-            );
+      const anyZonesConfigured =
+        (await prisma.zone.count({ where: { isActive: true } })) > 0;
+      if (anyZonesConfigured && dropoffZones.length === 0) {
+        return sendError(
+          res,
+          "We don't deliver to this address yet. Please pick a different delivery location.",
+          422,
+        );
+      }
 
-      if (!chosenStoreInDropoffZone) {
+      // Multi-anchor check (audit gap #6): cart may already span
+      // multiple stores from earlier resolution. The OLD code only
+      // looked at resolvedItems[0] — if ANY anchor store is out of
+      // the dropoff zone, we need to trigger the re-match.
+      const uniqueAnchorStoreIds = [
+        ...new Set(resolvedItems.map((r) => r.storeItem.storeId)),
+      ];
+      const anchorStores = await prisma.store.findMany({
+        where: { id: { in: uniqueAnchorStoreIds } },
+        select: { id: true, lat: true, lng: true, name: true, zoneId: true },
+      });
+      const dropoffZoneIds = new Set(dropoffZones.map((z) => z.zoneId));
+      const allAnchorsInDropoffZone =
+        dropoffZones.length === 0
+          ? true
+          : anchorStores.every((s) => {
+              // Prefer explicit zoneId match (indexed); fall back to
+              // haversine for stores without an assigned zone.
+              if (s.zoneId) return dropoffZoneIds.has(s.zoneId);
+              return dropoffZones.some(
+                (z) =>
+                  haversineDistance(s.lat, s.lng, z.centerLat, z.centerLng) <=
+                  z.radiusKm,
+              );
+            });
+
+      if (!allAnchorsInDropoffZone) {
         const cartCatalogIds = resolvedItems
           .map((r) => r.storeItem.catalogItemId)
           .filter((x): x is string => !!x);
@@ -408,6 +433,13 @@ router.post(
               id: s.id,
               lat: s.lat,
               lng: s.lng,
+              // Pass rating + preferred so planSplit's tiebreak prefers
+              // higher-rated and admin-promoted stores when coverage
+              // is equal. Casted because the bbox select doesn't
+              // declare these but the runtime row carries them as
+              // default scalars.
+              rating: (s as { rating?: number }).rating ?? 0,
+              isPreferred: (s as { isPreferred?: boolean }).isPreferred ?? false,
               items: s.items.map((it) => ({
                 id: it.id,
                 catalogItemId: it.catalogItemId,
@@ -441,24 +473,40 @@ router.post(
             // bypassed entirely.
             const settings = await getSettings();
             // The driver does ONE delivery (after all pickups), so the
-            // group's deliveryFee is computed once against the dropoff,
-            // not per leg. Per-leg deliveryFee on each child Order is 0.
-            // We use distance from the FIRST pickup to the dropoff as a
-            // reasonable approximation — future improvement: TSP-ish
-            // route optimisation. For thin urban networks the difference
-            // is negligible.
+            // group's deliveryFee is computed once against the FULL
+            // route, not against the naive "first pickup → dropoff"
+            // segment. We TSP-optimise pickup order via the existing
+            // route-optimizer service and bill per-km on the full
+            // path: pickup0 → pickup1 → ... → pickupN → dropoff.
+            //
+            // Why: the naive first-pickup approximation undercharged
+            // multi-store deliveries (the driver actually drives the
+            // sum of all segments). Using the optimised route makes
+            // the fee track the real driving cost.
             const firstStore = inZone.find((s) => s.id === split[0]!.storeId)!;
             const zone = await findZoneForPoint(firstStore.lat, firstStore.lng);
             const effectiveBaseFee = zone?.baseDeliveryFee ?? settings.baseDeliveryFee;
             const effectivePerKmFee = zone?.perKmFee ?? settings.perKmFee;
-            const distanceKm = haversineDistance(
-              firstStore.lat,
-              firstStore.lng,
-              address.lat,
-              address.lng,
+            const { optimizePickupOrder } = await import(
+              '../services/route-optimizer.service'
             );
+            const pickupPoints = split.map((leg) => {
+              const s = inZone.find((x) => x.id === leg.storeId)!;
+              return { id: leg.storeId, lat: s.lat, lng: s.lng };
+            });
+            const { totalKm: routeKm } = optimizePickupOrder({
+              // We don't have the driver's pre-assignment location at
+              // create time, so anchor on the first pickup. Once a
+              // driver is assigned the driver's actual location feeds
+              // the multi-pickup screen's optimiser independently.
+              driverLat: firstStore.lat,
+              driverLng: firstStore.lng,
+              pickups: pickupPoints.filter((p) => p.id !== firstStore.id),
+              dropoffLat: address.lat,
+              dropoffLng: address.lng,
+            });
             let groupDeliveryFee = parseFloat(
-              (effectiveBaseFee + effectivePerKmFee * distanceKm).toFixed(2),
+              (effectiveBaseFee + effectivePerKmFee * routeKm).toFixed(2),
             );
 
             // Resolve each leg's lines + per-leg subtotal/commission.
@@ -1286,7 +1334,24 @@ router.get('/group/:id', authenticate, async (req: Request, res: Response) => {
     if (role !== 'ADMIN' && group.customerId !== userId) {
       return sendError(res, 'Access denied', 403);
     }
-    return sendSuccess(res, group);
+    // Partial-delivery flag — the customer rollup needs to distinguish
+    // "delivered everything" from "delivered some, others were
+    // cancelled". rollUpGroupStatus alone returns DELIVERED in both
+    // cases because it only looks at the LIVE (non-cancelled) set.
+    // Surfaced here so the UI can read "Delivered (2 of 3 stores —
+    // 1 cancelled, refunded)" instead of overclaiming success.
+    const allLegs = group.orders;
+    const cancelledLegs = allLegs.filter((o) => o.status === 'CANCELLED').length;
+    const deliveredLegs = allLegs.filter((o) => o.status === 'DELIVERED').length;
+    const partiallyFulfilled =
+      group.status === 'DELIVERED' && cancelledLegs > 0;
+    return sendSuccess(res, {
+      ...group,
+      cancelledLegs,
+      deliveredLegs,
+      totalLegs: allLegs.length,
+      partiallyFulfilled,
+    });
   } catch (err) {
     console.error('[Orders] group detail error:', err);
     return sendError(res, 'Failed to fetch order group', 500);

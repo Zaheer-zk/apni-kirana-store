@@ -317,6 +317,22 @@ model Order {
   notes             String?
   rejectionReason   String?
   cancelReason      String?
+  // Dedicated columns for the matching-engine broadcast sets. These
+  // used to live as free-text inside `rejectionReason` ("BROADCAST:id1,
+  // id2,...") and `notes` ("[DRIVER_BROADCAST:id1,id2,...]"), which
+  // (a) collided with the real meaning of those fields and (b) made
+  // rescind logic do error-prone string parsing.
+  // 2026-06-08: moved to proper String[] columns. The old free-text
+  // stash is no longer written; rescind handlers read from these.
+  storeBroadcast    String[]      @default([])
+  driverBroadcast   String[]      @default([])
+  // Tracks how many times this order has been re-queued for matching
+  // (either store-side or driver-side). Without a cap the queue would
+  // self-re-enqueue forever when no eligible candidate exists. When
+  // this exceeds PlatformSetting.matchingMaxRetries, the order is
+  // auto-cancelled and the admin gets a notification so they can
+  // either rescue manually or refund.
+  matchingRetryCount Int          @default(0)
   dropoffOtp        String? // 4-digit OTP for driver-to-customer handoff verification
   // "Order for someone else" — driver/store call this number at dropoff if
   // set, instead of the account holder's phone. Falls back to customer's
@@ -450,6 +466,11 @@ model Driver {
   rating           Float                  @default(0)
   totalRatings     Int                    @default(0)
   totalEarnings    Float                  @default(0)
+  // Timestamp of the driver's most recent DELIVERED order. Feeds the
+  // freshness signal in driver scoring — drivers who haven't completed
+  // a delivery recently get a boost so the queue spreads load and
+  // doesn't repeatedly pick the same driver back-to-back.
+  lastDeliveryAt   DateTime?
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
@@ -816,6 +837,18 @@ model PlatformSetting {
   driverAcceptTimeoutSeconds Int      @default(60)
   storeMatchingMode          String   @default("BROADCAST")
   driverMatchingMode         String   @default("BROADCAST")
+  // Hard cap on how many times the matching engine will re-queue an
+  // order before giving up + cancelling + notifying admin. Without
+  // this the queue self-re-enqueues forever when no eligible
+  // candidate exists (visible to the customer as a chime every
+  // settings.driverAcceptTimeoutSeconds * 2 with no resolution).
+  matchingMaxRetries         Int      @default(5)
+  // Soft cap on how many drivers/stores receive a broadcast offer.
+  // Above this we LOG the cap (we don't silently drop the rest —
+  // the previous TOP_N_BROADCAST const claimed "every eligible" but
+  // capped at 30). Admin can raise it if a thin market needs to
+  // notify more candidates per round.
+  broadcastFanout            Int      @default(30)
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 }

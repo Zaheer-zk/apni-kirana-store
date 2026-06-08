@@ -625,7 +625,13 @@ router.put(
 
         await tx.driver.update({
           where: { id: driver.id },
-          data: { totalEarnings: { increment: driverEarning } },
+          data: {
+            totalEarnings: { increment: driverEarning },
+            // Stamp lastDeliveryAt so the freshness signal in driver
+            // scoring spreads load (drivers who just delivered drop
+            // toward the FRESHNESS_FLOOR; idle drivers stay at 1.0).
+            lastDeliveryAt: new Date(),
+          },
         });
 
         return deliveredOrder;
@@ -779,7 +785,12 @@ router.put(
         });
         await tx.driver.update({
           where: { id: driver.id },
-          data: { totalEarnings: { increment: driverEarning } },
+          data: {
+            totalEarnings: { increment: driverEarning },
+            // Stamp lastDeliveryAt — same freshness-signal rationale
+            // as the single-leg path.
+            lastDeliveryAt: new Date(),
+          },
         });
         const { rollUpGroupStatus } = await import(
           '../services/order-group.service'

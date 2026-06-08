@@ -39,12 +39,6 @@ import { getSettings } from './settings.service';
 import { filterStoresByCustomerZone } from './zone.service';
 
 const MIN_ITEM_MATCH_PERCENT = 0.6;
-// Broadcast cap. Per product spec we notify EVERY eligible store (carries
-// items + open + ACTIVE + within radius) so any store with stock can grab
-// the order, not just the highest-scored 5. The number here is a hard
-// safety ceiling for pathological cities with many qualifying stores — in
-// practice the eligible set is usually < 10.
-const TOP_N_BROADCAST = 30;
 // Additive score bump for admin-flagged "preferred" stores — they rank above
 // equivalent stores but a preferred store still has to carry the items.
 const PREFERRED_STORE_BOOST = 0.15;
@@ -245,17 +239,27 @@ async function rankStores(
 async function broadcastToStores(orderId: string, scored: ScoredStore[]): Promise<void> {
   const settings = await getSettings();
   const STORE_RETRY_DELAY_MS = settings.storeAcceptTimeoutMinutes * 60_000;
-  const top = scored.slice(0, TOP_N_BROADCAST);
+  // Cap is admin-tunable via PlatformSetting.broadcastFanout. We LOG
+  // when capped so a thin market with too few candidates is visible,
+  // and so a city with too many doesn't silently drop them.
+  const fanout = (settings as { broadcastFanout?: number }).broadcastFanout ?? 30;
+  const top = scored.slice(0, fanout);
+  if (scored.length > fanout) {
+    console.log(
+      `[Match] Capped broadcast fanout for order ${orderId}: ${scored.length} eligible → ${fanout} notified (PlatformSetting.broadcastFanout)`,
+    );
+  }
   console.log(
     `[Match] Broadcasting order ${orderId} to ${top.length} stores: ` +
       top.map((s) => `${s.storeId.slice(-6)}(score=${s.score.toFixed(2)})`).join(', '),
   );
 
-  // Persist the candidate set on the order so the accept endpoint can validate
-  // (we use rejectionReason as a JSON string field for now; a dedicated column would be cleaner)
+  // Persist the candidate set in the dedicated storeBroadcast column
+  // (replaced the free-text BROADCAST:... stash in rejectionReason
+  // which collided with the real meaning of that field).
   await prisma.order.update({
     where: { id: orderId },
-    data: { rejectionReason: `BROADCAST:${top.map((s) => s.storeId).join(',')}` },
+    data: { storeBroadcast: top.map((s) => s.storeId) },
   });
 
   await Promise.all(
@@ -322,22 +326,37 @@ export async function matchStoreForOrder(
 
   const { scored, customerId, isRestock } = ranked;
   const seller = isRestock ? 'wholesaler' : 'store';
+  const settings = await getSettings();
+  const maxRetries =
+    (settings as { matchingMaxRetries?: number }).matchingMaxRetries ?? 5;
 
   if (scored.length === 0) {
-    // Distinguish two failure modes so the admin / customer can read what
-    // actually went wrong from the cancelReason field:
-    //   - First attempt with empty exclude list → no store carries these
-    //     items at all (or none are open + within fallback distance)
-    //   - Retry with exclude list → stores were notified but none accepted
-    //     within the broadcast timeout window
+    // Retry cap: previously the queue self-re-enqueued forever when no
+    // eligible candidate existed. Now we increment a counter on the
+    // order; once it crosses maxRetries we auto-cancel + ping every
+    // admin so they can rescue (manual store assignment from the
+    // order-detail page) or issue a refund.
+    const orderRow = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { matchingRetryCount: true },
+    });
+    const nextRetryCount = (orderRow?.matchingRetryCount ?? 0) + 1;
+
     const isRetry = excludeStoreIds.length > 0;
-    const reason = isRetry
-      ? `No ${seller} accepted your order in time. An admin can manually assign a ${seller} from the dashboard.`
-      : `No ${seller} currently carries these items. An admin can manually assign a ${seller} from the dashboard.`;
+    const exhausted = nextRetryCount >= maxRetries;
+    const reason = exhausted
+      ? `No ${seller} could be matched after ${nextRetryCount} attempts. Admin has been notified.`
+      : isRetry
+        ? `No ${seller} accepted your order in time. An admin can manually assign a ${seller} from the dashboard.`
+        : `No ${seller} currently carries these items. An admin can manually assign a ${seller} from the dashboard.`;
 
     await prisma.order.update({
       where: { id: orderId },
-      data: { status: 'CANCELLED', cancelReason: reason },
+      data: {
+        status: 'CANCELLED',
+        cancelReason: reason,
+        matchingRetryCount: nextRetryCount,
+      },
     });
     await sendNotification(
       customerId,
@@ -347,10 +366,21 @@ export async function matchStoreForOrder(
         : 'Your order was cancelled. Please try again later.',
       { orderId },
     );
+    if (exhausted) {
+      // notifyAdmins is imported below — fan out a templated push so
+      // the admin orders dashboard surfaces a "needs rescue" badge.
+      // Best-effort; we don't roll back the cancel on notification
+      // failure since the order is already terminal.
+      const { notifyAdmins } = await import('./notification.service');
+      await notifyAdmins('ADMIN_ORDER_PLACED', {
+        orderShort: orderId.slice(-6),
+        orderId,
+        attempts: nextRetryCount,
+      }).catch((err) => console.warn('[Match] admin notify failed:', err));
+    }
     return;
   }
 
-  const settings = await getSettings();
   if (settings.storeMatchingMode === 'CASCADE') {
     await cascadeToBestStore(orderId, scored, excludeStoreIds);
   } else {
@@ -366,12 +396,21 @@ export async function rescindBroadcastOffers(
   orderId: string,
   acceptedByStoreId: string,
 ): Promise<void> {
-  const order = await prisma.order.findUnique({ where: { id: orderId } });
-  if (!order?.rejectionReason?.startsWith('BROADCAST:')) return;
-  const broadcastIds = order.rejectionReason.replace('BROADCAST:', '').split(',');
+  // Read from the dedicated storeBroadcast column (was free-text in
+  // rejectionReason pre-2026-06-08). Empty array → nothing to rescind
+  // (either never broadcast or already cleared).
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { storeBroadcast: true },
+  });
+  const broadcastIds = order?.storeBroadcast ?? [];
   const rescinded = broadcastIds.filter((id) => id && id !== acceptedByStoreId);
 
-  await prisma.order.update({ where: { id: orderId }, data: { rejectionReason: null } });
+  // Clear the column either way so a re-broadcast can repopulate cleanly.
+  await prisma.order.update({
+    where: { id: orderId },
+    data: { storeBroadcast: [] },
+  });
 
   if (rescinded.length === 0) return;
 

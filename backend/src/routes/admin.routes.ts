@@ -2347,6 +2347,67 @@ router.put(
   },
 );
 
+// DELETE /admin/store-items/:id — admin removes a catalog item from a
+// store's inventory. The catalogItem itself stays; only the StoreItem
+// row is dropped. Refuses if the item appears in any non-terminal
+// order (PENDING / STORE_ACCEPTED / COOKING / DRIVER_ASSIGNED /
+// PICKED_UP) — deleting it under an in-flight order would orphan the
+// OrderItem.itemId FK and break customer + driver views. Admin can
+// soft-disable via `isAvailable=false` (PUT above) for items they
+// want hidden but can't yet remove.
+router.delete('/store-items/:id', async (req: Request, res: Response) => {
+  try {
+    const id = req.params['id'] as string;
+    const existing = await prisma.storeItem.findUnique({
+      where: { id },
+      select: { id: true, storeId: true, catalogItemId: true },
+    });
+    if (!existing) return sendError(res, 'Store item not found', 404);
+
+    const liveOrderCount = await prisma.orderItem.count({
+      where: {
+        itemId: id,
+        order: {
+          status: {
+            in: [
+              'PENDING',
+              'STORE_ACCEPTED',
+              'COOKING',
+              'DRIVER_ASSIGNED',
+              'PICKED_UP',
+            ],
+          },
+        },
+      },
+    });
+    if (liveOrderCount > 0) {
+      return sendError(
+        res,
+        `Cannot remove — item appears in ${liveOrderCount} in-flight order(s). ` +
+          'Mark it unavailable instead, or wait for those orders to complete.',
+        409,
+      );
+    }
+
+    await prisma.storeItem.delete({ where: { id } });
+    await prisma.auditLog
+      .create({
+        data: {
+          actorId: req.user?.id ?? null,
+          action: 'STORE_ITEM_REMOVE',
+          targetType: 'StoreItem',
+          targetId: id,
+          before: existing as never,
+        },
+      })
+      .catch(() => undefined);
+    return sendSuccess(res, { id, removed: true }, 'Item removed from store inventory');
+  } catch (err) {
+    console.error('[Admin] delete store-item error:', err);
+    return sendError(res, 'Failed to remove store item', 500);
+  }
+});
+
 router.post(
   '/stores/:id/items/bulk',
   validate(adminBulkAddItemsSchema),

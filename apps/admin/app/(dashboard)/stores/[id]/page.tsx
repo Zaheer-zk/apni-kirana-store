@@ -3,7 +3,7 @@
 import { use, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Star, Package, ShoppingBag, MapPin, Phone, Plus, User, Pencil } from 'lucide-react';
+import { ArrowLeft, Star, Package, ShoppingBag, MapPin, Phone, Plus, User, Pencil, Trash2, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import StatusBadge from '@/components/StatusBadge';
@@ -53,6 +53,8 @@ function InventoryRow({ item }: { item: InventoryItem }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedTick, setSavedTick] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   async function save() {
     const next = Number(margin);
@@ -77,6 +79,30 @@ function InventoryRow({ item }: { item: InventoryItem }) {
       setSaving(false);
       setEditing(false);
     }
+  }
+
+  async function removeItem() {
+    // Confirm in-place — single-step destructive action, no separate
+    // dialog. Backend 409s if the item is in any in-flight order
+    // (PENDING / accepted / picked up); surface that error inline so
+    // admin knows to mark it unavailable instead.
+    if (!window.confirm(`Remove "${item.name}" from this store's inventory? The catalog item itself is unaffected.`)) {
+      return;
+    }
+    setRemoving(true);
+    setRemoveError(null);
+    try {
+      await api.delete(`/api/v1/admin/store-items/${item.id}`);
+      await queryClient.invalidateQueries({ queryKey: ['admin-store'] });
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: { message?: string } } } };
+      setRemoveError(
+        e?.response?.data?.error?.message ?? 'Could not remove item from inventory.',
+      );
+      setRemoving(false);
+    }
+    // setRemoving(false) on success would trigger a no-op render —
+    // the row unmounts when the parent query invalidates.
   }
 
   const customerPrice =
@@ -137,6 +163,28 @@ function InventoryRow({ item }: { item: InventoryItem }) {
           {saving ? <span className="text-[10px] text-gray-400">…</span> : null}
           {savedTick ? <span className="text-[10px] text-emerald-600">✓</span> : null}
         </div>
+        {/* Remove from store inventory. Backend 409s if the item is in
+            any in-flight order; surface that inline so admin knows to
+            soft-disable via isAvailable instead. */}
+        <button
+          type="button"
+          onClick={removeItem}
+          disabled={removing}
+          title="Remove this item from the store's inventory"
+          className="inline-flex items-center gap-1 rounded border border-transparent px-1.5 py-0.5 text-[11px] text-gray-400 hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+        >
+          {removing ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Trash2 className="h-3 w-3" />
+          )}
+          Remove
+        </button>
+        {removeError ? (
+          <p className="max-w-[200px] text-right text-[10px] text-red-600">
+            {removeError}
+          </p>
+        ) : null}
       </div>
     </div>
   );

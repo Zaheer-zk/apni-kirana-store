@@ -36,6 +36,7 @@ import { notify, sendNotification } from './notification.service';
 import { matchingQueue } from '../queues/queues';
 import { io } from '../socket';
 import { getSettings } from './settings.service';
+import { filterStoresByCustomerZone } from './zone.service';
 
 const MIN_ITEM_MATCH_PERCENT = 0.6;
 // Broadcast cap. Per product spec we notify EVERY eligible store (carries
@@ -137,6 +138,27 @@ async function rankStores(
     },
   });
 
+  // ── Zone enforcement (B-Gap-1 in the 2026-06-04 audit) ─────────────
+  // The bbox above is geometry-only; without this gate a store in a
+  // different zone but close enough geographically (e.g. just across
+  // a zone boundary) would be eligible. filterStoresByCustomerZone
+  // uses explicit Store.zoneId match first (indexed), falling back to
+  // the haversine-in-radius check for stores onboarded before the
+  // zone-picker UI shipped (zoneId null).
+  //
+  // Restock orders SKIP this gate — wholesalers serve a wider radius
+  // and don't follow customer zoning. They also have no zoneId set.
+  if (!isRestock) {
+    const filtered = await filterStoresByCustomerZone(candidateStores, lat, lng);
+    if (filtered.length !== candidateStores.length) {
+      console.log(
+        `[Match] Zone filter dropped ${candidateStores.length - filtered.length} ` +
+          `of ${candidateStores.length} candidates for order ${orderId}`,
+      );
+    }
+    candidateStores = filtered;
+  }
+
   // Fallback: if no nearby store carries the items, broadcast to ALL active
   // stores carrying any item (regardless of distance). Customer accepts the
   // longer delivery time. This ensures orders aren't auto-cancelled when
@@ -163,9 +185,18 @@ async function rankStores(
         items: { where: { catalogItemId: { in: orderCatalogItemIds }, isAvailable: true, stockQty: { gt: 0 } } },
       },
     });
+    // City-wide fallback still respects zones for customer orders —
+    // delivering from Sikar to a Khandela recipient is what we're
+    // trying to avoid (the user's "Sikar driver delivering in
+    // Khandela will be costly" case). If the zone filter wipes the
+    // fallback set out entirely, the order can't be served anywhere
+    // and the caller will auto-cancel with a clear reason.
+    if (!isRestock && candidateStores.length > 0) {
+      candidateStores = await filterStoresByCustomerZone(candidateStores, lat, lng);
+    }
     if (candidateStores.length > 0) {
       console.log(
-        `[Match] No nearby stores in ${SEARCH_RADIUS_KM}km; falling back to ${candidateStores.length} active stores city-wide for order ${orderId}`,
+        `[Match] No nearby stores in ${SEARCH_RADIUS_KM}km; falling back to ${candidateStores.length} active in-zone stores for order ${orderId}`,
       );
     }
   }

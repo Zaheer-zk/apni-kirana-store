@@ -121,7 +121,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function backfillCatalogImages(
   opts: BackfillOpts = {},
 ): Promise<BackfillResult[]> {
-  const { force = false, limit = 200, delayMs = 250 } = opts;
+  // Default limit dropped from 200 → 50 (2026-06-08). Calling with
+  // limit=200 took ~50s of sync work, which blew past Cloudflare /
+  // nginx default 30s proxy timeouts on the live admin. The admin UI
+  // now chunks the work client-side; this default is the safety net
+  // for any direct API caller / script that omits `limit`.
+  const { force = false, limit = 50, delayMs = 250 } = opts;
   const items = await prisma.catalogItem.findMany({
     where: force ? { isActive: true } : { isActive: true, imageUrl: null },
     select: { id: true, name: true, category: true, imageUrl: true },

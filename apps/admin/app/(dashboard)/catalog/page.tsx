@@ -137,29 +137,60 @@ export default function CatalogPage() {
   // The endpoint walks rows missing an imageUrl, tries Open Food Facts
   // first, then falls back to a tinted placeholder PNG. Runtime scales
   // linearly with `limit` × the per-row OFF throttle (~250 ms), so we
-  // keep a single in-flight mutation and surface a spinner on the
-  // button. Result counts go into the toast.
+  // Backfill is chunked from the client so each round-trip finishes
+  // well under any reverse-proxy timeout. 200 items × 250ms = ~50s
+  // synchronous time on the server, which blew past Cloudflare /
+  // nginx default 30s timeouts in production. CHUNK_SIZE × 250ms
+  // keeps each call at ~7s; the UI loops until the endpoint returns
+  // a non-full batch (meaning no more candidates to fill).
+  //
+  // Server-side concurrency is still single-row sequential (polite
+  // to Open Food Facts), but breaking the work into 30-item chunks
+  // means a 200-row catalog is 7 chunks × 7s ≈ 50s wall-clock from
+  // the admin's POV — same total, but each HTTP request is short.
   const backfillImagesMutation = useMutation({
     mutationFn: async () => {
-      const res = await api.post<{
-        success: boolean;
-        data: {
-          total: number;
-          results: Array<{ source: string }>;
-        };
-      }>('/api/v1/admin/catalog/backfill-images', { limit: 200 });
-      return res.data.data!;
+      const CHUNK_SIZE = 30;
+      let totalFilled = 0;
+      let totalFromOff = 0;
+      let totalFromPlaceholder = 0;
+      let rounds = 0;
+      // Hard ceiling so a misbehaving backend can't pin the browser
+      // in a loop forever. Each round handles up to CHUNK_SIZE items.
+      const MAX_ROUNDS = 50;
+      while (rounds < MAX_ROUNDS) {
+        rounds += 1;
+        const res = await api.post<{
+          success: boolean;
+          data: {
+            total: number;
+            results: Array<{ source: string }>;
+          };
+        }>('/api/v1/admin/catalog/backfill-images', { limit: CHUNK_SIZE });
+        const data = res.data.data!;
+        const fromOff = data.results.filter((r) => r.source === 'openfoodfacts').length;
+        const fromPlaceholder = data.results.filter((r) => r.source === 'placeholder').length;
+        totalFilled += fromOff + fromPlaceholder;
+        totalFromOff += fromOff;
+        totalFromPlaceholder += fromPlaceholder;
+        // Live progress toast — replaced on each round.
+        setToast({
+          id: Date.now(),
+          type: 'success',
+          message: `Backfilling… ${totalFilled} done so far.`,
+        });
+        // Endpoint returned fewer rows than asked for → no more
+        // un-imaged items, we're done.
+        if (data.total < CHUNK_SIZE) break;
+      }
+      return { totalFilled, totalFromOff, totalFromPlaceholder };
     },
     onSuccess: (data) => {
-      const fromOff = data.results.filter((r) => r.source === 'openfoodfacts').length;
-      const fromPlaceholder = data.results.filter((r) => r.source === 'placeholder').length;
       queryClient.invalidateQueries({ queryKey: ['admin-catalog'] });
-      // ToastState requires an id (see line 104) so the auto-dismiss
-      // timer can key off it. Date.now() matches the rest of the page.
       setToast({
         id: Date.now(),
         type: 'success',
-        message: `Backfilled ${data.total} items (${fromOff} real photos · ${fromPlaceholder} placeholders).`,
+        message: `Backfilled ${data.totalFilled} items (${data.totalFromOff} real photos · ${data.totalFromPlaceholder} placeholders).`,
       });
     },
     onError: (err: unknown) => {

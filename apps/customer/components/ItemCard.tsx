@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { ItemCategory, type InventoryItem } from '@aks/shared';
 import { useCartStore } from '@/store/cart.store';
+import { FavoriteHeart } from './FavoriteHeart';
 import { colors, fontSize, radius, shadow, spacing } from '@/constants/theme';
 
 interface ItemCardProps {
@@ -70,6 +71,7 @@ export function ItemCard({ item, onPress, variant = 'horizontal', style }: ItemC
         ) : (
           <Text style={styles.emoji}>{CATEGORY_EMOJI[item.category]}</Text>
         )}
+        <FavoriteHeart catalogItemId={item.catalogItemId} size={18} style={styles.heart} />
       </View>
 
       <View style={styles.body}>
@@ -149,6 +151,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  heart: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.85)',
   },
   thumbCompact: {
     width: '100%',

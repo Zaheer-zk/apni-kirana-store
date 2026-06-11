@@ -6,6 +6,7 @@ import { Badge } from '@aks/ui/components/badge';
 import { Button } from '@aks/ui/components/button';
 import { toast } from '@aks/ui/components/sonner';
 import { useCart } from '@/lib/cart';
+import { FavoriteButton } from './FavoriteButton';
 import { distance as fmtDistance, etaWindow, rupees } from '@/lib/format';
 
 /**
@@ -87,7 +88,12 @@ export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
 
   if (compact) {
     return (
-      <div className="w-44 flex-shrink-0 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+      <div className="relative w-44 flex-shrink-0 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+        <FavoriteButton
+          catalogItemId={hit.catalogItemId}
+          name={hit.name}
+          className="absolute right-2 top-2 z-10 h-8 w-8 bg-white/80 backdrop-blur"
+        />
         <Link href={`/item/${hit.storeItemId}`} className="block">
           <Thumbnail imageUrl={hit.imageUrl} alt={hit.name} className="h-28 w-full rounded-lg" />
           <p className="mt-2 line-clamp-2 text-sm font-semibold text-gray-900">{hit.name}</p>
@@ -159,6 +165,11 @@ export function StoreItemCard({ hit, compact = false }: StoreItemCardProps) {
       </div>
 
       <div className="flex flex-col items-end justify-between gap-2">
+        <FavoriteButton
+          catalogItemId={hit.catalogItemId}
+          name={hit.name}
+          className="-mr-1 -mt-1 h-8 w-8"
+        />
         <div className="flex flex-col items-end">
           <span className="text-base font-bold text-gray-900 sm:text-lg">
             {rupees(displayPrice)}

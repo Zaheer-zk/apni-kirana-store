@@ -170,6 +170,13 @@ export default function ProfileScreen() {
           iconColor: colors.info,
         },
         {
+          icon: 'heart-outline',
+          label: 'Favorites',
+          onPress: () => router.push('/account/favorites' as never),
+          iconBg: '#FEE2E2',
+          iconColor: colors.error,
+        },
+        {
           icon: 'wallet-outline',
           label: 'Wallet',
           onPress: () => router.push('/account/wallet' as never),

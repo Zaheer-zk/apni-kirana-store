@@ -137,6 +137,7 @@ model User {
   driver              Driver?
   wallet              Wallet?
   catalogRequests     CatalogItemRequest[]
+  favorites           Favorite[]
 
   @@unique([phone, role])
   @@unique([email, role])
@@ -250,9 +251,29 @@ model CatalogItem {
   // When admin approves a CatalogItemRequest, the resulting CatalogItem
   // gets linked back so the store sees 'your request became this item'.
   requests   CatalogItemRequest[]
+  favorites  Favorite[]
 
   @@index([category])
   @@index([name])
+}
+
+// A customer's saved/wishlisted product. Keyed on CatalogItem (the canonical
+// product) rather than a StoreItem, so the favorite survives a store going out
+// of stock or closing — the favorites list re-resolves the best nearby store
+// carrying it at read time (same model as catalog browse + the catalog-keyed
+// cart). One row per (customer, product); the unique index makes add idempotent.
+model Favorite {
+  id            String   @id @default(cuid())
+  userId        String
+  catalogItemId String
+  createdAt     DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  catalogItem CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, catalogItemId])
+  @@index([userId])
+  @@index([catalogItemId])
 }
 
 // Store's selection from the master catalog with their own price + stock.

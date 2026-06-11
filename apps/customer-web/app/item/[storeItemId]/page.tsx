@@ -11,6 +11,7 @@ import { Skeleton } from '@aks/ui/components/skeleton';
 import { Separator } from '@aks/ui/components/separator';
 import { toast } from '@aks/ui/components/sonner';
 import { AppHeader } from '@/components/AppHeader';
+import { FavoriteButton } from '@/components/FavoriteButton';
 import { EmptyPanel, ErrorPanel } from '@/components/StatePanels';
 import { api, unwrap } from '@/lib/api';
 import { useCart } from '@/lib/cart';
@@ -169,12 +170,19 @@ function Detail({
 
       {/* Details */}
       <div className="flex flex-col gap-4">
-        <div>
-          <Badge variant="secondary" className="mb-2">
-            {prettyCategory(catalogItem.category)}
-          </Badge>
-          <h2 className="text-2xl font-bold text-gray-900 sm:text-3xl">{catalogItem.name}</h2>
-          <p className="mt-1 text-sm text-gray-500">{catalogItem.defaultUnit ?? '1 unit'}</p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <Badge variant="secondary" className="mb-2">
+              {prettyCategory(catalogItem.category)}
+            </Badge>
+            <h2 className="text-2xl font-bold text-gray-900 sm:text-3xl">{catalogItem.name}</h2>
+            <p className="mt-1 text-sm text-gray-500">{catalogItem.defaultUnit ?? '1 unit'}</p>
+          </div>
+          <FavoriteButton
+            catalogItemId={catalogItem.id}
+            name={catalogItem.name}
+            className="mt-1 h-10 w-10 flex-shrink-0 border border-gray-200"
+          />
         </div>
 
         <div className="flex items-end gap-2">

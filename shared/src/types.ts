@@ -434,3 +434,29 @@ export interface CatalogItemRow {
   imageUrl?: string | null;
   _count?: { storeItems?: number };
 }
+
+/**
+ * One entry in the customer's favorites / wishlist, returned by
+ * `GET /api/v1/favorites`. Keyed on the canonical `catalogItemId`; `bestOffer`
+ * is the cheapest in-stock nearby store carrying it (null when nothing nearby
+ * does), shaped so the favorites card can add to cart the same way a search
+ * hit does. `offerCount` is how many nearby stores carry it.
+ */
+export interface FavoriteEntry {
+  catalogItemId: string;
+  favoritedAt: string;
+  name: string;
+  description?: string | null;
+  imageUrl?: string | null;
+  unit: string;
+  category: string;
+  offerCount: number;
+  bestOffer: {
+    storeItemId: string;
+    price: number;
+    adminMargin: number;
+    customerPrice: number;
+    stockQty: number;
+    store: { id: string; name: string; distanceKm: number | null; isOpen: boolean };
+  } | null;
+}

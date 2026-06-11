@@ -26,6 +26,7 @@ import adminRouter from './routes/admin.routes';
 import notificationsRouter from './routes/notifications.routes';
 import addressesRouter from './routes/addresses.routes';
 import usersRouter from './routes/users.routes';
+import favoritesRouter from './routes/favorites.routes';
 import promosRouter from './routes/promos.routes';
 import chatsRouter from './routes/chats.routes';
 import supportRouter from './routes/support.routes';
@@ -52,6 +53,17 @@ const io = new Server(server, {
 setupSocket(io);
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
+
+// Trust the single nginx hop in front of us in production (see nginx/conf.d/*).
+// Without this, express-rate-limit keys every request by the proxy's IP — so
+// the OTP limiter (10/15min) and global limiter (300/15min) become ONE shared
+// bucket across all clients: 10 OTP requests would lock out every user, and a
+// real attacker can't be isolated. `1` = trust exactly one proxy (nginx), which
+// is the safe value — never `true`, which would trust a forged X-Forwarded-For
+// from a direct client. Dev/test has no proxy, so it's left off there.
+if (config.nodeEnv === 'production') {
+  app.set('trust proxy', 1);
+}
 
 app.use(helmet());
 app.use(
@@ -91,6 +103,7 @@ app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/addresses', addressesRouter);
 app.use('/api/v1/users', usersRouter);
+app.use('/api/v1/favorites', favoritesRouter);
 app.use('/api/v1/promos', promosRouter);
 app.use('/api/v1/chats', chatsRouter);
 app.use('/api/v1/support', supportRouter);

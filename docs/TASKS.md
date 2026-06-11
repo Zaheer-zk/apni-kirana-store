@@ -4,6 +4,24 @@ Running log of work in progress and completed. Newest commits at the top of each
 
 ## Done
 
+### 2026-06-11 — Security review + production hardening
+
+Full-project security pass. Findings + rationale in `docs/security-review.md`.
+
+- [x] **P1 — rate limiting fixed behind nginx** — `express-rate-limit` keys by `req.ip`, but `trust proxy` was never set, so behind the production nginx proxy every request resolved to the proxy IP. The OTP limiter (10/15min) and global limiter (300/15min) were therefore ONE shared bucket across all clients — 10 OTP requests would lock out every user (DoS) and no attacker could be isolated. Set `app.set('trust proxy', 1)` in production only (`backend/src/index.ts`); `1` trusts exactly the single nginx hop, never `true` (which would trust a forged `X-Forwarded-For`). Dev/test has no proxy so it stays off.
+- [x] **P2 — `ws` uninitialized-memory disclosure fixed** — moderate CVE (GHSA-58qx-3vcg-4xpx) reachable through socket.io (engine.io / socket.io-adapter), which is on the hot path (driver location, order events, chat). Resolved with a non-breaking `npm audit fix`.
+- [x] **Reviewed clean** — no SQL injection (Prisma everywhere, zero raw queries); JWT secrets required with no fallback; admin routes `authorize('ADMIN')`; order/address IDOR checks present; passwordHash sanitised + bcrypt; OTP brute-force capped per-phone + per-IP and only logged under the dev CONSOLE provider; helmet on; CORS never `*` in prod; error handler doesn't leak stacks; no client-side secret exposure; XSS-safe `dangerouslySetInnerHTML` (static JSON-LD + SW script).
+- [ ] **Follow-up (documented, not auto-applied)** — Next.js high-sev middleware/proxy-bypass advisory (GHSA-26hh-7cqf-hhc6) has no stable fix yet (only canary); `--force` would install a Next beta and risk breaking all 4 web apps. Exposure is low — the apps use no `middleware.ts` and authz is enforced server-side. Pin to stable 16.2.9 (already resolved) and bump when the stable patch ships. Transitive `qs` DoS resolves with the same upgrade.
+
+### 2026-06-11 — Customer favorites / wishlist (web + mobile + backend)
+
+- [x] **Schema** — new `Favorite` model keyed on `(userId, catalogItemId)` (migration `20260611_favorites`, idempotent). Keyed on CatalogItem (the canonical product), not StoreItem, so a favorite survives a store going out of stock — the list re-resolves the best nearby store at read time, matching the catalog-keyed cart model. Relations added to `User.favorites` + `CatalogItem.favorites`.
+- [x] **Backend** — new `favorites.routes.ts` mounted at `/api/v1/favorites`: `GET /ids` (lightweight set of favorited catalogItemIds for rendering heart state), `GET /?lat&lng` (full list; each entry carries `bestOffer` = cheapest in-stock nearby store resolved server-side, zone-gated + wholesaler-excluded like catalog browse, plus `offerCount`), `POST /` (idempotent upsert, 404 on unknown product), `DELETE /:catalogItemId` (idempotent). All `authenticate`-gated.
+- [x] **Shared** — `FavoriteEntry` type added to `@aks/shared`.
+- [x] **Customer-web** — `lib/favorites.ts` (React Query `useFavoriteIds` shared id-set + optimistic `useToggleFavorite`), `FavoriteButton` heart component, hearts on `StoreItemCard` (compact + full) and the item detail page, new `/favorites` page (re-resolves offers against the user's location, add-to-cart through the same catalog-keyed path), and a Favorites entry in the `AppHeader` account menu.
+- [x] **Customer-mobile** — `lib/favorites.ts` (mirror of web), `FavoriteHeart` component overlaid on `ItemCard` thumbnails, new `/account/favorites` screen, and a Favorites row in the profile menu.
+- [x] **Tests** — `backend/__tests__/favorites.test.ts` (add/list/remove idempotency, cheapest-offer resolution, unauth 401, unknown-product 404). Ready to run under `docker compose up`; deferred live run because Docker wasn't available in this session. Type-checks clean across backend + customer-web + customer-mobile + shared.
+
 ### 2026-06-03 — Brand rename to Quick Easy Mart + SEO + (deferred GraphQL note)
 
 - [x] **Brand rename — user-visible only**. Bulk sed across ~58 source files swapped `Apni Kirana Store` and `Apni Kirana` for `Quick Easy Mart` everywhere it appears in titles, manifests, page footers/headers, splash screens, auth shells, brand marks, email + SMS + notification + invoice templates, and docs. Also unified the short-form mobile names (`AKS Driver` → `Quick Easy Mart Driver`, `AKS Store` → `Quick Easy Mart Store`, etc.). Deliberately kept the technical identifiers stable: npm workspace packages (`@aks/*`), Expo slugs (`apni-kirana-customer` — tied to EAS project IDs), Android package names (`com.apnikirana.*` — Play Store entries), deep-link schemes (`apni-kirana://` — existing installs), invoice numbering prefix (`AKS/FY/000123`), and the folder layout. Renaming any of those would break builds, deploys, or existing user state.
